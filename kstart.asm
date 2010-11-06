@@ -5,23 +5,32 @@
 org 0
 bits 16
 
-%macro define_segment 4 ; limit, address, flags(?), access(?)
-	dw	%1 ;seg_limit
-	dw	%2 ;addr_00_15
-	db	%2 >> 16 ;addr_16_23
-	db	%3 ;flags
-	db	%4 ;access
-	db	%2 >> 24 ;addr_24_31
+%macro define_segment 3 ; limit, address, flags and access
+	dw	%1 & 0xffff ;seg_limit
+	dw	%2 & 0xffff ;addr_00_15
+	db	(%2) >> 16 ;addr_16_23
+	db	(%3) >> 4 ;access
+	db	((%3) << 4) & 0xf0 | ((%1) >> 16) & 0x0f ;flags/limit
+	db	(%2) >> 24 ;addr_24_31
 %endmacro
 
 ; Bit	Field
 ; 7	Present = 1
 ; 6..5	Ring == 0
-; 4	Descriptor type == 1
+; 4	Descriptor type == 1 (user)
 ; 3..0	Type = cs: 1010, ds: 0010
 
-RX_ACCESS	equ	10011010b
-RW_ACCESS	equ	10010010b
+RX_ACCESS	equ	1001_1010_0000b
+RW_ACCESS	equ	1001_0010_0000b
+
+; Bits in the flags/limit byte - scaled down by one nibble (the low is the high
+; bits of the limit)
+; Bit	Field
+; 7	Granularity
+; 6	Default Operand Size (D/B)
+GRANULARITY	equ	1000b
+SEG_32BIT	equ	0100b
+SEG_64BIT	equ	0010b
 
 code_seg	equ	8
 data_seg	equ	16
@@ -132,10 +141,6 @@ start32:
 	mov	ecx,4
 	rep stosd
 
-	mov	eax, gdt_start+code64_seg+5+0x8000
-	mov	word [eax], 0x2098
-	mov	byte [eax+data64_seg-code64_seg], 0x90
-
 	jmp	code64_seg:start64+0x8000
 
 bits 64
@@ -165,13 +170,13 @@ not_long:
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
 gdt_start:
-	define_segment 0,0,0,0
+	define_segment 0,0,0
 	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
-	define_segment 0xffff,0,RX_ACCESS,0xcf
-	define_segment 0xffff,0,RW_ACCESS,0xcf
+	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT
+	define_segment 0xfffff,0,RW_ACCESS | GRANULARITY | SEG_32BIT
 	; 64-bit code/data. Used.
-	define_segment 0,0,0,0
-	define_segment 0,0,0,0
+	define_segment 0,0,RX_ACCESS | SEG_64BIT
+	define_segment 0,0,RW_ACCESS
 gdt_end:
 
 align	4
