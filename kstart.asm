@@ -1,0 +1,177 @@
+; vim:ts=8:sts=8:sw=8:filetype=nasm:
+; This is the real bootstrap of the kernel, and
+; it is this part that is loaded by the boot sector (boot.asm)
+
+org 0
+bits 16
+
+%macro define_descriptor 6 ; 0-6 0,0,0,0,0,0
+	dw	%1 ;seg_limit
+	dw	%2 ;addr_00_15
+	db	%3 ;addr_16_23
+	db	%4 ;flags
+	db	%5 ;access
+	db	%6 ;addr_24_31
+%endmacro
+
+; Bit	Field
+; 7	Present = 1
+; 6..5	Ring == 0
+; 4	Descriptor type == 1
+; 3..0	Type = cs: 1010, ds: 0010
+
+RX_ACCESS	equ	10011010b
+RW_ACCESS	equ	10010010b
+
+code_seg	equ	8
+data_seg	equ	16
+
+start:
+	mov	ax,cs
+	mov	ds,ax
+
+	mov	ax,0x0e00+'A'
+	mov	bl,0x0f
+	int	10h
+
+	cli
+	mov	al,0xff
+	out	0xa1, al
+	mov	al,0xfb
+	out	0x21, al
+	
+	mov	ax,0x0e00+'B'
+	mov	bl,0x0f
+	int	10h
+
+	; Protect Enable -> 1
+	mov	eax,cr0
+	or	eax,1
+	mov	cr0,eax
+	
+	lidt	[idtr]
+	lgdt	[gdtr]
+
+	; Reset cs by far-jumping to the other side
+	jmp	code_seg:dword start32+0x8000
+	
+bits 32
+start32:
+	mov	ax,data_seg
+	mov	ds,ax
+	mov	es,ax
+
+	mov	ebx, 0xb8000
+	mov	edi, ebx
+
+	xor	eax,eax
+	mov	ecx,2*80*25/4 ; 125 << 3
+	rep stosd
+
+	mov	word [ebx],0x0f00+'P'
+
+	; magic flag time:
+	; All entries have the same lower 4 bits (all set to 1 here):
+	; - present (bit 0)
+	; - Read-only/Writable (bit 1), 1 = Writable
+	; - User/Supervisor bit (bit 2), 1 = Accessible from user mode
+	; - Page-level writethrough (bit 3)
+	; For the final one, we set a couple more flags:
+	; - Global (bit 8), along with PGE, the page will remain in TLB after
+	; changing the page tables, we promise that the page has the same
+	; mapping in all tables.
+	; - Page Size (bit 7), this is the final page entry rather than a link
+	; to another table. In our case, this makes this a 2MB page since the
+	; bit is set already in the third level.
+
+	; Write PML4 (one entry, pointing to one PDP)
+	mov	edi, 0xa000 ; base address, where we put the PML4's
+	mov	eax, 0xb00f ; 0xb000 is where the PDP starts, 0xf is magic
+	stosd
+
+	xor	eax,eax
+	mov	ecx, 0x03ff ; number of zero double-words in PML4
+	rep stosd
+
+	; Write PDP (one entry, pointing to one PD)
+	mov	eax, 0xc00f ; 0xc000 is the start of the PD
+	stosd
+
+	xor	eax,eax
+	mov	ecx, 0x03ff ; number of zero double-words in PDP
+	rep stosd
+
+	; Write PD (one entry mapped, address 0, plus flags)
+	mov	eax, 0x018f ; magic constant (see above)
+	stosd
+	xor	eax,eax
+	mov	ecx, 0x03ff
+	rep stosd
+
+	; Start mode-switching
+	mov	eax, 10100000b ; PAE and PGE
+	mov	cr4, eax
+
+	mov	edx, 0xa000 ; address of PML4
+	mov	cr3, edx
+
+	mov	ecx, 0xc0000080 ; EFER MSR
+	rdmsr
+	or	eax, 0x100 ; Set LME
+	wrmsr
+
+	mov	eax,cr0
+	or	eax,0x80000000 ; Enable paging
+	mov	cr0,eax
+
+	; Set code segment to L=1,D=0
+	xor	eax,eax
+	mov	edi,gdt_start+0x8000+8
+	mov	ecx,4
+	rep stosd
+
+	mov	word [gdt_start+8+5+0x8000], 0x2098
+	mov	byte [gdt_start+16+5+0x8000], 0x90
+
+	jmp	code_seg:dword start64+0x8000
+
+bits 64
+start64:
+	mov	ax,data_seg
+	mov	ds,ax
+
+	mov	edi,0xb8004
+	; Just do something silly that should fail if we weren't in long mode
+	shl	rdi,32
+	test	edi,edi
+	jnz	not_long
+	shr	rdi,32
+	; Then proceed to write a message
+	mov	esi,message+0x8000
+	mov	ecx,2
+	rep movsq
+
+	mov	rax,8 ; Random
+
+	jmp	$
+
+not_long:
+	ud2
+
+	times 4096-($-$$) db 0
+message:
+	dq 0x0747074e074f074c, 0x07450744074f074d
+gdt_start:
+	define_descriptor 0,0,0,0,0,0
+	define_descriptor 0xffff,0,0,RX_ACCESS,0xcf,0
+	define_descriptor 0xffff,0,0,RW_ACCESS,0xcf,0
+gdt_end:
+
+align	4
+gdtr:
+	dw	gdt_end-gdt_start-1 ; Limit
+	dd	gdt_start+0x8000  ; Offset
+
+idtr:
+	dw	0
+	dd	0
