@@ -121,12 +121,33 @@ start32:
 	mov	ecx, 0x03ff ; number of zero double-words in PDP
 	rep stosd
 
-	; Write PD (one entry mapped, address 0, plus flags)
-	mov	eax, 0x018f ; magic constant (see above)
+	; Write PD (one entry, pointing to one PT)
+	mov	eax, 0xd00f ; 0xd000 points to the final page table
 	stosd
 	xor	eax,eax
 	mov	ecx, 0x03ff
 	rep stosd
+
+	; Write PT at 0xd000, will have a few PTE's first that are not present
+	; to catch null pointers. Then at 0x8000 to 0x10000 we'll map pages to
+	; the same physical address.
+	xor	eax,eax
+	mov	ecx,0x0400
+	rep stosd
+	sub	edi,0x1000-8*8
+	; Map 8 pages starting at 0x8000 to the same physical address
+	mov	eax, 0x800f ; page #8/0x8000 -> physical 0x8000 (i.e. here)
+	mov	ecx, 8
+.loop:
+	stosd
+	add	edi, 4
+	add	eax, 0x1000
+	loop	.loop
+
+	; Provide an identity mapping for VGA memory
+	add	edi, ((0xb8000-0x10000) >> 12) << 3
+	add	eax, 0xb8000-0x10000
+	stosd
 
 	; Start mode-switching
 	mov	eax, 10100000b ; PAE and PGE
