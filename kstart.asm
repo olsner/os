@@ -5,13 +5,13 @@
 org 0
 bits 16
 
-%macro define_descriptor 6 ; 0-6 0,0,0,0,0,0
+%macro define_descriptor 4 ; limit, address, flags(?), access(?)
 	dw	%1 ;seg_limit
 	dw	%2 ;addr_00_15
-	db	%3 ;addr_16_23
-	db	%4 ;flags
-	db	%5 ;access
-	db	%6 ;addr_24_31
+	db	%2 >> 16 ;addr_16_23
+	db	%3 ;flags
+	db	%4 ;access
+	db	%2 >> 24 ;addr_24_31
 %endmacro
 
 ; Bit	Field
@@ -165,11 +165,13 @@ not_long:
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
 gdt_start:
-	define_descriptor 0,0,0,0,0,0
-	define_descriptor 0xffff,0,0,RX_ACCESS,0xcf,0
-	define_descriptor 0xffff,0,0,RW_ACCESS,0xcf,0
-	define_descriptor 0,0,0,0,0,0
-	define_descriptor 0,0,0,0,0,0
+	define_descriptor 0,0,0,0
+	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
+	define_descriptor 0xffff,0,RX_ACCESS,0xcf
+	define_descriptor 0xffff,0,RW_ACCESS,0xcf
+	; 64-bit code/data. Used.
+	define_descriptor 0,0,0,0
+	define_descriptor 0,0,0,0
 gdt_end:
 
 align	4
