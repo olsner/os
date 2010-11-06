@@ -4,35 +4,19 @@
 
 all: shaman
 
-shaman: boot.b kstart.b bootfs.img disk.dat
-ehird: ehird.b floppy.img
+shaman: bootfs.img disk.dat
 
 clean:
-	rm -f boot.b kstart.b bootfs.img
-	rm -fr boot/*
+	rm -f bootfs.img
+	rm -f boot/boot.b boot/kstart.b
 
-%.b: %.asm
+boot/%.b: %.asm
 	nasm -f bin $< -o $@
 	
 bootfs.img: boot/kstart.b
 	genromfs -f bootfs.img -d boot -a 512
 
-$(VMW_DIR)/hd11.dat: boot.b bootfs.img
-	dd if=boot.b of=$@ conv=notrunc bs=1 count=438
-	dd if=boot.b of=$@ conv=notrunc bs=1 skip=510 seek=510 count=2
+disk.dat: boot/boot.b bootfs.img
+	dd if=boot/boot.b of=$@ conv=notrunc bs=1 count=438
+	dd if=boot/boot.b of=$@ conv=notrunc bs=1 skip=510 seek=510 count=2
 	dd if=bootfs.img of=$@ conv=notrunc bs=512 seek=63
-
-disk.dat: boot.b bootfs.img
-	dd if=boot.b of=$@ conv=notrunc bs=1 count=438
-	dd if=boot.b of=$@ conv=notrunc bs=1 skip=510 seek=510 count=2
-	dd if=bootfs.img of=$@ conv=notrunc bs=512 seek=63
-
-floppy.img: ehird.b
-	dd if=ehird.b of=$@ conv=notrunc bs=512 count=1
-	dd if=/dev/urandom of=$@ conv=notrunc bs=512 seek=1 count=2879
-
-boot/kstart.b: kstart.b
-	cp $< $@
-
-commit: clean
-	cvs ci
