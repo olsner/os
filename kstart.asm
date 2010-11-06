@@ -25,6 +25,8 @@ RW_ACCESS	equ	10010010b
 
 code_seg	equ	8
 data_seg	equ	16
+code64_seg	equ	24
+data64_seg	equ	32
 
 start:
 	mov	ax,cs
@@ -130,14 +132,15 @@ start32:
 	mov	ecx,4
 	rep stosd
 
-	mov	word [gdt_start+8+5+0x8000], 0x2098
-	mov	byte [gdt_start+16+5+0x8000], 0x90
+	mov	eax, gdt_start+code64_seg+5+0x8000
+	mov	word [eax], 0x2098
+	mov	byte [eax+data64_seg-code64_seg], 0x90
 
-	jmp	code_seg:dword start64+0x8000
+	jmp	code64_seg:start64+0x8000
 
 bits 64
 start64:
-	mov	ax,data_seg
+	mov	ax,data64_seg
 	mov	ds,ax
 
 	mov	edi,0xb8004
@@ -165,6 +168,8 @@ gdt_start:
 	define_descriptor 0,0,0,0,0,0
 	define_descriptor 0xffff,0,0,RX_ACCESS,0xcf,0
 	define_descriptor 0xffff,0,0,RW_ACCESS,0xcf,0
+	define_descriptor 0,0,0,0,0,0
+	define_descriptor 0,0,0,0,0,0
 gdt_end:
 
 align	4
