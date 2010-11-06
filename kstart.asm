@@ -20,8 +20,17 @@ bits 16
 ; 4	Descriptor type == 1 (user)
 ; 3..0	Type = cs: 1010, ds: 0010
 
-RX_ACCESS	equ	1001_1010_0000b
-RW_ACCESS	equ	1001_0010_0000b
+SEG_PRESENT	equ	1000_0000_0000b
+SEG_USER	equ	0001_0000_0000b
+
+SEG_TYPE_CODE	equ	1000_0000b
+SEG_TYPE_DATA	equ	0
+
+CODE_SEG_RX	equ	0010_0000b
+DATA_SEG_RW	equ	0010_0000b
+
+RX_ACCESS	equ	SEG_PRESENT | SEG_USER | SEG_TYPE_CODE | CODE_SEG_RX
+RW_ACCESS	equ	SEG_PRESENT | SEG_USER | SEG_TYPE_DATA | DATA_SEG_RW
 
 ; Bits in the flags/limit byte - scaled down by one nibble (the low is the high
 ; bits of the limit)
