@@ -14,6 +14,12 @@ bits 16
 	db	(%2) >> 24 ;addr_24_31
 %endmacro
 
+%macro define_tss64 2 ; limit, address
+	define_segment %1, (%2) & 0xffffffff, SEG_PRESENT | SEG_SYSTEM | SEG_TYPE_TSS
+	dd (%2) >> 32
+	dd 0
+%endmacro
+
 ; Bit	Field
 ; 7	Present = 1
 ; 6..5	Ring == 0
@@ -22,9 +28,11 @@ bits 16
 
 SEG_PRESENT	equ	1000_0000_0000b
 SEG_USER	equ	0001_0000_0000b
+SEG_SYSTEM	equ	0000_0000_0000b
 
 SEG_TYPE_CODE	equ	1000_0000b
 SEG_TYPE_DATA	equ	0
+SEG_TYPE_TSS	equ	1001_0000b
 
 CODE_SEG_RX	equ	0010_0000b
 DATA_SEG_RW	equ	0010_0000b
@@ -45,6 +53,22 @@ code_seg	equ	8
 data_seg	equ	16
 code64_seg	equ	24
 data64_seg	equ	32
+tss64_seg	equ	40
+
+%macro define_gate64 3 ; code-seg, offset, flags
+	dw	(%2) & 0xffff
+	dw	%1
+	db	0
+	db	%3
+	dw	((%2) >> 16) & 0xffff
+	dd	(%2) >> 32
+	dd	0
+%endmacro
+
+GATE_PRESENT		equ	1000_0000b
+GATE_TYPE_INTERRUPT	equ	0000_1110b
+; Among other(?) things, a task gate leaves EFLAGS.IF unchanged when invoking the gate
+GATE_TYPE_TASK		equ	0000_1111b
 
 start:
 	mov	ax,cs
@@ -57,7 +81,7 @@ start:
 	cli
 	mov	al,0xff
 	out	0xa1, al
-	mov	al,0xfb
+	;mov	al,0xfb
 	out	0x21, al
 	
 	mov	ax,0x0e00+'B'
@@ -80,6 +104,7 @@ start32:
 	mov	ax,data_seg
 	mov	ds,ax
 	mov	es,ax
+	mov	ss,ax
 
 	mov	ebx, 0xb8000
 	mov	edi, ebx
@@ -135,9 +160,9 @@ start32:
 	mov	ecx,0x0400
 	rep stosd
 	sub	edi,0x1000-8*8
-	; Map 8 pages starting at 0x8000 to the same physical address
+	; Map 8^H16 pages starting at 0x8000 to the same physical address
 	mov	eax, 0x800f ; page #8/0x8000 -> physical 0x8000 (i.e. here)
-	mov	ecx, 8
+	mov	ecx, 16
 .loop:
 	stosd
 	add	edi, 4
@@ -145,8 +170,8 @@ start32:
 	loop	.loop
 
 	; Provide an identity mapping for VGA memory
-	add	edi, ((0xb8000-0x10000) >> 12) << 3
-	add	eax, 0xb8000-0x10000
+	add	edi, ((0xb8000-0x18000) >> 12) << 3
+	add	eax, 0xb8000-0x18000
 	stosd
 
 	; Start mode-switching
@@ -168,9 +193,12 @@ start32:
 	jmp	code64_seg:start64
 
 bits 64
+default rel
+
 start64:
 	mov	ax,data64_seg
 	mov	ds,ax
+	mov	ss,ax
 
 	mov	edi,0xb8004
 	; Just do something silly that should fail if we weren't in long mode
@@ -183,16 +211,80 @@ start64:
 	mov	ecx,2
 	rep movsq
 
-	mov	rax,8 ; Random
+	mov	ax,tss64_seg
+	ltr	ax
+	mov	rsp,0x11000
 
-	jmp	$
+	; Set page 0xe000 to uncacheable - this is where we'll map the APIC
+	or	byte [0xd000+0xe*8], 0x10
+
+	mov	ecx,0x1b ; APIC_BASE
+	rdmsr
+	; Clear high part of base address
+	xor	edx,edx
+	; Set base address to 0xe000, enable (0x800), and set boot-strap CPU
+	mov	eax,0xe900
+	wrmsr
+
+	or	dword [0xe0f0],0x100 ; APIC Software Enable
+
+	mov	dword [0xe380],10000 ; APICTIC
+	;mov	dword [0xe390],10000000 ; APICTCC
+	mov	dword [0xe3e0],1010b  ; Divide by 128
+	mov	eax,dword [0xe320] ; Timer LVT
+	; Clear bit 16 (Mask) to enable timer interrupts
+	btr	eax, 16
+	; Set bit 17 (Timer Mode) to enable periodic timer
+	bts	eax, 17
+	mov	al, 32
+	mov	dword [0xe320],eax
+
+	push	rax
+	pop	rax
+
+	;ud2
+	sti
+.loop:
+	; esi == counter, edi == vga memory, just after the "long mode" we just printed
+	mov	bl,byte [esi]
+	mov	byte [rdi],bl
+	mov	byte [rdi+1],0x07
+	jmp	.loop
 
 not_long:
-	ud2
+	jmp	$
+
+handler_err:
+	add	rsp,8
+handler_no_err:
+	push	rax
+	inc	byte [counter]
+	mov	eax, dword [0xe390]
+	mov	dword [counter+4], eax
+	mov	dword [0xe380],10000 ; APICTI
+	mov	dword [0xe0b0],0 ; EndOfInterrupt
+	pop	rax
+	iretq
 
 	times 4096-($-$$) db 0
+__DATA__:
+
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
+
+counter:
+	dq 0
+
+tss:
+	dd 0 ; Reserved
+	dq 0x10000
+	dq 0
+	dq 0
+	times 0x66-28 db 0
+	; IOPB starts just after the TSS
+	dw	0x68
+
+align 8
 gdt_start:
 	define_segment 0,0,0
 	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
@@ -201,6 +293,8 @@ gdt_start:
 	; 64-bit code/data. Used.
 	define_segment 0,0,RX_ACCESS | SEG_64BIT
 	define_segment 0,0,RW_ACCESS
+	; 64-bit TSS
+	define_tss64 0x68, (0x8000+tss-$$)
 gdt_end:
 
 align	4
@@ -208,6 +302,42 @@ gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
 	dd	gdt_start  ; Offset
 
+idt:
+%define default_error \
+	define_gate64 code64_seg,0x8000+handler_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
+%define default_no_error \
+	define_gate64 code64_seg,0x8000+handler_no_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
+%define null_gate \
+	define_gate64 0,0,GATE_TYPE_INTERRUPT
+
+	; exceptions with errors:
+	; - 8/#DF/double fault (always zero)
+	; - 10/#TS/Invalid-TSS
+	; - 11/#NP/Segment-Not-Present
+	; - 12/#SS/Stack Exception
+	; - 13/#GP/General Protection
+	; - 14/#PF/Page Fault
+	; - 17/#AC/Alignment Check
+
+	; 0-7
+	%rep 8
+	default_no_error
+	%endrep
+	default_error ; 8
+	default_no_error ; 9
+	%rep 5
+	default_error ; 10-14
+	%endrep
+	default_no_error ; 15
+	default_no_error
+	default_error
+	%rep (32-18)
+	null_gate
+	%endrep
+	default_no_error ; APIC Timer
+idt_end:
+
 idtr:
-	dw	0
-	dd	0
+	dw	idt_end-idt-1
+	dd	idt
+
