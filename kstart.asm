@@ -2,7 +2,7 @@
 ; This is the real bootstrap of the kernel, and
 ; it is this part that is loaded by the boot sector (boot.asm)
 
-org 0
+org 0x8000
 bits 16
 
 %macro define_segment 3 ; limit, address, flags and access
@@ -69,11 +69,11 @@ start:
 	or	eax,1
 	mov	cr0,eax
 	
-	lidt	[idtr]
-	lgdt	[gdtr]
+	lidt	[idtr - 0x8000]
+	lgdt	[gdtr - 0x8000]
 
 	; Reset cs by far-jumping to the other side
-	jmp	code_seg:dword start32+0x8000
+	jmp	code_seg:dword start32
 	
 bits 32
 start32:
@@ -165,13 +165,7 @@ start32:
 	or	eax,0x80000000 ; Enable paging
 	mov	cr0,eax
 
-	; Set code segment to L=1,D=0
-	xor	eax,eax
-	mov	edi,gdt_start+0x8000+8
-	mov	ecx,4
-	rep stosd
-
-	jmp	code64_seg:start64+0x8000
+	jmp	code64_seg:start64
 
 bits 64
 start64:
@@ -185,7 +179,7 @@ start64:
 	jnz	not_long
 	shr	rdi,32
 	; Then proceed to write a message
-	mov	esi,message+0x8000
+	mov	esi,message
 	mov	ecx,2
 	rep movsq
 
@@ -212,7 +206,7 @@ gdt_end:
 align	4
 gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
-	dd	gdt_start+0x8000  ; Offset
+	dd	gdt_start  ; Offset
 
 idtr:
 	dw	0
