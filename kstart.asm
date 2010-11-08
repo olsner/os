@@ -29,6 +29,7 @@ bits 16
 SEG_PRESENT	equ	1000_0000_0000b
 SEG_USER	equ	0001_0000_0000b
 SEG_SYSTEM	equ	0000_0000_0000b
+SEG_DPL3	equ	0110_0000_0000b
 
 SEG_TYPE_CODE	equ	1000_0000b
 SEG_TYPE_DATA	equ	0
@@ -54,6 +55,7 @@ data_seg	equ	16
 code64_seg	equ	24
 data64_seg	equ	32
 tss64_seg	equ	40
+user_code_seg	equ	56
 
 %macro define_gate64 3 ; code-seg, offset, flags
 	dw	(%2) & 0xffff
@@ -239,8 +241,28 @@ start64:
 	mov	al, 32
 	mov	dword [0xe320],eax
 
-	push	rax
-	pop	rax
+	xor	eax,eax
+	mov	ecx,0c000_0081h
+	; cs for syscall (high word) and sysret (low word).
+	; cs is loaded from selector or selector+16 depending on whether we're returning to compat (+16) or long mode (+0)
+	; ss is loaded from cs+8 (where cs is the cs selector chosen above)
+	mov	edx,((user_code_seg | 11b) << 16) | code64_seg
+	wrmsr
+
+	inc	ecx ; c000_0082h - LSTAR
+	mov	eax,syscall_entry
+	cdq
+	wrmsr
+
+	inc	ecx ; c000_0083h - CSTAR
+	mov	eax,syscall_entry ;_compat
+	cdq
+	wrmsr
+
+	mov	ecx, 0xc0000080 ; EFER MSR
+	rdmsr
+	bts	eax, 0 ; Set SCE
+	wrmsr
 
 	;ud2
 	sti
@@ -266,6 +288,31 @@ handler_no_err:
 	pop	rax
 	iretq
 
+syscall_entry_compat:
+	ud2
+	db 'COMPAT'
+
+syscall_entry:
+	; r11 = old rflags
+	; rcx = old rip
+
+	; TODO Should use SwapGS and set up a kernel stack.
+	push	rbx
+	push	rdi
+	mov	edi, 0xb8000
+	mov	word [edi+32], 'S'+0x0f00
+	movzx	ebx, al ; syscall number, low byte
+	and	bl, 0x0f
+	cmp	bl, 0x0a
+	jb	.skip
+	add	bl, 'A'-0x30
+.skip:
+	add	bx, 0x0f30
+	mov	word [edi+34], bx
+	pop	rdi
+	pop	rbx
+	o64 sysret
+
 	times 4096-($-$$) db 0
 __DATA__:
 
@@ -287,6 +334,7 @@ tss:
 align 8
 gdt_start:
 	define_segment 0,0,0
+	; KERNEL segments
 	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
 	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT
 	define_segment 0xfffff,0,RW_ACCESS | GRANULARITY | SEG_32BIT
@@ -295,6 +343,13 @@ gdt_start:
 	define_segment 0,0,RW_ACCESS
 	; 64-bit TSS
 	define_tss64 0x68, (0x8000+tss-$$)
+	; USER segments
+	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
+	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
+	define_segment 0xfffff,0,RW_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
+	; 64-bit code/data. Used.
+	define_segment 0,0,RX_ACCESS | SEG_64BIT | SEG_DPL3
+	define_segment 0,0,RW_ACCESS | SEG_DPL3
 gdt_end:
 
 align	4
