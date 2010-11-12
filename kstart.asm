@@ -264,6 +264,24 @@ start64:
 	bts	eax, 0 ; Set SCE
 	wrmsr
 
+	; This is the kernel GS, at 0x11000 (the top of the kernel stack)
+	xor	edx,edx
+	mov	eax,0x11000
+	mov	ecx,0xc000_0101 ; GSBase
+	wrmsr
+
+	; after this, ebx should be address to video memory and edi points to
+	; the gs-segment data block
+	mov	edi,eax
+	mov	rax,rsp
+	stosq ; gs:0 - user-mode stack seg
+	mov	eax,0xb8000
+	stosq ; gs:8 - VGA buffer base
+	lea	eax,[eax+32]
+	stosq ; gs:16 - VGA writing position
+	lea	eax,[eax+80*25*2-32]
+	stosq ; gs:24 - VGA buffer end
+
 	;ud2
 	sti
 .loop:
