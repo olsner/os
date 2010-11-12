@@ -284,12 +284,47 @@ start64:
 
 	;ud2
 	sti
+
+	lea	rcx,[rel user_entry]
+	pushf
+	pop	r11
+	swapgs
+	o64 sysret
+
+user_entry:
+	lea	esi,[rel counter]
+	xor	eax,eax
+
+	mov	bl,'U'
+	movzx	ebx,bl
+	syscall
+
+	mov	bl,10
+	movzx	ebx,bl
+	syscall
+
+	mov	bl,'V'
+	movzx	ebx,bl
+	syscall
+
+	mov	bl,10
+	movzx	ebx,bl
+	syscall
+
 .loop:
-	; esi == counter, edi == vga memory, just after the "long mode" we just printed
 	mov	bl,byte [esi]
-	mov	byte [rdi],bl
-	mov	byte [rdi+1],0x07
-	jmp	.loop
+	movzx	ebx,bl
+	syscall
+
+	mov	bl,10
+	movzx	ebx,bl
+	syscall
+
+	mov	bl,byte [esi]
+.notchanged:
+	cmp	bl,byte [esi]
+	jnz	.loop
+	jmp	.notchanged
 
 not_long:
 	jmp	$
@@ -308,28 +343,60 @@ handler_no_err:
 
 syscall_entry_compat:
 	ud2
-	db 'COMPAT'
 
 syscall_entry:
 	; r11 = old rflags
 	; rcx = old rip
 
-	; TODO Should use SwapGS and set up a kernel stack.
+	swapgs
+	mov	[gs:0], rsp
+	mov	esp, 0x10000
+	push	rcx
 	push	rbx
 	push	rdi
-	mov	edi, 0xb8000
-	mov	word [edi+32], 'S'+0x0f00
-	movzx	ebx, al ; syscall number, low byte
-	and	bl, 0x0f
-	cmp	bl, 0x0a
-	jb	.skip
-	add	bl, 'A'-0x30
-.skip:
-	add	bx, 0x0f30
-	mov	word [edi+34], bx
+	test	rax,rax
+	jz	syscall_write
+
+syscall_exit:
 	pop	rdi
 	pop	rbx
+	pop	rcx
+	mov	rsp, [gs:0]
+	swapgs
 	o64 sysret
+
+	; Syscall #0: write byte to screen
+syscall_write:
+	mov	eax,ebx ; put the byte in eax instead of ebx
+
+	mov	rdi, [gs:16] ; current pointer
+	;mov	rbx, [gs:24] ; end of screen
+	cmp	rdi, [gs:24] ; end of screen
+	cmovge	rdi, [gs:8] ; beginning of screen, if current >= end
+
+	cmp	al,10
+	je .newline
+.write_char:
+	mov	ah, 0x0f
+	stosw
+.finish_write:
+	mov	[gs:16], rdi ; new pointer, after writing
+	xor	eax,eax
+	jmp	syscall_exit
+.newline:
+	mov	rax, rdi
+	sub	rax, [gs:8] ; Result fits in 16 bits.
+	cwd
+	mov	bx, 160
+	div	bx
+	; dx now has the remainder
+	mov	ecx,160
+	sub	cx,dx
+	shr	cx,1
+	mov	ax,0x0f00+'-'
+	rep	stosw
+
+	jmp	.finish_write
 
 	times 4096-($-$$) db 0
 __DATA__:
@@ -338,11 +405,11 @@ message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
 
 counter:
-	dq 0
+	dq 32
 
 tss:
 	dd 0 ; Reserved
-	dq 0x10000
+	dq 0x10000 ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
 	dq 0
 	dq 0
 	times 0x66-28 db 0
