@@ -215,7 +215,7 @@ start64:
 
 	mov	ax,tss64_seg
 	ltr	ax
-	mov	rsp,0x11000
+	mov	esp,0x11000
 
 	; Set page 0xe000 to uncacheable - this is where we'll map the APIC
 	or	byte [0xd000+0xe*8], 0x10
@@ -367,12 +367,12 @@ syscall_exit:
 
 	; Syscall #0: write byte to screen
 syscall_write:
-	mov	eax,ebx ; put the byte in eax instead of ebx
+	xchg	eax,ebx ; put the byte in eax instead of ebx, ebx now = 0
 
-	mov	rdi, [gs:16] ; current pointer
+	mov	rdi, [gs:rbx+16] ; current pointer
 	;mov	rbx, [gs:24] ; end of screen
-	cmp	rdi, [gs:24] ; end of screen
-	cmovge	rdi, [gs:8] ; beginning of screen, if current >= end
+	cmp	rdi, [gs:rbx+24] ; end of screen
+	cmovge	rdi, [gs:rbx+8] ; beginning of screen, if current >= end
 
 	cmp	al,10
 	je .newline
@@ -380,9 +380,9 @@ syscall_write:
 	mov	ah, 0x0f
 	stosw
 .finish_write:
-	mov	[gs:16], rdi ; new pointer, after writing
 	xor	eax,eax
-	jmp	syscall_exit
+	mov	[gs:rax+16], rdi ; new pointer, after writing
+	jmp	short syscall_exit
 .newline:
 	mov	rax, rdi
 	sub	rax, [gs:8] ; Result fits in 16 bits.
