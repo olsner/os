@@ -228,18 +228,22 @@ start64:
 	mov	eax,0xe900
 	wrmsr
 
-	or	dword [0xe0f0],0x100 ; APIC Software Enable
+	mov	ebp,0xe000
+	mov	ax,0x100
+	or	dword [rbp+0xf0],eax ; APIC Software Enable
 
-	mov	dword [0xe380],10000 ; APICTIC
-	;mov	dword [0xe390],10000000 ; APICTCC
-	mov	dword [0xe3e0],1010b  ; Divide by 128
-	mov	eax,dword [0xe320] ; Timer LVT
+	mov	ax,10000
+	add	bp,0x380
+	mov	dword [rbp+0x380-0x380],eax ; APICTIC
+	mov	ax,1010b
+	mov	dword [rbp+0x3e0-0x380],eax  ; Divide by 128
+	mov	eax,dword [rbp+0x320-0x380] ; Timer LVT
 	; Clear bit 16 (Mask) to enable timer interrupts
 	btr	eax, 16
 	; Set bit 17 (Timer Mode) to enable periodic timer
 	bts	eax, 17
 	mov	al, 32
-	mov	dword [0xe320],eax
+	mov	dword [rbp+0x320-0x380],eax
 
 	xor	eax,eax
 	mov	ecx,0c000_0081h
