@@ -15,7 +15,7 @@ clean:
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
-	nasm -f bin $< -o $@
+	nasm -Ox -f bin $< -o $@
 
 bootfs.img: boot/kstart.b
 	genromfs -f bootfs.img -d boot -a 512 -x boot.b
