@@ -117,6 +117,14 @@ start32:
 
 	mov	word [ebx],0x0f00+'P'
 
+	; Static page allocations:
+	; This code (plus data) is at 0x8000-0x9fff (two pages)
+	; page tables are written in 0xa000-0xdfff
+	; APIC MMIO mapped at 0xe000-0xefff
+	; Kernel stack at 0xf000-0xffff (i.e. 0x10000 and growing downwards)
+	; User-mode stack at 0x10000-0x10fff
+	; Another page-table at 0x11000-0x11fff (for the top-of-vm kernel pages)
+
 	; magic flag time:
 	; All entries have the same lower 4 bits (all set to 1 here):
 	; - present (bit 0)
@@ -139,6 +147,9 @@ start32:
 	xor	eax,eax
 	mov	ecx, 0x03ff ; number of zero double-words in PML4
 	rep stosd
+
+	; In 0x11000 we have another PDP. It's global and *not* user-accessible.
+	mov	dword [edi-8], 0x11003
 
 	; Write PDP (one entry, pointing to one PD)
 	mov	eax, 0xc00f ; 0xc000 is the start of the PD
@@ -176,6 +187,13 @@ start32:
 	add	eax, 0xb8000-0x18000
 	stosd
 
+	; Page mapping for kernel space (top 4TB part)
+	mov	edi,0x11000
+	xor	eax,eax
+	mov	ecx,0x0400
+	rep	stosd
+	mov	word [edi-8],0x1c3
+
 	; Start mode-switching
 	mov	eax, 10100000b ; PAE and PGE
 	mov	cr4, eax
@@ -197,7 +215,12 @@ start32:
 bits 64
 default rel
 
+kernel_base equ -(1 << 30)
+
 start64:
+	lea	rax,[rel kernel_base+.moved]
+	jmp	rax
+.moved:
 	mov	ax,data64_seg
 	mov	ds,ax
 	mov	ss,ax
@@ -290,6 +313,9 @@ start64:
 	sti
 
 	lea	rcx,[rel user_entry]
+	movzx	rcx,cx
+	; TODO We should probably define an explicit "default-flags" value
+	; rather than just using the current value of rflags.
 	pushf
 	pop	r11
 	swapgs
@@ -448,9 +474,9 @@ gdtr:
 
 idt:
 %define default_error \
-	define_gate64 code64_seg,0x8000+handler_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
+	define_gate64 code64_seg,kernel_base+0x8000+handler_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
 %define default_no_error \
-	define_gate64 code64_seg,0x8000+handler_no_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
+	define_gate64 code64_seg,kernel_base+0x8000+handler_no_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
 %define null_gate \
 	define_gate64 0,0,GATE_TYPE_INTERRUPT
 
