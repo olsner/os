@@ -290,6 +290,11 @@ start64:
 	cdq
 	wrmsr
 
+	inc	ecx ; x000_0084h - SF_MASK
+	mov	eax, (1 << 9) | (1 << 17)
+	cdq
+	wrmsr
+
 	mov	ecx, 0xc0000080 ; EFER MSR
 	rdmsr
 	bts	eax, 0 ; Set SCE
