@@ -25,7 +25,7 @@ usb_ohci: enabled=0
 i440fxsupport: enabled=0
 vga_update_interval: 40000
 vga: extension=none
-cpu: count=1, ips=2000000, reset_on_triple_fault=0, ignore_bad_msrs=1
+cpu: count=1, ips=2000000, reset_on_triple_fault=0, ignore_bad_msrs=0
 cpuid: cpuid_limit_winnt=0, mmx=1, sse=sse2, xapic=1, sep=1, aes=0, xsave=1, movbe=0, 1g_pages=1
 print_timestamps: enabled=0
 debugger_log: -
