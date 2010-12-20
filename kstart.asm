@@ -142,7 +142,7 @@ start32:
 
 	; Write PML4 (one entry, pointing to one PDP)
 	mov	edi, 0xa000 ; base address, where we put the PML4's
-	mov	eax, 0xb00f ; 0xb000 is where the PDP starts, 0xf is magic
+	mov	eax, 0xb005 ; 0xb000 is where the PDP starts
 	stosd
 
 	xor	eax,eax
@@ -153,7 +153,7 @@ start32:
 	mov	dword [edi-8], 0x11003
 
 	; Write PDP (one entry, pointing to one PD)
-	mov	eax, 0xc00f ; 0xc000 is the start of the PD
+	mov	eax, 0xc005 ; 0xc000 is the start of the PD
 	stosd
 
 	xor	eax,eax
@@ -161,7 +161,7 @@ start32:
 	rep stosd
 
 	; Write PD (one entry, pointing to one PT)
-	mov	eax, 0xd00f ; 0xd000 points to the final page table
+	mov	eax, 0xd005 ; 0xd000 points to the final page table
 	stosd
 	xor	eax,eax
 	mov	ecx, 0x03ff
@@ -175,17 +175,20 @@ start32:
 	rep stosd
 	sub	edi,0x1000-8*8
 	; Map 8^H16 pages starting at 0x8000 to the same physical address
-	mov	eax, 0x800f ; page #8/0x8000 -> physical 0x8000 (i.e. here)
-	mov	ecx, 16
-.loop:
+	mov	eax, 0x8005 ; page #8/0x8000 -> physical 0x8000 (i.e. here)
 	stosd
+	; Disable user-mode access to remaining pages, enable write access
+	xor	al, 6
+	mov	ecx, 15
+.loop:
 	add	edi, 4
 	add	eax, 0x1000
+	stosd
 	loop	.loop
 
 	; Provide an identity mapping for VGA memory
-	add	edi, ((0xb8000-0x18000) >> 12) << 3
-	add	eax, 0xb8000-0x18000
+	add	di, (((0xb8000-0x18000) >> 12) << 3) + 4
+	add	eax, 1000+0xb8000-0x18000
 	stosd
 
 	; Page mapping for kernel space (top 4TB part)
