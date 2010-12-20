@@ -317,6 +317,8 @@ start64:
 	stosq ; gs:16 - VGA writing position
 	lea	eax,[eax+80*25*2-32]
 	stosq ; gs:24 - VGA buffer end
+	xor	eax,eax
+	stosq ; gs:32 - current time
 
 	;ud2
 	sti
@@ -331,7 +333,6 @@ start64:
 	o64 sysret
 
 user_entry:
-	lea	esi,[rel counter]
 	xor	eax,eax
 
 	mov	bl,'U'
@@ -351,18 +352,28 @@ user_entry:
 	syscall
 
 .loop:
-	mov	bl,byte [esi]
-	movzx	ebx,bl
+	mov	al,1
+	movzx	eax,al
+	syscall
+	movzx	ebx,al
+	xor	eax,eax
 	syscall
 
 	mov	bl,10
 	movzx	ebx,bl
 	syscall
 
-	mov	bl,byte [esi]
+	mov	al,1
+	movzx	eax,al
+	syscall
+	mov	edx,eax
 .notchanged:
-	cmp	bl,byte [esi]
-	jnz	.loop
+	;hlt
+	mov	al,1
+	movzx	eax,al
+	syscall
+	cmp	al,dl
+	jne	.loop
 	jmp	.notchanged
 
 not_long:
@@ -372,11 +383,13 @@ handler_err:
 	add	rsp,8
 handler_no_err:
 	push	rax
-	inc	byte [counter]
+	swapgs
+	inc	byte [gs:32]
 	mov	eax, dword [0xe390]
-	mov	dword [counter+4], eax
+	mov	dword [gs:36], eax
 	mov	dword [0xe380],10000 ; APICTI
 	mov	dword [0xe0b0],0 ; EndOfInterrupt
+	swapgs
 	pop	rax
 	iretq
 
@@ -391,21 +404,25 @@ syscall_entry:
 	mov	[gs:0], rsp
 	mov	esp, 0x10000
 	push	rcx
+	push	rdx
 	push	rbx
 	push	rdi
 	test	rax,rax
-	jz	syscall_write
+	jz	.syscall_write
+	cmp	eax,1
+	je	.syscall_gettime
 
-syscall_exit:
+.syscall_exit:
 	pop	rdi
 	pop	rbx
+	pop	rdx
 	pop	rcx
 	mov	rsp, [gs:0]
 	swapgs
 	o64 sysret
 
 	; Syscall #0: write byte to screen
-syscall_write:
+.syscall_write:
 	xchg	eax,ebx ; put the byte in eax instead of ebx, ebx now = 0
 
 	mov	rdi, [gs:rbx+16] ; current pointer
@@ -421,7 +438,7 @@ syscall_write:
 .finish_write:
 	xor	eax,eax
 	mov	[gs:rax+16], rdi ; new pointer, after writing
-	jmp	short syscall_exit
+	jmp	short .syscall_exit
 .newline:
 	mov	rax, rdi
 	sub	rax, [gs:8] ; Result fits in 16 bits.
@@ -436,6 +453,10 @@ syscall_write:
 	rep	stosw
 
 	jmp	.finish_write
+
+.syscall_gettime:
+	mov	al,byte [gs:rax+31] ; ax=1 when we get here
+	jmp	.syscall_exit
 
 	times 4096-($-$$) db 0
 __DATA__:
