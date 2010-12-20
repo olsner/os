@@ -124,6 +124,7 @@ start32:
 	; Kernel stack at 0xf000-0xffff (i.e. 0x10000 and growing downwards)
 	; User-mode stack at 0x10000-0x10fff
 	; Another page-table at 0x11000-0x11fff (for the top-of-vm kernel pages)
+	; Kernel GS-page at 0x12000-0x12fff
 
 	; magic flag time:
 	; All entries have the same lower 4 bits (all set to 1 here):
@@ -293,7 +294,7 @@ start64:
 
 	; This is the kernel GS, at 0x11000 (the top of the kernel stack)
 	xor	edx,edx
-	mov	eax,0x11000
+	mov	eax,0x12000
 	mov	ecx,0xc000_0101 ; GSBase
 	wrmsr
 
