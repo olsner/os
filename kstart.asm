@@ -188,7 +188,7 @@ start32:
 
 	; Provide an identity mapping for VGA memory
 	add	di, (((0xb8000-0x18000) >> 12) << 3) + 4
-	add	eax, 1000+0xb8000-0x18000
+	add	eax, 0x1000+0xb8000-0x18000
 	stosd
 
 	; Page mapping for kernel space (top 4TB part)
