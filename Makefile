@@ -5,13 +5,14 @@
 BXIMAGE=/opt/bochs/bin/bximage
 DD=dd 2>/dev/null
 
-all: shaman
+all: shaman cpuid
 
 shaman: disk.dat
 
 clean:
 	rm -f bootfs.img disk.dat
 	rm -f boot/boot.b boot/kstart.b
+	rm -f cpuid
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
