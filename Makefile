@@ -5,6 +5,16 @@
 BXIMAGE=/opt/bochs/bin/bximage
 DD=dd 2>/dev/null
 
+ifeq ($(VERBOSE),YES)
+HUSH_ASM=
+HUSH_CC=
+HUSH_CXX=
+else
+HUSH_ASM=@echo ' [NASM]\t'$@;
+HUSH_CC=@echo ' [CC]\t'$@;
+HUSH_CXX=@echo ' [CXX]\t'$@;
+endif
+
 all: shaman cpuid
 
 shaman: disk.dat
@@ -14,9 +24,12 @@ clean:
 	rm -f boot/boot.b boot/kstart.b
 	rm -f cpuid
 
+%: %.cpp
+	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -o $@ $<
+
 boot/%.b: %.asm
 	@mkdir -p $(@D)
-	nasm -w+all -Ox -f bin $< -o $@
+	$(HUSH_ASM) nasm -w+all -Ox -f bin $< -o $@
 
 bootfs.img: boot/kstart.b
 	genromfs -f bootfs.img -d boot -a 512 -x boot.b
