@@ -56,6 +56,8 @@ code64_seg	equ	24
 data64_seg	equ	32
 tss64_seg	equ	40
 user_code_seg	equ	56
+user_cs		equ	user_code_seg | 11b
+user_ds		equ	user_cs+8
 
 %macro define_gate64 3 ; code-seg, offset, flags
 	dw	(%2) & 0xffff
@@ -71,6 +73,34 @@ GATE_PRESENT		equ	1000_0000b
 GATE_TYPE_INTERRUPT	equ	0000_1110b
 ; Among other(?) things, a task gate leaves EFLAGS.IF unchanged when invoking the gate
 GATE_TYPE_TASK		equ	0000_1111b
+
+struc	proc
+	.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
+
+	; Aliases for offsets into regs
+	.rax	equ	.regs+(0*8)
+	.rsp	equ	.regs+(4*8)
+	.rsi	equ	.regs+(6*8)
+
+	.rip	resq 1
+	.endregs equ .rip
+	.rflags	resq 1
+	.flags	resq 1 ; See PROC_*
+	.waiting_for resq 1 ; Pointer to proc
+	.next	resq 1 ; If/when in a list, points to next process in list
+	.cr3	resq 1
+endstruc
+
+; Jump to CPL 0 instead of CPL 3
+PROC_KERNEL	equ	0
+; Return to user-mode with sysret, only some registers will be restored:
+; rsp, rip: restored to previous values
+; rcx, r11: rip and rflags, respectively
+; rax: syscall return value
+; Remaining registers will be 0 (?)
+PROC_FASTRET	equ	1
+
+RFLAGS_IF	equ	(1 << 9)
 
 start:
 	mov	ax,cs
@@ -300,7 +330,7 @@ start64:
 	bts	eax, 0 ; Set SCE
 	wrmsr
 
-	; This is the kernel GS, at 0x11000 (the top of the kernel stack)
+	; This is the kernel GS, at 0x12000 (the top of the kernel stack)
 	xor	edx,edx
 	mov	eax,0x12000
 	mov	ecx,0xc000_0101 ; GSBase
@@ -310,7 +340,7 @@ start64:
 	; the gs-segment data block
 	mov	edi,eax
 	mov	rax,rsp
-	stosq ; gs:0 - user-mode stack seg
+	stosq ; gs:0 - user-mode stack seg ; TODO current process...
 	mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
 	lea	eax,[eax+32]
@@ -319,18 +349,135 @@ start64:
 	stosq ; gs:24 - VGA buffer end
 	xor	eax,eax
 	stosq ; gs:32 - current time
+	stosq ; gs:40 - current process
+	stosq ; gs:48 - runqueue
+	stosq ; gs:56 - idle queue
 
-	;ud2
-	sti
+	lea	rax,[rel user_proc_1]
+	jmp	switch_to
 
-	lea	rcx,[rel user_entry]
-	movzx	rcx,cx
-	; TODO We should probably define an explicit "default-flags" value
-	; rather than just using the current value of rflags.
-	pushf
-	pop	r11
+user_proc_1:
+istruc proc
+	at proc.rsp, dq 0x11000
+	at proc.rip, dq user_entry
+	at proc.rflags, dq RFLAGS_IF
+	;at proc.flags, dq (1 << PROC_FASTRET)
+	at proc.cr3, dq 0xa000
+iend
+user_proc_2:
+istruc proc
+	at proc.rsp, dq 0 ; Doesn't use stack, but that should be fixed...
+	at proc.rip, dq user_entry_2
+	at proc.rflags, dq RFLAGS_IF
+	at proc.flags, dq (1 << PROC_FASTRET)
+	at proc.cr3, dq 0xa000
+iend
+
+; note to self:
+; callee-save: rbp, rbx, r12-r15
+; caller-save: rax, rcx, rdx, rsi, rdi, r8-r11
+; rsp must be restored when returning (obviously...)
+
+; return value: rax, rdx (or by adding out-parameter)
+
+; arguments: rdi, rsi, rdx, rcx (r10 in syscall), r8, r9
+
+; arg0/rdi = process-struct pointer
+; arg1/rsi = entry-point
+; returns process-struct pointer in rax
+; all "saved" registers are set to 0, except rip and rflags - use other
+; functions to e.g. set the address space and link the proc. into the runqueue
+init_proc:
+	mov	rdx,rcx
+	; rdi = proc
+	; rdx = entry-point
+	mov	cl,proc_size / 8
+	movzx	rcx,cl
+	xor	rax,rax
+	rep stosq
+	mov	[rdi-proc_size+proc.rip],rdx
+	; bit 1 of byte 1 of rflags: the IF bit
+	; all other bits are set to 0 by default
+	mov	byte [rdi-proc_size+proc.rflags+1], RFLAGS_IF >> 8
+	lea	rax, [rdi-proc_size]
+	ret
+
+; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
+switch_to:
+	cli	; I don't dare running this thing with interrupts enabled.
+
+	; Make sure we don't invalidate the TLB if we don't have to.
+	mov	rcx, [rax+proc.cr3]
+	mov	rbx, cr3
+	cmp	rbx, rcx
+	je	.no_set_cr3
+	mov	cr3, rcx
+.no_set_cr3:
+
+	mov	rbx, [rax+proc.flags]
+	bt	rbx, PROC_KERNEL
+	jnc	.user_exit
+
+	; Exit to kernel thread
+	; If we don't need to switch rsp this should be easier - restore all
+	; regs, rflags, push new cs and do a near return
+	push	qword data64_seg
+	push	qword [rax+proc.rsp]
+	push	qword [rax+proc.rflags]
+	push	qword code64_seg
+	jmp	.restore_and_iretq
+
+.user_exit:
+	; If we stop disabling interrupts above, this will be wildly unsafe.
+	; For now, we rely on the flags-restoring part below to atomically
+	; restore flags and go to user mode. The risk is if we switch "from
+	; kernel" while having the user GS loaded!
 	swapgs
+	bt	rbx, PROC_FASTRET
+	jc	.fast_ret
+
+; push cs before this
+	; Push stuff for iretq
+	push	qword user_ds
+	push	qword [rax+proc.rsp]
+	push	qword [rax+proc.rflags]
+	push	qword user_cs
+.restore_and_iretq:
+	push	qword [rax+proc.rip]
+	; rax is first, but we'll take it last...
+	lea	rsi, [rax+proc.rax+8]
+
+%macro lodregs 1-*
+	%rep %0
+	%ifidni %1,skip
+	lea	rsi,[rsi+4]
+	%elifidni %1,rsi
+	%error rsi is in use by this macro
+	%elifidni %1,rax
+	%error rax is in use by this macro
+	%else
+	lodsq
+	mov	%1,rax
+	%endif
+	%rotate 1
+	%endrep
+%endmacro
+
+	;.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
+	; skip rsp (iret will fix that) and rsi (we're still using it for the lodsqs, for now)
+	lodregs	rcx,rdx,rbx,SKIP,rbp,SKIP,rdi,r8,r9,r10,r11,r12,r13,r14,r15
+	mov	rax, [rsi-proc.endregs+proc.rax]
+	mov	rsi, [rsi-proc.endregs+proc.rsi]
+	iretq
+
+.fast_ret:
+	mov	rsp, [rax+proc.rsp]
+	mov	rcx, [rax+proc.rip]
+	mov	r11, [rax+proc.rflags]
+	mov	rax, [rax+proc.rax]
 	o64 sysret
+
+; End switch
 
 user_entry:
 	xor	eax,eax
@@ -376,6 +523,12 @@ user_entry:
 	jne	.loop
 	jmp	.notchanged
 
+user_entry_2:
+	mov	bl,'2'
+	xor	eax,eax
+	syscall
+	jmp	user_entry_2
+
 not_long:
 	jmp	$
 
@@ -383,8 +536,9 @@ handler_err:
 	add	rsp,8
 handler_no_err:
 	push	rax
+	; FIXME If we got here by interrupting kernel code, don't swapgs
 	swapgs
-	inc	byte [gs:32]
+	inc	qword [gs:32]
 	mov	eax, dword [0xe390]
 	mov	dword [gs:36], eax
 	mov	dword [0xe380],10000 ; APICTI
@@ -399,6 +553,14 @@ syscall_entry_compat:
 syscall_entry:
 	; r11 = old rflags
 	; rcx = old rip
+	; rax = syscall number, rax = return value (error code)
+
+	; interrupts are disabled the whole time, TODO enable interrupts after switching GS and stack
+
+	; TODO Update to match linux syscall clobbering convention:
+	; - which regs have to be callee-saved?
+	; - reset non-saved registers to 0 to avoid leaking information
+	; - switch_to must know to restore callee-saved registers
 
 	swapgs
 	mov	[gs:0], rsp
@@ -411,6 +573,8 @@ syscall_entry:
 	jz	.syscall_write
 	cmp	eax,1
 	je	.syscall_gettime
+	cmp	eax,2
+	je	.syscall_yield
 
 .syscall_exit:
 	pop	rdi
@@ -455,8 +619,19 @@ syscall_entry:
 	jmp	.finish_write
 
 .syscall_gettime:
-	mov	al,byte [gs:rax+31] ; ax=1 when we get here
+	movzx	rax,byte [gs:rax+31] ; ax=1 when we get here
 	jmp	.syscall_exit
+
+.syscall_yield:
+	; TODO
+	; - Save enough state for a future FASTRET to simulate the right kind of
+	; return:
+	;   - Move saved callee-save registers from stack to PCB
+	;   - Save rcx as .rip, r11 as .rflags
+	; - Pop next process from run-queue
+	; - Put old process at end of run-queue
+	; - Load next-process pointer into rax
+	jmp	switch_to
 
 	times 4096-($-$$) db 0
 __DATA__:
