@@ -102,6 +102,10 @@ PROC_FASTRET	equ	1
 
 RFLAGS_IF	equ	(1 << 9)
 
+SYSCALL_WRITE	equ	0
+SYSCALL_GETTIME	equ	1
+SYSCALL_YIELD	equ	2
+
 start:
 	mov	ax,cs
 	mov	ds,ax
@@ -499,24 +503,24 @@ user_entry:
 	syscall
 
 .loop:
-	mov	al,1
+	mov	al,SYSCALL_GETTIME
 	movzx	eax,al
 	syscall
 	movzx	ebx,al
-	xor	eax,eax
+	xor	eax,eax ; SYSCALL_WRITE
 	syscall
 
 	mov	bl,10
 	movzx	ebx,bl
 	syscall
 
-	mov	al,1
+	mov	al,SYSCALL_GETTIME
 	movzx	eax,al
 	syscall
 	mov	edx,eax
 .notchanged:
 	;hlt
-	mov	al,1
+	mov	al,SYSCALL_GETTIME
 	movzx	eax,al
 	syscall
 	cmp	al,dl
@@ -569,11 +573,11 @@ syscall_entry:
 	push	rdx
 	push	rbx
 	push	rdi
-	test	rax,rax
-	jz	.syscall_write
-	cmp	eax,1
+	cmp	eax,SYSCALL_WRITE
+	je	.syscall_write
+	cmp	eax,SYSCALL_GETTIME
 	je	.syscall_gettime
-	cmp	eax,2
+	cmp	eax,SYSCALL_YIELD
 	je	.syscall_yield
 
 .syscall_exit:
