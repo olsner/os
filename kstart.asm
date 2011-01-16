@@ -489,31 +489,31 @@ user_entry:
 	xor	eax,eax
 
 	mov	bl,'U'
-	movzx	ebx,bl
+	movzx	edi,bl
 	syscall
 
 	mov	bl,10
-	movzx	ebx,bl
+	movzx	edi,bl
 	syscall
 
 	mov	bl,'V'
-	movzx	ebx,bl
+	movzx	edi,bl
 	syscall
 
 	mov	bl,10
-	movzx	ebx,bl
+	movzx	edi,bl
 	syscall
 
 .loop:
 	mov	al,SYSCALL_GETTIME
 	movzx	eax,al
 	syscall
-	movzx	ebx,al
+	movzx	edi,al
 	xor	eax,eax ; SYSCALL_WRITE
 	syscall
 
 	mov	bl,10
-	movzx	ebx,bl
+	movzx	edi,bl
 	syscall
 
 	mov	al,SYSCALL_GETTIME
@@ -531,6 +531,7 @@ user_entry:
 
 user_entry_2:
 	mov	bl,'2'
+	movzx	edi,bl
 	xor	eax,eax
 	syscall
 	jmp	user_entry_2
@@ -556,6 +557,15 @@ handler_no_err:
 syscall_entry_compat:
 	ud2
 
+; note to self:
+; callee-save: rbp, rbx, r12-r15
+; caller-save: rax, rcx, rdx, rsi, rdi, r8-r11
+; rsp must be restored when returning (obviously...)
+
+; return value: rax, rdx (or by adding out-parameter)
+
+; arguments: rdi, rsi, rdx, rcx (r10 in syscall), r8, r9
+
 syscall_entry:
 	; r11 = old rflags
 	; rcx = old rip
@@ -564,8 +574,8 @@ syscall_entry:
 	; interrupts are disabled the whole time, TODO enable interrupts after switching GS and stack
 
 	; TODO Update to match linux syscall clobbering convention:
-	; - which regs have to be callee-saved?
 	; - reset non-saved registers to 0 to avoid leaking information
+	; - save callee-saved registers in process struct when yielding
 	; - switch_to must know to restore callee-saved registers
 
 	swapgs
@@ -589,12 +599,13 @@ syscall_entry:
 
 	; Syscall #0: write byte to screen
 .syscall_write:
-	xchg	eax,ebx ; put the byte in eax instead of ebx, ebx now = 0
+	mov	eax, edi ; put the byte in eax instead of edi, edi now = 0
+	xor	rdx, rdx
 
-	mov	rdi, [gs:rbx+16] ; current pointer
+	mov	rdi, [gs:rdx+16] ; current pointer
 	;mov	rbx, [gs:24] ; end of screen
-	cmp	rdi, [gs:rbx+24] ; end of screen
-	cmovge	rdi, [gs:rbx+8] ; beginning of screen, if current >= end
+	cmp	rdi, [gs:rdx+24] ; end of screen
+	cmovge	rdi, [gs:rdx+8] ; beginning of screen, if current >= end
 
 	cmp	al,10
 	je .newline
