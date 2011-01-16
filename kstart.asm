@@ -320,7 +320,7 @@ start64:
 	wrmsr
 
 	inc	ecx ; c000_0083h - CSTAR
-	mov	eax,syscall_entry ;_compat
+	mov	eax,syscall_entry_compat
 	cdq
 	wrmsr
 
