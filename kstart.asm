@@ -108,6 +108,10 @@ SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
 SYSCALL_YIELD	equ	2
 
+%macro zero 1
+	xor %1,%1
+%endmacro
+
 start:
 	mov	ax,cs
 	mov	ds,ax
@@ -591,6 +595,16 @@ syscall_entry:
 	je	.syscall_yield
 
 .sysret:
+	; Be paranoid and evil - explicitly clear everything that we could have
+	; ever clobbered.
+	; rax, rcx, r11 are also in this list, but are used for return, rip and rflags respectively.
+	zero	rdx ; If we start returning more than one 64-bit value
+	zero	rsi
+	zero	rdi
+	zero	r8
+	zero	r9
+	zero	r10
+
 	pop	rcx
 	mov	rsp, [gs:0]
 	swapgs
