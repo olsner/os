@@ -580,9 +580,9 @@ syscall_entry:
 
 	swapgs
 	mov	[gs:0], rsp
+	; Hardcoded kernel stack
 	mov	esp, 0x10000
 	push	rcx
-	push	rbx
 	cmp	eax, SYSCALL_WRITE
 	je	.syscall_write
 	cmp	eax, SYSCALL_GETTIME
@@ -591,7 +591,6 @@ syscall_entry:
 	je	.syscall_yield
 
 .sysret:
-	pop	rbx
 	pop	rcx
 	mov	rsp, [gs:0]
 	swapgs
@@ -603,7 +602,7 @@ syscall_entry:
 	xor	rdx, rdx
 
 	mov	rdi, [gs:rdx+16] ; current pointer
-	;mov	rbx, [gs:24] ; end of screen
+	;mov	___, [gs:24] ; end of screen
 	cmp	rdi, [gs:rdx+24] ; end of screen
 	cmovge	rdi, [gs:rdx+8] ; beginning of screen, if current >= end
 
@@ -620,8 +619,8 @@ syscall_entry:
 	mov	rax, rdi
 	sub	rax, [gs:8] ; Result fits in 16 bits.
 	cwd
-	mov	bx, 160
-	div	bx
+	mov	si, 160
+	div	si
 	; dx now has the remainder
 	mov	ecx,160
 	sub	cx,dx
