@@ -56,7 +56,9 @@ code64_seg	equ	24
 data64_seg	equ	32
 tss64_seg	equ	40
 user_code_seg	equ	56
-user_cs		equ	user_code_seg | 11b
+; code32_user	equ	56
+; data32_user	equ	64
+user_cs		equ	user_code_seg+16 | 11b
 user_ds		equ	user_cs+8
 
 %macro define_gate64 3 ; code-seg, offset, flags
