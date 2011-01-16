@@ -517,13 +517,13 @@ user_entry:
 	mov	al,SYSCALL_GETTIME
 	movzx	eax,al
 	syscall
-	mov	edx,eax
+	mov	ebp,eax
 .notchanged:
 	;hlt
 	mov	al,SYSCALL_GETTIME
 	movzx	eax,al
 	syscall
-	cmp	al,dl
+	cmp	al,bpl
 	jne	.loop
 	jmp	.notchanged
 
@@ -570,7 +570,6 @@ syscall_entry:
 	mov	[gs:0], rsp
 	mov	esp, 0x10000
 	push	rcx
-	push	rdx
 	push	rbx
 	push	rdi
 	cmp	eax,SYSCALL_WRITE
@@ -583,7 +582,6 @@ syscall_entry:
 .syscall_exit:
 	pop	rdi
 	pop	rbx
-	pop	rdx
 	pop	rcx
 	mov	rsp, [gs:0]
 	swapgs
