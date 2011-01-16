@@ -1,3 +1,9 @@
 /boot
 /bootfs.img
 /disk.dat
+/cpuid
+/rflags
+/genromfs-0.5.2
+
+.*.swp
+.DS_Store
