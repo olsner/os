@@ -571,14 +571,14 @@ syscall_entry:
 	mov	esp, 0x10000
 	push	rcx
 	push	rbx
-	cmp	eax,SYSCALL_WRITE
+	cmp	eax, SYSCALL_WRITE
 	je	.syscall_write
-	cmp	eax,SYSCALL_GETTIME
+	cmp	eax, SYSCALL_GETTIME
 	je	.syscall_gettime
-	cmp	eax,SYSCALL_YIELD
+	cmp	eax, SYSCALL_YIELD
 	je	.syscall_yield
 
-.syscall_exit:
+.sysret:
 	pop	rbx
 	pop	rcx
 	mov	rsp, [gs:0]
@@ -602,7 +602,7 @@ syscall_entry:
 .finish_write:
 	xor	eax,eax
 	mov	[gs:rax+16], rdi ; new pointer, after writing
-	jmp	short .syscall_exit
+	jmp	short .sysret
 .newline:
 	mov	rax, rdi
 	sub	rax, [gs:8] ; Result fits in 16 bits.
@@ -620,7 +620,7 @@ syscall_entry:
 
 .syscall_gettime:
 	movzx	rax,byte [gs:rax+31] ; ax=1 when we get here
-	jmp	.syscall_exit
+	jmp	.sysret
 
 .syscall_yield:
 	; TODO
