@@ -571,7 +571,6 @@ syscall_entry:
 	mov	esp, 0x10000
 	push	rcx
 	push	rbx
-	push	rdi
 	cmp	eax,SYSCALL_WRITE
 	je	.syscall_write
 	cmp	eax,SYSCALL_GETTIME
@@ -580,7 +579,6 @@ syscall_entry:
 	je	.syscall_yield
 
 .syscall_exit:
-	pop	rdi
 	pop	rbx
 	pop	rcx
 	mov	rsp, [gs:0]
