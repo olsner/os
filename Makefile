@@ -15,14 +15,14 @@ HUSH_CC=@echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 endif
 
-all: shaman cpuid
+all: shaman cpuid rflags
 
 shaman: disk.dat
 
 clean:
 	rm -f bootfs.img disk.dat
 	rm -f boot/boot.b boot/kstart.b
-	rm -f cpuid
+	rm -f cpuid rflags
 
 %: %.cpp
 	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -o $@ $<
