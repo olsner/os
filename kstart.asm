@@ -651,11 +651,12 @@ syscall:
 .syscall_write:
 	mov	eax, edi ; put the byte in eax instead of edi, edi now = 0
 	zero	edx
+	mov	rdx, [gs:rdx+gseg.self]
 
-	mov	rdi, [gs:rdx+gseg.vga_pos] ; current pointer
+	mov	rdi, [rdx+gseg.vga_pos] ; current pointer
 	;mov	___, [gs:24] ; end of screen
-	cmp	rdi, [gs:rdx+gseg.vga_end] ; end of screen
-	cmovge	rdi, [gs:rdx+gseg.vga_base] ; beginning of screen, if current >= end
+	cmp	rdi, [rdx+gseg.vga_end] ; end of screen
+	cmovge	rdi, [rdx+gseg.vga_base] ; beginning of screen, if current >= end
 
 	cmp	al,10
 	je .newline
@@ -686,8 +687,11 @@ syscall:
 	jmp	.sysret
 
 .syscall_yield:
+	xor	edi,edi
+	mov	rdi, [gs:rdi+gseg.self]
+
 	; - Load current process pointer into rax
-	mov	rax,[gs:gseg.process]
+	mov	rax,[rdi+gseg.process]
 
 	; - Save enough state for a future FASTRET to simulate the right kind of
 	; return:
@@ -701,7 +705,7 @@ syscall:
 	save_regs rbp,rbx,r12,r13,r14,r15
 
 	; - Load next-process pointer, bail out back to normal return if equal
-	mov	rdx, [gs:gseg.runqueue]
+	mov	rdx, [rdi+gseg.runqueue]
 	; Same process on runqueue? (Probably really an error.)
 	cmp	rdx,rax
 	je	.no_yield
@@ -717,7 +721,7 @@ syscall:
 
 	; Get the stack pointer, save it for when we return.
 	; TODO We should store it directly in the right place in the prologue.
-	mov	rbx, [gs:gseg.user_rsp]
+	mov	rbx, [rdi+gseg.user_rsp]
 	mov	[rax+proc.rsp], rbx
 
 	; The rcx we pushed in the prologue
@@ -730,7 +734,7 @@ syscall:
 	xchg	rax,rdx
 
 	; - Put old process at end of run-queue
-	mov	rcx, [gs:gseg.runqueue_last]
+	mov	rcx, [rdi+gseg.runqueue_last]
 	; rcx = last, rax = next, rdx = current/new last
 	; note: we've already checked that the runqueue is not empty, so we
 	; must have a last-pointer too.
@@ -739,7 +743,7 @@ syscall:
 
 	; - Unqueue next-process
 	mov	rcx, [rax+proc.next]
-	mov	[gs:gseg.runqueue], rcx
+	mov	[rdi+gseg.runqueue], rcx
 	; - Load next-process pointer into rax
 	xor	rdx,rdx
 	mov	[rax+proc.next],rdx ; Clear next-pointer since we're not linked anymore.
