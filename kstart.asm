@@ -372,21 +372,25 @@ start64:
 	; after this, ebx should be address to video memory and edi points to
 	; the gs-segment data block
 	mov	edi,eax
-	mov	rax,rsp
-	stosq ; gs:0 - user-mode stack seg ; TODO current process...
+	stosq ; gs:0 - selfpointer
 	mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
-	lea	eax,[eax+32]
+	lea	eax,[eax+32] ; 32 means start 16 characters into the first line
 	stosq ; gs:16 - VGA writing position
 	lea	eax,[eax+80*25*2-32]
 	stosq ; gs:24 - VGA buffer end
 	xor	eax,eax
-	stosq ; gs:32 - current time
-	stosq ; gs:40 - current process
+	stosq ; gs:32/36 - current time (and tick)
+	mov	eax,esp
+	stosq ; gs:40 - user-mode stack seg
+	zero	eax
+	stosq ; gs:48 - current process
+	lea	rax,[rel user_proc_2]
 	stosq ; gs:48 - runqueue
-	stosq ; gs:56 - idle queue
+	stosq ; gs:56 - runqueue_last
 
 	lea	rax,[rel user_proc_1]
+	mov	[rdi-gseg_size+gseg.process], rax ; Store pointer to process in gs:48
 	jmp	switch_to
 
 user_proc_1:
@@ -572,9 +576,9 @@ handler_no_err:
 	push	rax
 	; FIXME If we got here by interrupting kernel code, don't swapgs
 	swapgs
-	inc	qword [gs:32]
+	inc	dword [gs:gseg.curtime]
 	mov	eax, dword [0xe390]
-	mov	dword [gs:36], eax
+	mov	dword [gs:gseg.tick], eax
 	mov	dword [0xe380],10000 ; APICTI
 	mov	dword [0xe0b0],0 ; EndOfInterrupt
 	swapgs
@@ -606,7 +610,7 @@ syscall_entry:
 	; - switch_to must know to restore callee-saved registers
 
 	swapgs
-	mov	[gs:0], rsp
+	mov	[gs:gseg.user_rsp], rsp
 	; Hardcoded kernel stack
 	mov	esp, 0x10000
 	push	rcx
@@ -629,7 +633,7 @@ syscall_entry:
 	zero	r10
 
 	pop	rcx
-	mov	rsp, [gs:0]
+	mov	rsp, [gs:gseg.user_rsp]
 	swapgs
 	o64 sysret
 
@@ -638,10 +642,10 @@ syscall_entry:
 	mov	eax, edi ; put the byte in eax instead of edi, edi now = 0
 	xor	rdx, rdx
 
-	mov	rdi, [gs:rdx+16] ; current pointer
+	mov	rdi, [gs:rdx+gseg.vga_pos] ; current pointer
 	;mov	___, [gs:24] ; end of screen
-	cmp	rdi, [gs:rdx+24] ; end of screen
-	cmovge	rdi, [gs:rdx+8] ; beginning of screen, if current >= end
+	cmp	rdi, [gs:rdx+gseg.vga_end] ; end of screen
+	cmovge	rdi, [gs:rdx+gseg.vga_base] ; beginning of screen, if current >= end
 
 	cmp	al,10
 	je .newline
@@ -650,12 +654,12 @@ syscall_entry:
 	stosw
 .finish_write:
 	xor	eax,eax
-	mov	[gs:rax+16], rdi ; new pointer, after writing
+	mov	[gs:rax+gseg.vga_pos], rdi ; new pointer, after writing
 	jmp	short .sysret
 .newline:
 	mov	rax, rdi
-	sub	rax, [gs:8] ; Result fits in 16 bits.
-	cwd
+	sub	rax, [gs:gseg.vga_base] ; Result fits in 16 bits.
+	cwd ; ax -> dx:ax
 	mov	si, 160
 	div	si
 	; dx now has the remainder
@@ -668,7 +672,7 @@ syscall_entry:
 	jmp	.finish_write
 
 .syscall_gettime:
-	movzx	rax,byte [gs:rax+31] ; ax=1 when we get here
+	movzx	rax,byte [gs:rax+gseg.curtime-1] ; ax=1 when we get here
 	jmp	.sysret
 
 .syscall_yield:
