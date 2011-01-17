@@ -507,6 +507,9 @@ switch_to:
 	mov	rsi, [rsi-proc.endregs+proc.rsi]
 	iretq
 
+	; For a slightly slower "fast" return, also restore callee-save regs.
+	; IPC:s will have a specific calling convention (which probably only defines r11 and rcx)
+	;lodregs rbp,rbx,r12,r13,r14,r15
 .fast_ret:
 	mov	rsp, [rax+proc.rsp]
 	mov	rcx, [rax+proc.rip]
