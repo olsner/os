@@ -676,15 +676,69 @@ syscall_entry:
 	jmp	.sysret
 
 .syscall_yield:
-	; TODO
+	; - Load current process pointer into rax
+	mov	rax,[gs:gseg.process]
+
 	; - Save enough state for a future FASTRET to simulate the right kind of
 	; return:
 	;   - Move saved callee-save registers from stack to PCB
-	;   - Save rcx as .rip, r11 as .rflags
-	; - Pop next process from run-queue
+%macro save_regs 1-*
+%rep %0
+	mov qword [rax+proc.%+ %1], %1
+	%rotate 1
+%endrep
+%endmacro
+	save_regs rbp,rbx,r12,r13,r14,r15
+
+	; - Load next-process pointer, bail out back to normal return if equal
+	mov	rdx, [gs:gseg.runqueue]
+	; Same process on runqueue? (Probably really an error.)
+	cmp	rdx,rax
+	je	.no_yield
+	; Ran out of runnable processes?
+	test	rdx,rdx
+	jz	.no_yield
+
+	; callee-save stuff is now saved and we can happily clobber!
+
+	; Return value: always 0 for yield
+	xor	rbx,rbx
+	mov	[rax+proc.rax], rbx
+
+	; Get the stack pointer, save it for when we return.
+	; TODO We should store it directly in the right place in the prologue.
+	mov	rbx, [gs:gseg.user_rsp]
+	mov	[rax+proc.rsp], rbx
+
+	; The rcx we pushed in the prologue
+	pop	qword [rax+proc.rip]
+	mov	[rax+proc.rflags], r11
+
+	; Set the fast return flag to return quickly after the yield
+	bts	qword [rax+proc.flags], PROC_FASTRET
+
+	xchg	rax,rdx
+
 	; - Put old process at end of run-queue
+	mov	rcx, [gs:gseg.runqueue_last]
+	; rcx = last, rax = next, rdx = current/new last
+	; note: we've already checked that the runqueue is not empty, so we
+	; must have a last-pointer too.
+	mov	[rcx+proc.next], rdx
+	mov	[gs:gseg.runqueue_last], rdx
+
+	; - Unqueue next-process
+	mov	rcx, [rax+proc.next]
+	mov	[gs:gseg.runqueue], rcx
 	; - Load next-process pointer into rax
+	xor	rdx,rdx
+	mov	[rax+proc.next],rdx ; Clear next-pointer since we're not linked anymore.
+
 	jmp	switch_to
+
+.no_yield:
+	xor	rax,rax
+	jmp	.sysret
 
 	times 4096-($-$$) db 0
 __DATA__:
