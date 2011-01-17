@@ -81,8 +81,15 @@ struc	proc
 
 	; Aliases for offsets into regs
 	.rax	equ	.regs+(0*8)
+	.rbx	equ	.regs+(3*8)
 	.rsp	equ	.regs+(4*8)
+	.rbp	equ	.regs+(5*8)
 	.rsi	equ	.regs+(6*8)
+	%assign i 8
+	%rep 8
+	.r%+i	equ	.regs+(i*8)
+	%assign i i+1
+	%endrep
 
 	.rip	resq 1
 	.endregs equ .rip
@@ -107,6 +114,22 @@ RFLAGS_IF	equ	(1 << 9)
 SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
 SYSCALL_YIELD	equ	2
+
+struc	gseg
+	; Pointer to self
+	.self	resq	1
+	.vga_base	resq 1
+	.vga_pos	resq 1
+	.vga_end	resq 1
+	
+	.curtime	resd 1
+	.tick		resd 1
+
+	.user_rsp	resq 1
+	.process	resq 1
+	.runqueue	resq 1
+	.runqueue_last	resq 1
+endstruc
 
 %macro zero 1
 	xor %1,%1
