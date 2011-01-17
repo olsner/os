@@ -21,7 +21,7 @@ shaman: disk.dat
 
 clean:
 	rm -f bootfs.img disk.dat
-	rm -f boot/boot.b boot/kstart.b
+	rm -f boot/boot.b boot/kstart.b boot.lst kstart.lst
 	rm -f cpuid rflags
 
 %: %.cpp
@@ -29,7 +29,7 @@ clean:
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
-	$(HUSH_ASM) nasm -w+all -Ox -f bin $< -o $@
+	$(HUSH_ASM) nasm -w+all -Ox -f bin $< -o $@ -l $*.lst
 
 bootfs.img: boot/kstart.b
 	genromfs -f bootfs.img -d boot -a 512 -x boot.b
