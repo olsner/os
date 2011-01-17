@@ -208,7 +208,7 @@ start32:
 	mov	eax, 0xb005 ; 0xb000 is where the PDP starts
 	stosd
 
-	xor	eax,eax
+	zero	eax
 	mov	ecx, 0x03ff ; number of zero double-words in PML4
 	rep stosd
 
@@ -344,7 +344,7 @@ start64:
 	wrmsr
 
 	inc	ecx ; c000_0082h - LSTAR
-	mov	eax,syscall_entry
+	mov	eax,syscall.entry
 	cdq
 	wrmsr
 
@@ -353,7 +353,7 @@ start64:
 	cdq
 	wrmsr
 
-	inc	ecx ; x000_0084h - SF_MASK
+	inc	ecx ; c000_0084h - SF_MASK
 	mov	eax, (1 << 9) | (1 << 17)
 	cdq
 	wrmsr
@@ -430,7 +430,7 @@ init_proc:
 	; rdx = entry-point
 	mov	cl,proc_size / 8
 	movzx	rcx,cl
-	xor	rax,rax
+	xor	eax,eax
 	rep stosq
 	mov	[rdi-proc_size+proc.rip],rdx
 	; bit 1 of byte 1 of rflags: the IF bit
@@ -606,7 +606,8 @@ syscall_entry_compat:
 
 ; arguments: rdi, rsi, rdx, rcx (r10 in syscall), r8, r9
 
-syscall_entry:
+syscall:
+.entry:
 	; r11 = old rflags
 	; rcx = old rip
 	; rax = syscall number, rax = return value (error code)
@@ -634,9 +635,9 @@ syscall_entry:
 	; Be paranoid and evil - explicitly clear everything that we could have
 	; ever clobbered.
 	; rax, rcx, r11 are also in this list, but are used for return, rip and rflags respectively.
-	zero	rdx ; If we start returning more than one 64-bit value
-	zero	rsi
-	zero	rdi
+	zero	edx ; If we start returning more than one 64-bit value
+	zero	esi
+	zero	edi
 	zero	r8
 	zero	r9
 	zero	r10
@@ -649,7 +650,7 @@ syscall_entry:
 	; Syscall #0: write byte to screen
 .syscall_write:
 	mov	eax, edi ; put the byte in eax instead of edi, edi now = 0
-	xor	rdx, rdx
+	zero	edx
 
 	mov	rdi, [gs:rdx+gseg.vga_pos] ; current pointer
 	;mov	___, [gs:24] ; end of screen
