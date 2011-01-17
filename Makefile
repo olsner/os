@@ -27,6 +27,9 @@ clean:
 %: %.cpp
 	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -o $@ $<
 
+%: %.c
+	$(HUSH_CC) $(CC) $(CXXFLAGS) -o $@ $<
+
 boot/%.b: %.asm
 	@mkdir -p $(@D)
 	$(HUSH_ASM) nasm -w+all -Ox -f bin $< -o $@ -l $*.lst
