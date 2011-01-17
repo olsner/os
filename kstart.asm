@@ -76,7 +76,7 @@ GATE_TYPE_INTERRUPT	equ	0000_1110b
 ; Among other(?) things, a task gate leaves EFLAGS.IF unchanged when invoking the gate
 GATE_TYPE_TASK		equ	0000_1111b
 
-struc	proc
+struc	proc, -0x80
 	.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
 
 	; Aliases for offsets into regs
@@ -385,11 +385,11 @@ start64:
 	stosq ; gs:40 - user-mode stack seg
 	zero	eax
 	stosq ; gs:48 - current process
-	lea	rax,[rel user_proc_2]
+	lea	rax,[rel user_proc_2-proc]
 	stosq ; gs:48 - runqueue
 	stosq ; gs:56 - runqueue_last
 
-	lea	rax,[rel user_proc_1]
+	lea	rax,[rel user_proc_1-proc]
 	mov	[rdi-gseg_size+gseg.process], rax ; Store pointer to process in gs:48
 	jmp	switch_to
 
