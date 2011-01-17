@@ -732,21 +732,46 @@ syscall:
 	bts	qword [rax+proc.flags], PROC_FASTRET
 
 	xchg	rax,rdx
+	; Now NEXT (switching to) is in rax, and OLD (switching from) is in rdx
+	; runqueue_last points to LAST
+	; runqueue currently points to NEXT
+
+	; After switch:
+	; rax -> NEXT
+	; [rdx -> OLD]
+	; runqueue -> NEXT->next or OLD if NEXT->next = NULL
+	; runqueue_last -> OLD
+	; LAST->next -> OLD, or NULL if LAST == NEXT
+	; OLD->next -> NULL
+	; NEXT->next -> NULL
 
 	; - Put old process at end of run-queue
 	mov	rcx, [rdi+gseg.runqueue_last]
+	mov	[rdi+gseg.runqueue_last], rdx ; runqueue_last = OLD
+
 	; rcx = last, rax = next, rdx = current/new last
 	; note: we've already checked that the runqueue is not empty, so we
 	; must have a last-pointer too.
-	mov	[rcx+proc.next], rdx
-	mov	[gs:gseg.runqueue_last], rdx
+	xor	esi,esi
 
+	; LAST->next = (LAST == NEXT ? NULL : OLD)
+	mov	rbx,rcx
+	cmp	rcx,rax ; if LAST == NEXT, we want to store NULL instead of OLD
+	cmove	rbx,rsi
+	mov	[rcx+proc.next], rbx
+
+	; runqueue = (NEXT->next ? NEXT->next : OLD)
 	; - Unqueue next-process
 	mov	rcx, [rax+proc.next]
+	test	rcx,rcx
+	cmovz	rcx,rdx
 	mov	[rdi+gseg.runqueue], rcx
+
 	; - Load next-process pointer into rax
-	xor	rdx,rdx
-	mov	[rax+proc.next],rdx ; Clear next-pointer since we're not linked anymore.
+	xor	ecx,ecx
+	; OLD->next = NEXT->next = NULL (OLD because it's the tail of the list, NEXT because it's now unlinked)
+	mov	[rax+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
+	mov	[rdx+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 
 	jmp	switch_to
 
