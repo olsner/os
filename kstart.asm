@@ -536,6 +536,13 @@ user_entry:
 	syscall
 
 .loop:
+	mov	bl,'Y'
+	movzx	edi,bl
+	syscall
+	mov	al,SYSCALL_YIELD
+	movzx	eax,al
+	syscall
+
 	mov	al,SYSCALL_GETTIME
 	movzx	eax,al
 	syscall
@@ -564,6 +571,8 @@ user_entry_2:
 	mov	bl,'2'
 	movzx	edi,bl
 	xor	eax,eax
+	syscall
+	add	eax,SYSCALL_YIELD
 	syscall
 	jmp	user_entry_2
 
