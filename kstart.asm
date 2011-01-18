@@ -382,7 +382,6 @@ start64:
 	stosq ; gs:56 - runqueue_last
 
 	lea	rax,[rel user_proc_1-proc]
-	mov	[rdi-gseg_size+gseg.process], rax ; Store pointer to process in gs:48
 	jmp	switch_to
 
 user_proc_1:
@@ -432,8 +431,14 @@ init_proc:
 	ret
 
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
+; All registers other than rax will be ignored, trampled, and replaced with the
+; new stuff from the switched-to process
 switch_to:
 	cli	; I don't dare running this thing with interrupts enabled.
+
+	; Update pointer to current process
+	xor	edi,edi
+	mov	[gs:rdi+gseg.process], rax
 
 	; Make sure we don't invalidate the TLB if we don't have to.
 	mov	rcx, [rax+proc.cr3]
