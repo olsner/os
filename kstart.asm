@@ -110,6 +110,7 @@ PROC_KERNEL	equ	0
 PROC_FASTRET	equ	1
 
 RFLAGS_IF	equ	(1 << 9)
+RFLAGS_VM	equ	(1 << 17)
 
 SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
@@ -354,7 +355,7 @@ start64:
 	wrmsr
 
 	inc	ecx ; c000_0084h - SF_MASK
-	mov	eax, (1 << 9) | (1 << 17)
+	mov	eax, RFLAGS_IF | RFLAGS_VM
 	cdq
 	wrmsr
 
