@@ -522,57 +522,43 @@ switch_to:
 user_entry:
 	xor	eax,eax
 
-	mov	bl,'U'
-	movzx	edi,bl
+	mov	edi,'U'
 	syscall
-
-	mov	bl,10
-	movzx	edi,bl
+	mov	edi,10
 	syscall
-
-	mov	bl,'V'
-	movzx	edi,bl
+	mov	edi,'V'
 	syscall
-
-	mov	bl,10
-	movzx	edi,bl
+	mov	edi,10
 	syscall
 
 .loop:
-	mov	bl,'Y'
-	movzx	edi,bl
+	mov	edi,'Y'
 	syscall
-	mov	al,SYSCALL_YIELD
-	movzx	eax,al
+	mov	eax,SYSCALL_YIELD
 	syscall
 
-	mov	al,SYSCALL_GETTIME
-	movzx	eax,al
+	mov	eax,SYSCALL_GETTIME
 	syscall
 	movzx	edi,al
 	xor	eax,eax ; SYSCALL_WRITE
 	syscall
 
-	mov	bl,10
-	movzx	edi,bl
+	mov	edi,10
 	syscall
 
-	mov	al,SYSCALL_GETTIME
-	movzx	eax,al
+	mov	eax,SYSCALL_GETTIME
 	syscall
 	mov	ebp,eax
 .notchanged:
 	;hlt
-	mov	al,SYSCALL_GETTIME
-	movzx	eax,al
+	mov	eax,SYSCALL_GETTIME
 	syscall
 	cmp	al,bpl
 	jne	.loop
 	jmp	.notchanged
 
 user_entry_2:
-	mov	bl,'2'
-	movzx	edi,bl
+	mov	edi,'2'
 	xor	eax,eax
 	syscall
 	add	eax,SYSCALL_YIELD
