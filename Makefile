@@ -28,7 +28,7 @@ clean:
 	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -o $@ $<
 
 %: %.c
-	$(HUSH_CC) $(CC) $(CXXFLAGS) -o $@ $<
+	$(HUSH_CC) $(CC) $(CFLAGS) -o $@ $<
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
