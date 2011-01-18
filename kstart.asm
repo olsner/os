@@ -524,6 +524,7 @@ user_entry:
 	syscall
 
 .loop:
+	xor	eax,eax
 	mov	edi,'Y'
 	syscall
 	mov	eax,SYSCALL_YIELD
