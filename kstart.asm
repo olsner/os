@@ -250,11 +250,6 @@ start32:
 	stosd
 	loop	.loop
 
-	; Provide an identity mapping for VGA memory
-	add	di, (((0xb8000-0x18000) >> 12) << 3) + 4
-	add	eax, 0x1000+0xb8000-0x18000
-	stosd
-
 	; Page mapping for kernel space (top 4TB part)
 	mov	edi,0x11000
 	xor	eax,eax
@@ -293,20 +288,14 @@ start64:
 	mov	ds,ax
 	mov	ss,ax
 
-	mov	edi,0xb8004
-	; Just do something silly that should fail if we weren't in long mode
-	shl	rdi,32
-	test	edi,edi
-	jnz	not_long
-	shr	rdi,32
-	; Then proceed to write a message
-	mov	esi,message
-	mov	ecx,2
-	rep movsq
+	lea	rdi,[rel 0xb8004]
+	lea	rsi,[rel message]
+	movsq
+	movsq
 
 	mov	ax,tss64_seg
 	ltr	ax
-	mov	esp,0x11000
+	lea	rsp, [rel 0x11000]
 
 	; Set page 0xe000 to uncacheable - this is where we'll map the APIC
 	or	byte [0xd000+0xe*8], 0x10
@@ -365,24 +354,26 @@ start64:
 	wrmsr
 
 	; This is the kernel GS, at 0x12000 (the top of the kernel stack)
-	xor	edx,edx
-	mov	eax,0x12000
+	lea	eax, [rel 0x12000]
+	cdq
 	mov	ecx,0xc000_0101 ; GSBase
 	wrmsr
 
 	; after this, ebx should be address to video memory and edi points to
 	; the gs-segment data block
-	mov	edi,eax
+	cdqe
+	mov	rdi,rax
 	stosq ; gs:0 - selfpointer
-	mov	eax,0xb8000
+	lea	rax,[rel 0xb8000]
+	;mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
-	lea	eax,[eax+32] ; 32 means start 16 characters into the first line
+	lea	rax,[rax+32] ; 32 means start 16 characters into the first line
 	stosq ; gs:16 - VGA writing position
-	lea	eax,[eax+80*25*2-32]
+	lea	rax,[rax+80*25*2-32]
 	stosq ; gs:24 - VGA buffer end
-	xor	eax,eax
+	zero	eax
 	stosq ; gs:32/36 - current time (and tick)
-	mov	eax,esp
+	mov	eax,dword [rel user_proc_1-proc+proc.rsp]
 	stosq ; gs:40 - user-mode stack seg
 	zero	eax
 	stosq ; gs:48 - current process
@@ -780,7 +771,7 @@ counter:
 
 tss:
 	dd 0 ; Reserved
-	dq 0x10000 ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
+	dq kernel_base+0x10000 ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
 	dq 0
 	dq 0
 	times 0x66-28 db 0
