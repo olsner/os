@@ -309,6 +309,9 @@ start64:
 	wrmsr
 
 	mov	ebp,0xe000
+	; Should point into the kernel area, but the page must have the right
+	; cache attributes (which the kernel area doesn't).
+	;lea	rbp,[rel 0xe000]
 	mov	ax,0x100
 	or	dword [rbp+0xf0],eax ; APIC Software Enable
 
