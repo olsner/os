@@ -15,7 +15,7 @@ HUSH_CC=@echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 endif
 
-all: shaman cpuid rflags
+all: shaman cpuid rflags retbench
 
 shaman: disk.dat
 
@@ -29,6 +29,10 @@ clean:
 
 %: %.c
 	$(HUSH_CC) $(CC) $(CFLAGS) -o $@ $<
+
+%: %.asm
+	$(HUSH_ASM) nasm -w+all -Ox -f elf64 -o $*.o $<
+	$(HUSH_CC) $(CC) -o $@ $*.o
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
