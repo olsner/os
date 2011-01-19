@@ -627,15 +627,21 @@ handler_err:
 handler_no_err:
 	push	rax
 	; FIXME If we got here by interrupting kernel code, don't swapgs
+	; But currently, all kernel code is cli, so we can only get here as the
+	; result of a fault...
 	swapgs
 	inc	dword [gs:gseg.curtime]
 	mov	eax, dword [0xe390]
 	mov	dword [gs:gseg.tick], eax
 	mov	dword [0xe380],10000 ; APICTI
 	mov	dword [0xe0b0],0 ; EndOfInterrupt
-	swapgs
-	pop	rax
-	iretq
+
+	xor	eax,eax
+	mov	rax,[gs:rax+gseg.self]
+	mov	rax,[rax+gseg.process]
+	pop	qword [rax+proc.rax] ; The rax we saved above, store in process
+	call	save_from_iret
+	jmp	switch_to ; TODO Write switch_next, use that instead
 
 syscall_entry_compat:
 	ud2
