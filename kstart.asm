@@ -81,6 +81,7 @@ struc	proc, -0x80
 
 	; Aliases for offsets into regs
 	.rax	equ	.regs+(0*8)
+	.rcx	equ	.regs+(1*8)
 	.rbx	equ	.regs+(3*8)
 	.rsp	equ	.regs+(4*8)
 	.rbp	equ	.regs+(5*8)
@@ -433,6 +434,53 @@ init_proc:
 	lea	rax, [rdi-proc_size]
 	ret
 
+; rax is already saved, and now points to the process base
+; rsp, rip, rflags are on the stack in "iretq format"
+; returns with ret; call with call
+save_from_iret:
+	; Save the rsp so we can fiddle with it here and restore before ret.
+	mov	[rax+proc.rcx], rcx
+	mov	rcx, rsp
+
+	add	rsp,8 ; return address
+	pop	qword [rax+proc.rip]
+	add	rsp,8 ; CS
+	pop	qword [rax+proc.rflags]
+	pop	qword [rax+proc.rsp]
+	add	rsp,8 ; SS
+
+	; Reset fastret flag so that iretq is used next time
+	btr	qword [rax+proc.flags], PROC_FASTRET
+
+	; Now save GPR:s in process. rsp can be clobbered (we'll restore it),
+	; and rcx is already saved.
+	lea	rsp, [rax+proc.endregs] ; mov rsp, rax (shorter?)
+	push	r15
+	push	r14
+	push	r13
+	push	r12
+	push	r11
+	push	r10
+	push	r9
+	push	r8
+	;.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
+	push	rdi
+	push	rsi
+	push	rbp
+	sub	rsp,8 ; rsp is already saved ... should rsp be stored outside the gpr file?
+	push	rbx
+	push	rdx
+	; rcx is already saved
+	; rax is already saved
+
+	mov	rsp, rcx
+	ret
+
+switch_next:
+	; TODO Steal most of the code from syscall_yield...
+	cli
+	hlt
+
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
 ; All registers other than rax will be ignored, trampled, and replaced with the
 ; new stuff from the switched-to process
@@ -499,6 +547,11 @@ switch_to:
 	%rotate 1
 	%endrep
 %endmacro
+
+	; TODO Replace with stack operations: set rsp, then pop in the right
+	; order. Then lay out process struct's rip, rflags, rsp so they can
+	; be iretq'd directly afterwards. (Will cost 16 bytes for cs/ss...)
+	; If not layout-hacked, we have to save our own rsp somewhere.
 
 	;.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
 	; skip rsp (iret will fix that) and rsi (we're still using it for the lodsqs, for now)
