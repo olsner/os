@@ -627,10 +627,14 @@ user_entry:
 
 .loop:
 	xor	eax,eax
-	mov	edi,'Y'
+	mov	edi,'|'
 	syscall
-	mov	eax,SYSCALL_YIELD
-	syscall
+
+	;xor	eax,eax
+	;mov	edi,'Y'
+	;syscall
+	;mov	eax,SYSCALL_YIELD
+	;syscall
 
 	mov	eax,SYSCALL_GETTIME
 	syscall
@@ -656,8 +660,11 @@ user_entry_2:
 	mov	edi,'2'
 	xor	eax,eax
 	syscall
-	add	eax,SYSCALL_YIELD
-	syscall
+
+	; Delay loop
+	mov	rcx, 100000
+	loop	$
+
 	jmp	user_entry_2
 
 not_long:
