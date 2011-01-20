@@ -5,6 +5,8 @@
 BXIMAGE=/opt/bochs/bin/bximage
 DD=dd 2>/dev/null
 
+SYSTEM := $(shell uname -s)
+
 ifeq ($(VERBOSE),YES)
 HUSH_ASM=
 HUSH_CC=
@@ -13,6 +15,13 @@ else
 HUSH_ASM=@echo ' [NASM]\t'$@;
 HUSH_CC=@echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
+endif
+
+ifeq ($(SYSTEM), Darwin)
+BUILD_OBJ ?= macho64
+SYMBOLPREFIX ?= --prefix _
+else
+BUILD_OBJ ?= elf64
 endif
 
 all: shaman cpuid rflags retbench
@@ -31,7 +40,7 @@ clean:
 	$(HUSH_CC) $(CC) $(CFLAGS) -o $@ $<
 
 %: %.asm
-	$(HUSH_ASM) nasm -w+all -Ox -f elf64 -o $*.o $<
+	$(HUSH_ASM) nasm -w+all -Ox -f $(BUILD_OBJ) $(SYMBOLPREFIX) -o $*.o $<
 	$(HUSH_CC) $(CC) -o $@ $*.o
 
 boot/%.b: %.asm

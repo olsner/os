@@ -18,7 +18,8 @@ print_rax:
 	ret
 
 print_tsc:
-	push	print_rax
+	lea	rax, [rel print_rax]
+	push	rax
 	jmp	rdtsc64
 
 %define UNROLL 12
