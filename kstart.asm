@@ -86,6 +86,7 @@ struc	proc, -0x80
 	.rsp	equ	.regs+(4*8)
 	.rbp	equ	.regs+(5*8)
 	.rsi	equ	.regs+(6*8)
+	.rdi	equ	.regs+(7*8)
 	%assign i 8
 	%rep 8
 	.r%+i	equ	.regs+(i*8)
@@ -435,6 +436,7 @@ init_proc:
 	ret
 
 ; rax is already saved, and now points to the process base
+; rdi is already saved (points to the gseg, but not used by this function)
 ; rsp, rip, rflags are on the stack in "iretq format"
 ; returns with ret; call with call
 save_from_iret:
@@ -454,7 +456,7 @@ save_from_iret:
 
 	; Now save GPR:s in process. rsp can be clobbered (we'll restore it),
 	; and rcx is already saved.
-	lea	rsp, [rax+proc.endregs] ; mov rsp, rax (shorter?)
+	lea	rsp, [rax+proc.endregs] ; note: as long as endregs == 0, this has the same size as a plain mov, but this expression will keep working :)
 	push	r15
 	push	r14
 	push	r13
@@ -464,7 +466,7 @@ save_from_iret:
 	push	r9
 	push	r8
 	;.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
-	push	rdi
+	sub	rsp,8 ; rdi is already saved
 	push	rsi
 	push	rbp
 	sub	rsp,8 ; rsp is already saved ... should rsp be stored outside the gpr file?
@@ -665,22 +667,27 @@ handler_err:
 	add	rsp,8
 handler_no_err:
 	push	rax
+	push	rdi
 	; FIXME If we got here by interrupting kernel code, don't swapgs
 	; But currently, all kernel code is cli, so we can only get here as the
 	; result of a fault...
 	swapgs
-	inc	dword [gs:gseg.curtime]
+	xor	edi, edi
+	mov	rdi, [gs:rdi+gseg.self]
+	inc	dword [rdi+gseg.curtime]
 	mov	eax, dword [0xe390]
-	mov	dword [gs:gseg.tick], eax
+	mov	dword [rdi+gseg.tick], eax
 	mov	dword [0xe380],10000 ; APICTI
 	mov	dword [0xe0b0],0 ; EndOfInterrupt
 
-	xor	eax,eax
-	mov	rax,[gs:rax+gseg.self]
-	mov	rax,[rax+gseg.process]
-	pop	qword [rax+proc.rax] ; The rax we saved above, store in process
+	mov	rax,[rdi+gseg.process]
+	; The rax and rdi we saved above, store them in process
+	pop	qword [rax+proc.rdi]
+	pop	qword [rax+proc.rax]
 	call	save_from_iret
-	jmp	switch_to ; TODO Write switch_next, use that instead
+	mov	rdx, rax
+	mov	rax, [rdi+gseg.runqueue]
+	jmp	switch_next
 
 syscall_entry_compat:
 	ud2
