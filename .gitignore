@@ -3,7 +3,10 @@
 /disk.dat
 /cpuid
 /rflags
+/retbench
 /genromfs-0.5.2
+
+*.lst
 
 .*.swp
 .DS_Store
