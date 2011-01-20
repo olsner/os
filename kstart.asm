@@ -753,6 +753,24 @@ syscall:
 %endmacro
 	save_regs rbp,rbx,r12,r13,r14,r15
 
+	; callee-save stuff is now saved and we can happily clobber!
+
+	; Set the fast return flag to return quickly after the yield
+	bts	qword [rax+proc.flags], PROC_FASTRET
+
+	; Return value: always 0 for yield
+	xor	rbx,rbx
+	mov	[rax+proc.rax], rbx
+
+	; The rcx we pushed in the prologue
+	pop	qword [rax+proc.rip]
+	mov	[rax+proc.rflags], r11
+
+	; Get the stack pointer, save it for when we return.
+	; TODO We should store it directly in the right place in the prologue.
+	mov	rbx, [rdi+gseg.user_rsp]
+	mov	[rax+proc.rsp], rbx
+
 	; - Load next-process pointer, bail out back to normal return if equal
 	mov	rdx, [rdi+gseg.runqueue]
 	; Same process on runqueue? (Probably really an error.)
@@ -761,24 +779,6 @@ syscall:
 	; Ran out of runnable processes?
 	test	rdx,rdx
 	jz	.no_yield
-
-	; callee-save stuff is now saved and we can happily clobber!
-
-	; Return value: always 0 for yield
-	xor	rbx,rbx
-	mov	[rax+proc.rax], rbx
-
-	; Get the stack pointer, save it for when we return.
-	; TODO We should store it directly in the right place in the prologue.
-	mov	rbx, [rdi+gseg.user_rsp]
-	mov	[rax+proc.rsp], rbx
-
-	; The rcx we pushed in the prologue
-	pop	qword [rax+proc.rip]
-	mov	[rax+proc.rflags], r11
-
-	; Set the fast return flag to return quickly after the yield
-	bts	qword [rax+proc.flags], PROC_FASTRET
 
 	xchg	rax,rdx
 	; Now NEXT (switching to) is in rax, and OLD (switching from) is in rdx
