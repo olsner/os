@@ -650,7 +650,7 @@ syscall:
 	swapgs
 	mov	[gs:gseg.user_rsp], rsp
 	; Hardcoded kernel stack
-	mov	esp, 0x10000
+	lea	rsp, [rel 0x10000]
 	push	rcx
 	cmp	eax, SYSCALL_WRITE
 	je	.syscall_write
