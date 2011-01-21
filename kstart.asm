@@ -658,22 +658,7 @@ syscall:
 	je	.syscall_gettime
 	cmp	eax, SYSCALL_YIELD
 	je	.syscall_yield
-
-.sysret:
-	; Be paranoid and evil - explicitly clear everything that we could have
-	; ever clobbered.
-	; rax, rcx, r11 are also in this list, but are used for return, rip and rflags respectively.
-	zero	edx ; If we start returning more than one 64-bit value
-	zero	esi
-	zero	edi
-	zero	r8
-	zero	r9
-	zero	r10
-
-	pop	rcx
-	mov	rsp, [gs:gseg.user_rsp]
-	swapgs
-	o64 sysret
+	jmp	.sysret
 
 	; Syscall #0: write byte to screen
 .syscall_write:
@@ -709,6 +694,22 @@ syscall:
 	rep	stosw
 
 	jmp	.finish_write
+
+.sysret:
+	; Be paranoid and evil - explicitly clear everything that we could have
+	; ever clobbered.
+	; rax, rcx, r11 are also in this list, but are used for return, rip and rflags respectively.
+	zero	edx ; If we start returning more than one 64-bit value
+	zero	esi
+	zero	edi
+	zero	r8
+	zero	r9
+	zero	r10
+
+	pop	rcx
+	mov	rsp, [gs:gseg.user_rsp]
+	swapgs
+	o64 sysret
 
 .syscall_gettime:
 	movzx	rax,byte [gs:rax+gseg.curtime-1] ; ax=1 when we get here
