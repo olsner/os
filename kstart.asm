@@ -667,9 +667,6 @@ user_entry_2:
 
 	jmp	user_entry_2
 
-not_long:
-	jmp	$
-
 handler_err:
 	add	rsp,8
 handler_no_err:
