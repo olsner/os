@@ -389,23 +389,6 @@ start64:
 	lea	rax,[rel user_proc_1-proc]
 	jmp	switch_to
 
-user_proc_1:
-istruc proc
-	at proc.rsp, dq 0x11000
-	at proc.rip, dq user_entry
-	at proc.rflags, dq RFLAGS_IF
-	;at proc.flags, dq (1 << PROC_FASTRET)
-	at proc.cr3, dq 0xa000
-iend
-user_proc_2:
-istruc proc
-	at proc.rsp, dq 0 ; Doesn't use stack, but that should be fixed...
-	at proc.rip, dq user_entry_2
-	at proc.rflags, dq RFLAGS_IF
-	at proc.flags, dq (1 << PROC_FASTRET)
-	at proc.cr3, dq 0xa000
-iend
-
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15
 ; caller-save: rax, rcx, rdx, rsi, rdi, r8-r11
@@ -613,60 +596,6 @@ switch_to:
 
 ; End switch
 
-user_entry:
-	xor	eax,eax
-
-	mov	edi,'U'
-	syscall
-	mov	edi,10
-	syscall
-	mov	edi,'V'
-	syscall
-	mov	edi,10
-	syscall
-
-.loop:
-	xor	eax,eax
-	mov	edi,'|'
-	syscall
-
-	;xor	eax,eax
-	;mov	edi,'Y'
-	;syscall
-	;mov	eax,SYSCALL_YIELD
-	;syscall
-
-	mov	eax,SYSCALL_GETTIME
-	syscall
-	movzx	edi,al
-	xor	eax,eax ; SYSCALL_WRITE
-	syscall
-
-	mov	edi,10
-	syscall
-
-	mov	eax,SYSCALL_GETTIME
-	syscall
-	mov	ebp,eax
-.notchanged:
-	;hlt
-	mov	eax,SYSCALL_GETTIME
-	syscall
-	cmp	al,bpl
-	jne	.loop
-	jmp	.notchanged
-
-user_entry_2:
-	mov	edi,'2'
-	xor	eax,eax
-	syscall
-
-	; Delay loop
-	mov	rcx, 100000
-	loop	$
-
-	jmp	user_entry_2
-
 handler_err:
 	add	rsp,8
 handler_no_err:
@@ -838,6 +767,80 @@ syscall:
 .no_yield:
 	xor	rax,rax
 	jmp	.sysret
+
+
+__USER__:
+
+user_proc_1:
+istruc proc
+	at proc.rsp, dq 0x11000
+	at proc.rip, dq user_entry
+	at proc.rflags, dq RFLAGS_IF
+	;at proc.flags, dq (1 << PROC_FASTRET)
+	at proc.cr3, dq 0xa000
+iend
+user_proc_2:
+istruc proc
+	at proc.rsp, dq 0 ; Doesn't use stack, but that should be fixed...
+	at proc.rip, dq user_entry_2
+	at proc.rflags, dq RFLAGS_IF
+	at proc.flags, dq (1 << PROC_FASTRET)
+	at proc.cr3, dq 0xa000
+iend
+
+user_entry:
+	xor	eax,eax
+
+	mov	edi,'U'
+	syscall
+	mov	edi,10
+	syscall
+	mov	edi,'V'
+	syscall
+	mov	edi,10
+	syscall
+
+.loop:
+	xor	eax,eax
+	mov	edi,'|'
+	syscall
+
+	;xor	eax,eax
+	;mov	edi,'Y'
+	;syscall
+	;mov	eax,SYSCALL_YIELD
+	;syscall
+
+	mov	eax,SYSCALL_GETTIME
+	syscall
+	movzx	edi,al
+	xor	eax,eax ; SYSCALL_WRITE
+	syscall
+
+	mov	edi,10
+	syscall
+
+	mov	eax,SYSCALL_GETTIME
+	syscall
+	mov	ebp,eax
+.notchanged:
+	;hlt
+	mov	eax,SYSCALL_GETTIME
+	syscall
+	cmp	al,bpl
+	jne	.loop
+	jmp	.notchanged
+
+user_entry_2:
+	mov	edi,'2'
+	xor	eax,eax
+	syscall
+
+	; Delay loop
+	mov	ecx, 100000
+	loop	$
+
+	jmp	user_entry_2
 
 	times 4096-($-$$) db 0
 __DATA__:
