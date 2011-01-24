@@ -599,6 +599,10 @@ switch_to:
 handler_err:
 	add	rsp,8
 handler_no_err:
+	cli
+	hlt
+
+timer_handler:
 	push	rax
 	push	rdi
 	; FIXME If we got here by interrupting kernel code, don't swapgs
@@ -888,12 +892,12 @@ gdtr:
 	dd	gdt_start  ; Offset
 
 idt:
-%define default_error \
-	define_gate64 code64_seg,kernel_base+0x8000+handler_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
-%define default_no_error \
-	define_gate64 code64_seg,kernel_base+0x8000+handler_no_err-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
-%define null_gate \
-	define_gate64 0,0,GATE_TYPE_INTERRUPT
+%macro interrupt_gate 1
+	define_gate64 code64_seg,kernel_base+0x8000+%1-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
+%endmacro
+%define default_error interrupt_gate handler_err
+%define default_no_error interrupt_gate handler_no_err
+%define null_gate define_gate64 0,0,GATE_TYPE_INTERRUPT
 
 	; exceptions with errors:
 	; - 8/#DF/double fault (always zero)
@@ -919,7 +923,7 @@ idt:
 	%rep (32-18)
 	null_gate
 	%endrep
-	default_no_error ; APIC Timer
+	interrupt_gate timer_handler ; APIC Timer
 idt_end:
 
 idtr:
