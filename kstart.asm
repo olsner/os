@@ -327,10 +327,13 @@ start64:
 	btr	eax, 16
 	; Set bit 17 (Timer Mode) to enable periodic timer
 	bts	eax, 17
+	; Use interrupt 32 for timer
 	mov	al, 32
 	mov	dword [rbp+0x320-0x380],eax
-
 	xor	eax,eax
+	; Set end-of-interrupt flag so we get some interrupts.
+	mov	dword [rbp+0xb0-0x380],eax
+
 	mov	ecx,0c000_0081h
 	; cs for syscall (high word) and sysret (low word).
 	; cs is loaded from selector or selector+16 depending on whether we're returning to compat (+16) or long mode (+0)
