@@ -410,6 +410,8 @@ start64:
 ; all "saved" registers are set to 0, except rip and rflags - use other
 ; functions to e.g. set the address space and link the proc. into the runqueue
 init_proc:
+	ud2 ; FIXME This function is not updated for the offset proc struct.
+
 	mov	rdx,rcx
 	; rdi = proc
 	; rdx = entry-point
@@ -680,6 +682,7 @@ syscall:
 	; Syscall #0: write byte to screen
 .syscall_write:
 	mov	eax, edi ; put the byte in eax instead of edi, edi now = 0
+	; FIXME Use a different register than dx so we can reuse the gseg-pointer...
 	zero	edx
 	mov	rdx, [gs:rdx+gseg.self]
 
