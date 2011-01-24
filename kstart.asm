@@ -342,8 +342,10 @@ start64:
 	wrmsr
 
 	inc	ecx ; c000_0082h - LSTAR
-	mov	eax,syscall.entry
-	cdq
+	lea	rax,[rel syscall.entry]
+	mov	rdx,rax
+	mov	eax,eax
+	shr	rdx,32
 	wrmsr
 
 	inc	ecx ; c000_0083h - CSTAR
