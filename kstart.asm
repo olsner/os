@@ -111,7 +111,8 @@ PROC_KERNEL	equ	0
 ; Remaining registers will be 0 (?)
 PROC_FASTRET	equ	1
 
-RFLAGS_IF	equ	(1 << 9)
+RFLAGS_IF_BIT	equ	9
+RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
 RFLAGS_VM	equ	(1 << 17)
 
 SYSCALL_WRITE	equ	0
@@ -550,6 +551,9 @@ switch_to:
 	bt	rbx, PROC_FASTRET
 	jc	.fast_ret
 
+	bt	qword [rax+proc.rflags], RFLAGS_IF_BIT
+	jnc	.ret_no_intrs
+
 ; push cs before this
 	; Push stuff for iretq
 	push	qword user_ds
@@ -598,6 +602,10 @@ switch_to:
 	mov	r11, [rax+proc.rflags]
 	mov	rax, [rax+proc.rax]
 	o64 sysret
+
+.ret_no_intrs:
+	cli
+	hlt
 
 ; End switch
 
