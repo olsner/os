@@ -624,6 +624,9 @@ timer_handler:
 	; But currently, all kernel code is cli, so we can only get here as the
 	; result of a fault...
 	swapgs
+
+	mov	word [rel 0xb8002], 0x0700|'T'
+
 	xor	edi, edi
 	mov	rdi, [gs:rdi+gseg.self]
 	inc	dword [rdi+gseg.curtime]
