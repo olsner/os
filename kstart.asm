@@ -878,11 +878,11 @@ user_entry:
 	syscall
 	mov	ebp,eax
 .notchanged:
-	;hlt
 	mov	eax,SYSCALL_GETTIME
 	syscall
 	cmp	al,bpl
 	jne	.loop
+
 	jmp	.notchanged
 
 user_entry_2:
