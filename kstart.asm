@@ -641,7 +641,6 @@ switch_to:
 ; End switch
 
 handler_err:
-	add	rsp,8
 handler_no_err:
 	cli
 	hlt
