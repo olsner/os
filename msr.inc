@@ -1,0 +1,9 @@
+; vim:ts=8:sts=8:sw=8:filetype=nasm:
+
+MSR_APIC_BASE	equ	0x1b
+MSR_EFER	equ	0xc000_0080
+MSR_LSTAR	equ	0xc000_0082
+MSR_CSTAR	equ	0xc000_0083
+MSR_SF_MASK	equ	0xc000_0084
+MSR_GSBASE	equ	0xc000_0101
+

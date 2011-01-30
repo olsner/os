@@ -5,6 +5,8 @@
 org 0x8000
 bits 16
 
+%include "msr.inc"
+
 %macro define_segment 3 ; limit, address, flags and access
 	dw	%1 & 0xffff ;seg_limit
 	dw	%2 & 0xffff ;addr_00_15
@@ -267,7 +269,7 @@ start32:
 	mov	edx, 0xa000 ; address of PML4
 	mov	cr3, edx
 
-	mov	ecx, 0xc0000080 ; EFER MSR
+	mov	ecx, MSR_EFER
 	rdmsr
 	or	eax, 0x100 ; Set LME
 	wrmsr
@@ -303,7 +305,7 @@ start64:
 	; Set page 0xe000 to uncacheable - this is where we'll map the APIC
 	or	byte [0xd000+0xe*8], 0x10
 
-	mov	ecx,0x1b ; APIC_BASE
+	mov	ecx, MSR_APIC_BASE
 	rdmsr
 	; Clear high part of base address
 	xor	edx,edx
@@ -335,7 +337,7 @@ start64:
 	; Set end-of-interrupt flag so we get some interrupts.
 	mov	dword [rbp+0xb0-0x380],eax
 
-	mov	ecx,0c000_0081h
+	mov	ecx, 0c000_0081h ; TODO Make symbolic
 	; cs for syscall (high word) and sysret (low word).
 	; cs is loaded from selector or selector+16 depending on whether we're returning to compat (+16) or long mode (+0)
 	; ss is loaded from cs+8 (where cs is the cs selector chosen above)
@@ -359,7 +361,7 @@ start64:
 	cdq
 	wrmsr
 
-	mov	ecx, 0xc0000080 ; EFER MSR
+	mov	ecx, MSR_EFER
 	rdmsr
 	bts	eax, 0 ; Set SCE
 	wrmsr
@@ -367,7 +369,7 @@ start64:
 	; This is the kernel GS, at 0x12000 (the top of the kernel stack)
 	lea	eax, [rel 0x12000]
 	cdq
-	mov	ecx,0xc000_0101 ; GSBase
+	mov	ecx, MSR_GSBASE
 	wrmsr
 
 	; after this, ebx should be address to video memory and edi points to

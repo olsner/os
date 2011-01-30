@@ -24,6 +24,8 @@ else
 BUILD_OBJ ?= elf64
 endif
 
+INCFILES := $(wildcard *.inc)
+
 all: shaman cpuid rflags retbench
 
 shaman: disk.dat
@@ -42,6 +44,9 @@ clean:
 %: %.asm
 	$(HUSH_ASM) nasm -w+all -Ox -f $(BUILD_OBJ) $(SYMBOLPREFIX) -o $*.o $<
 	$(HUSH_CC) $(CC) -o $@ $*.o
+
+# TODO Proper dependency detection. nasm does do it.
+%.asm: $(INCFILES)
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
