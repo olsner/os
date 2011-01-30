@@ -117,6 +117,10 @@ RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
 RFLAGS_VM	equ	(1 << 17)
 
+APIC_TICKS	equ	10000
+APIC_LBASE	equ	0x0000e000
+APIC_PBASE	equ	0xfee00000
+
 SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
 SYSCALL_YIELD	equ	2
@@ -201,6 +205,8 @@ start32:
 	; - Read-only/Writable (bit 1), 1 = Writable
 	; - User/Supervisor bit (bit 2), 1 = Accessible from user mode
 	; - Page-level writethrough (bit 3)
+	; And more flags
+	; - Page-level cache disable (bit 4) used for APIC
 	; For the final one, we set a couple more flags:
 	; - Global (bit 8), along with PGE, the page will remain in TLB after
 	; changing the page tables, we promise that the page has the same
@@ -208,6 +214,7 @@ start32:
 	; - Page Size (bit 7), this is the final page entry rather than a link
 	; to another table. In our case, this makes this a 2MB page since the
 	; bit is set already in the third level.
+	
 
 	; Write PML4 (one entry, pointing to one PDP)
 	mov	edi, 0xa000 ; base address, where we put the PML4's
@@ -302,40 +309,60 @@ start64:
 	ltr	ax
 	lea	rsp, [rel 0x11000]
 
-	; Set page 0xe000 to uncacheable - this is where we'll map the APIC
-	or	byte [0xd000+0xe*8], 0x10
+	; Set page 0xe000 to uncacheable and map it to the APIC address.
+	mov	eax, APIC_PBASE | 0x13
+	;movzx	rax, eax
+	mov	qword [rel 0xd000+(APIC_LBASE >> 12)*8], rax
+	invlpg	[abs APIC_LBASE]
 
 	mov	ecx, MSR_APIC_BASE
 	rdmsr
 	; Clear high part of base address
 	xor	edx,edx
-	; Set base address to 0xe000, enable (0x800), and set boot-strap CPU
-	mov	eax,0xe900
+	; Set base address, enable APIC (0x800), and set boot-strap CPU
+	mov	eax, APIC_PBASE | 0x800 | 0x100
 	wrmsr
 
-	mov	ebp,0xe000
-	; Should point into the kernel area, but the page must have the right
-	; cache attributes (which the kernel area doesn't).
-	;lea	rbp,[rel 0xe000]
-	mov	ax,0x100
-	or	dword [rbp+0xf0],eax ; APIC Software Enable
+	mov	ebp,APIC_LBASE
+	; TODO Should point into the kernel area, but the page must have the
+	; right cache attributes (which the kernel area doesn't).
+	;lea	rbp,[rel APIC_LBASE]
 
-	mov	ax,10000
-	add	bp,0x380
-	mov	dword [rbp+0x380-0x380],eax ; APICTIC
+APIC_REG_APICTIC	equ	0x380
+APIC_REG_TIMER_LVT	equ	0x320
+APIC_REG_PERFC_LVT	equ	0x340
+APIC_REG_LINT0_LVT	equ	0x350
+APIC_REG_LINT1_LVT	equ	0x360
+APIC_REG_ERROR_LVT	equ	0x370
+APIC_REG_SPURIOUS equ 0xf0
+APIC_SOFTWARE_ENABLE equ 0x100
+APIC_REG_EOI	equ	0xb0
+APIC_REG_TIMER_DIV	equ	0x3e0
+
+%assign rbpoffset 0x380
+
+	add	bp,rbpoffset
+	mov	dword [rbp+APIC_REG_APICTIC-rbpoffset],APIC_TICKS
 	mov	ax,1010b
-	mov	dword [rbp+0x3e0-0x380],eax  ; Divide by 128
-	mov	eax,dword [rbp+0x320-0x380] ; Timer LVT
-	; Clear bit 16 (Mask) to enable timer interrupts
-	btr	eax, 16
-	; Set bit 17 (Timer Mode) to enable periodic timer
-	bts	eax, 17
-	; Use interrupt 32 for timer
-	mov	al, 32
-	mov	dword [rbp+0x320-0x380],eax
+	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
+
+	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x20020
+	mov	dword [rbp+APIC_REG_PERFC_LVT-rbpoffset], 0x10000
+	mov	dword [rbp+APIC_REG_LINT0_LVT-rbpoffset], 0x8700
+	mov	dword [rbp+APIC_REG_LINT1_LVT-rbpoffset], 0x0400
+	mov	dword [rbp+APIC_REG_ERROR_LVT-rbpoffset], 0x10000
+
+	; Enable the APIC and set the spurious interrupt vector to 0xff
 	xor	eax,eax
+	mov	ax,APIC_SOFTWARE_ENABLE | 0xff
+	or	dword [rbp+APIC_REG_SPURIOUS-rbpoffset],eax
+
 	; Set end-of-interrupt flag so we get some interrupts.
-	mov	dword [rbp+0xb0-0x380],eax
+	mov	dword [rbp+APIC_REG_EOI-rbpoffset],eax
+	; Set the task priority register to 0 (accept all interrupts)
+	mov	dword [abs 0xe080], 0
+
+
 
 	mov	ecx, 0c000_0081h ; TODO Make symbolic
 	; cs for syscall (high word) and sysret (low word).
@@ -632,10 +659,10 @@ timer_handler:
 	xor	edi, edi
 	mov	rdi, [gs:rdi+gseg.self]
 	inc	dword [rdi+gseg.curtime]
-	mov	eax, dword [0xe390]
+	mov	eax, dword [abs 0xe390]
 	mov	dword [rdi+gseg.tick], eax
-	mov	dword [0xe380],10000 ; APICTI
-	mov	dword [0xe0b0],0 ; EndOfInterrupt
+	mov	dword [abs 0xe380],APIC_TICKS ; APICTIC
+	mov	dword [abs APIC_LBASE+APIC_REG_EOI],0 ; EndOfInterrupt
 
 	mov	rax,[rdi+gseg.process]
 	; The rax and rdi we saved above, store them in process
@@ -670,6 +697,8 @@ syscall:
 	; - reset non-saved registers to 0 to avoid leaking information
 	; - save callee-saved registers in process struct when yielding
 	; - switch_to must know to restore callee-saved registers
+
+	mov	word [rel 0xb8002], 0xf00|'S'
 
 	swapgs
 	mov	[gs:gseg.user_rsp], rsp
