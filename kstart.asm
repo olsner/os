@@ -17,7 +17,31 @@ start16:
 	out	0xa1, al
 	;mov	al,0xfb
 	out	0x21, al
-	
+
+	; Safe area to put random crap like the e820 address map.
+	mov	ax,0x1400
+	mov	es,ax
+	mov	di,4
+	xor	ebx,ebx
+.e820_loop:
+	mov	eax,0xe820 ; Function code
+	; mov bx, -- ; ebx contains the "Continuation value", returned by last call (or 0 on first iteration)
+	mov	cx,20 ; Size of output element
+	mov	edx,'PAMS'
+
+	int	15h
+	add	di,20
+
+	jc	.done
+	cmp	eax,'PAMS'
+	jne	.done
+	test	ebx,ebx
+	jz	.done
+
+	jmp	.e820_loop
+.done:
+	mov	dword [es:0], edi
+
 	mov	ax,0x0e00+'B'
 	mov	bl,0x0f
 	int	10h
@@ -293,12 +317,15 @@ default rel
 kernel_base equ -(1 << 30)
 
 start64:
+	; Start by jumping into the kernel memory area at -1GB. Since that's a
+	; 64-bit address, we must do it in long mode...
 	lea	rax,[rel kernel_base+.moved]
 	jmp	rax
 .moved:
 	mov	ax,data64_seg
 	mov	ds,ax
 	mov	ss,ax
+	; TODO Should we reset fs and gs too?
 
 	lea	rdi,[rel 0xb8004]
 	lea	rsi,[rel message]
