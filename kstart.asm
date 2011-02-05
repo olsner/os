@@ -19,25 +19,27 @@ start16:
 	out	0x21, al
 
 	; Safe area to put random crap like the e820 address map.
-	mov	ax,0x1400
+	mov	ax,0x800+(ENDOFTAPE - $$ + 15)/16
 	mov	es,ax
 	mov	di,4
 	xor	ebx,ebx
 .e820_loop:
-	mov	eax,0xe820 ; Function code
+	mov	ax,0xe820 ; Function code
 	; mov bx, -- ; ebx contains the "Continuation value", returned by last call (or 0 on first iteration)
 	mov	cx,20 ; Size of output element
 	mov	edx,'PAMS'
 
 	int	15h
-	add	di,20
-
 	jc	.done
+	cmp	di,65536-20
+	ja	.done
+
 	cmp	eax,'PAMS'
 	jne	.done
 	test	ebx,ebx
 	jz	.done
 
+	add	di,20
 	jmp	.e820_loop
 .done:
 	mov	dword [es:0], edi
@@ -1005,4 +1007,7 @@ idt_end:
 idtr:
 	dw	idt_end-idt-1
 	dd	idt
+
+ENDOFTAPE:
+TAPELENGTH equ ENDOFTAPE-$$
 
