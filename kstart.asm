@@ -4,6 +4,36 @@
 
 org 0x8000
 bits 16
+start16:
+	mov	ax,cs
+	mov	ds,ax
+
+	mov	ax,0x0e00+'A'
+	mov	bl,0x0f
+	int	10h
+
+	cli
+	mov	al,0xff
+	out	0xa1, al
+	;mov	al,0xfb
+	out	0x21, al
+	
+	mov	ax,0x0e00+'B'
+	mov	bl,0x0f
+	int	10h
+
+	; Protect Enable -> 1
+	mov	eax,cr0
+	or	eax,1
+	mov	cr0,eax
+	
+	lidt	[idtr - 0x8000]
+	lgdt	[gdtr - 0x8000]
+
+	; Reset cs by far-jumping to the other side
+	jmp	code_seg:dword start32
+	
+bits 32
 
 %include "msr.inc"
 
@@ -145,36 +175,6 @@ endstruc
 	xor %1,%1
 %endmacro
 
-start:
-	mov	ax,cs
-	mov	ds,ax
-
-	mov	ax,0x0e00+'A'
-	mov	bl,0x0f
-	int	10h
-
-	cli
-	mov	al,0xff
-	out	0xa1, al
-	;mov	al,0xfb
-	out	0x21, al
-	
-	mov	ax,0x0e00+'B'
-	mov	bl,0x0f
-	int	10h
-
-	; Protect Enable -> 1
-	mov	eax,cr0
-	or	eax,1
-	mov	cr0,eax
-	
-	lidt	[idtr - 0x8000]
-	lgdt	[gdtr - 0x8000]
-
-	; Reset cs by far-jumping to the other side
-	jmp	code_seg:dword start32
-	
-bits 32
 start32:
 	mov	ax,data_seg
 	mov	ds,ax
