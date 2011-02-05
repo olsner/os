@@ -24,7 +24,7 @@ disk_burp:
 	xor	cx,cx
 	mov	cl,ah
 db_loop:
-	mov	ax,0x0e44
+	mov	ax,0x0e00 | 'D'
 	mov	bl,0x0f
 	int	0x10
 	dec	cx
@@ -45,7 +45,7 @@ find_burp:
 	int	0x10
 
 burp:
-	mov	ax,0x0e45
+	mov	ax,0x0e00 | 'E'
 	mov	bl,0x0f
 	int	0x10
 	cli
