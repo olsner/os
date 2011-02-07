@@ -181,6 +181,7 @@ SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
 SYSCALL_YIELD	equ	2
 
+; Per-CPU data (theoretically)
 struc	gseg
 	; Pointer to self
 	.self	resq	1
@@ -195,6 +196,8 @@ struc	gseg
 	.process	resq 1
 	.runqueue	resq 1
 	.runqueue_last	resq 1
+
+	.free_frame	resq 1
 endstruc
 
 %macro zero 1
@@ -449,6 +452,10 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	lea	rax,[rel user_proc_2-proc]
 	stosq ; gs:48 - runqueue
 	stosq ; gs:56 - runqueue_last
+	zero	eax
+	stosq ; gs:64 - free_frame (starts as zero, cpu:s will bootstrap by asking from global pool)
+
+	; TODO Set up global frame-stack
 
 	lea	rax,[rel user_proc_1-proc]
 	jmp	switch_to
@@ -668,6 +675,69 @@ switch_to:
 	hlt
 
 ; End switch
+
+allocate_frame:
+	zero	edi
+	mov	rdi, [gs:edi]
+; Use when the gseg is already stored in rdi
+.have_gseg:
+	mov	rax, [rdi+gseg.free_frame]
+	test	rax, rax
+	; If local stack is out of frames, steal from global stack
+	jz	.steal_global_frames
+
+	mov	rsi, [rax]
+	mov	[rdi+gseg.free_frame], rsi
+	ret
+
+.steal_global_frames:
+	; TODO acquire global-page-structures spinlock
+	mov	rax, [globals.free_frame]
+	test	rax,rax
+	jz	.clear_garbage_frame
+
+	mov	rcx, [rax]
+	test	ecx, ecx
+	jz	.skip_steal2
+	; If we can, steal two pages :)
+	mov	rsi, [rcx]
+	mov	[rdi+gseg.free_frame], rcx
+	mov	rcx, rsi
+.skip_steal2:
+	mov	[globals.free_frame], rcx
+	; TODO release global-page-structures spinlock
+	ret
+
+.clear_garbage_frame:
+	mov	rax, [globals.garbage_frame]
+	test	rax,rax
+	jz	handler_err ; FATAL ERROR
+
+	mov	rcx, [rax]
+	mov	[globals.garbage_frame], rcx
+	; TODO release global-page-structures spinlock
+
+	mov	rdx, rax
+
+	; Note: non-temporal stores may be better here. OTOH we're pretty likely
+	; to use a frame very soon after we've asked for it. (Since we will
+	; allocate frames lazily on first fault, like other famous OS's)
+	mov	rdi, rcx
+	mov	ecx, 4096/8
+	rep movsq
+
+	mov	rax, rdx
+	; TODO release global-page-structures spinlock
+	ret
+
+; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storeage?
+free_frame:
+	; TODO acquire global-page-structures spinlock
+	mov	rcx, [globals.garbage_frame]
+	mov	[rax], rcx
+	mov	[globals.garbage_frame], rax
+	; TODO release global-page-structures spinlock
+	ret
 
 handler_err:
 handler_no_err:
@@ -931,8 +1001,11 @@ __DATA__:
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
 
-counter:
-	dq 32
+globals:
+; Pointer to first free page frame..
+.free_frame	dq 1
+; free frames that are tainted and need to be zeroed before use
+.garbage_frame	dq 1
 
 tss:
 	dd 0 ; Reserved
