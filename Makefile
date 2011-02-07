@@ -24,7 +24,8 @@ else
 BUILD_OBJ ?= elf64
 endif
 
-INCFILES := $(wildcard *.inc)
+ASMFILES := $(wildcard *.asm)
+DEPFILES := $(ASMFILES:.asm=.dep)
 
 all: shaman cpuid rflags retbench
 
@@ -34,6 +35,7 @@ clean:
 	rm -f bootfs.img disk.dat
 	rm -f boot/boot.b boot/kstart.b boot.lst kstart.lst
 	rm -f cpuid rflags
+	rm -f $(DEPFILES)
 
 %: %.cpp
 	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -o $@ $<
@@ -41,16 +43,11 @@ clean:
 %: %.c
 	$(HUSH_CC) $(CC) $(CFLAGS) -o $@ $<
 
-%: %.asm
-	$(HUSH_ASM) nasm -w+all -Ox -f $(BUILD_OBJ) $(SYMBOLPREFIX) -o $*.o $<
-	$(HUSH_CC) $(CC) -o $@ $*.o
-
-# TODO Proper dependency detection. nasm does do it.
-%.asm: $(INCFILES)
+-include $(DEPFILES)
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
-	$(HUSH_ASM) nasm -w+all -Ox -f bin $< -o $@ -l $*.lst
+	$(HUSH_ASM) nasm -w+all -MD $*.dep -MT $@ -MP -Ox -f bin $< -o $@ -l $*.lst
 
 bootfs.img: boot/kstart.b
 	genromfs -f bootfs.img -d boot -a 512 -x boot.b
