@@ -899,9 +899,9 @@ message:
 
 globals:
 ; Pointer to first free page frame..
-.free_frame	dq 1
+.free_frame	dq 0
 ; free frames that are tainted and need to be zeroed before use
-.garbage_frame	dq 1
+.garbage_frame	dq 0
 
 tss:
 	dd 0 ; Reserved
