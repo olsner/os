@@ -362,8 +362,72 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	stosq
 	stosq
 
-	; TODO Set up global frame-stack
+E820_MEM	equ 1
+E820_RESERVED	equ 2
+E820_ACPI_RCL	equ 3
+; There is also 4, which is some ACPI thingy that we shouldn't touch
 
+init_frames:
+	; pointer to last page linked, will be stored later on in garbage-frame list
+	zero	ecx
+
+	; r8: kernel_base
+	; r9d: first page to actually use, reserving 0-0x8000 for null pointers and waste, and 0x8000 to 0x13000 for kernel crap
+	lea	r8, [0]
+	mov	r9d, 0x100000
+	zero	r10
+
+	lea	rbp, [0xb8020]
+	lea	rsi, [0x8000+(ENDOFTAPE - $$ + 15)&~15]
+	lodsd
+	mov	ebx, eax
+	add	rbx, rsi ; rbx is now end-of-buffer
+.loop:
+	cmp	rbx, rsi
+	jb	.done
+	lodsq
+	mov	rdi, rax ; start of range
+	lodsq
+	mov	rdx, rax ; length of range
+	lodsd
+	cmp	eax, E820_MEM
+	; TODO ranges with value 3 (E820_ACPI_RECLAIM) are reusable once we're done with the ACPI data in them
+	jne	.loop
+	add	ax,0f30h
+	mov	word [rbp], ax
+	cmp	rdi, r9
+	cmovb	rdi, r9
+
+	; rdi..rdx is a range of pages we should link into the garbage-page list
+
+	; Add the offset to the mapping of physical memory.
+	add	rdx, r8
+	add	rdi, r8
+
+.inner:
+	cmp	rdi, rdx
+	jge	.loop
+
+	mov	[rdi], rcx
+	mov	rcx, rdi
+	inc	r10
+
+	add	rdi, 4096
+	jmp	.inner
+.done:
+	mov	[globals.garbage_frame], rcx
+
+test_alloc:
+	zero	ebx
+	call	allocate_frame
+	test	rax,rax
+	jz	launch_user
+	inc	rbx
+	;mov	rdi,rbx
+	;call	print_hex
+	jmp	test_alloc
+
+launch_user:
 	lea	rax,[rel user_proc_1-proc]
 	jmp	switch_to
 
