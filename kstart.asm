@@ -656,6 +656,15 @@ handler_no_err:
 	cli
 	hlt
 
+%assign i 0
+%rep 18
+handler_n %+ i:
+	cli
+	hlt
+%assign i i+1
+%endrep
+
+
 timer_handler:
 	push	rax
 	push	rdi
@@ -957,9 +966,10 @@ gdtr:
 idt:
 %macro interrupt_gate 1
 	define_gate64 code64_seg,kernel_base+0x8000+%1-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
+%assign i i+1
 %endmacro
-%define default_error interrupt_gate handler_err
-%define default_no_error interrupt_gate handler_no_err
+%define default_error interrupt_gate handler_n%+i
+%define default_no_error interrupt_gate handler_n%+i
 %define null_gate define_gate64 0,0,GATE_TYPE_INTERRUPT
 
 	; exceptions with errors:
@@ -971,6 +981,7 @@ idt:
 	; - 14/#PF/Page Fault
 	; - 17/#AC/Alignment Check
 
+%assign i 0
 	; 0-7
 	%rep 8
 	default_no_error
