@@ -94,6 +94,7 @@ struc	gseg
 	.runqueue_last	resq 1
 
 	.free_frame	resq 1
+	.temp_xmm0	resq 2
 endstruc
 
 %macro zero 1
@@ -350,6 +351,9 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	stosq ; gs:56 - runqueue_last
 	zero	eax
 	stosq ; gs:64 - free_frame (starts as zero, cpu:s will bootstrap by asking from global pool)
+	; gs:72,80 - temporary storage for page clearing function.
+	stosq
+	stosq
 
 	; TODO Set up global frame-stack
 
@@ -574,7 +578,7 @@ switch_to:
 
 allocate_frame:
 	zero	edi
-	mov	rdi, [gs:edi]
+	mov	rdi, [gs:rdi]
 ; Use when the gseg is already stored in rdi
 .have_gseg:
 	mov	rax, [rdi+gseg.free_frame]
@@ -607,22 +611,27 @@ allocate_frame:
 .clear_garbage_frame:
 	mov	rax, [globals.garbage_frame]
 	test	rax,rax
-	jz	handler_err ; FATAL ERROR
+	jz	.ret_oom
 
 	mov	rcx, [rax]
 	mov	[globals.garbage_frame], rcx
-	; TODO release global-page-structures spinlock
 
-	mov	rdx, rax
+	mov	rsi, rax
+	add	rsi, 128
+	mov	ecx, 16
+	movdqu	[rdi+gseg.temp_xmm0], xmm0
+	xorps	xmm0, xmm0
+.loop:
+%assign i -128
+%rep 16
+	movntdq	[rsi + i], xmm0
+%assign i i+16
+%endrep
+	add	rsi, 16*16
+	loop	.loop
+	movdqu	xmm0, [rdi+gseg.temp_xmm0]
 
-	; Note: non-temporal stores may be better here. OTOH we're pretty likely
-	; to use a frame very soon after we've asked for it. (Since we will
-	; allocate frames lazily on first fault, like other famous OS's)
-	mov	rdi, rcx
-	mov	ecx, 4096/8
-	rep movsq
-
-	mov	rax, rdx
+.ret_oom:
 	; TODO release global-page-structures spinlock
 	ret
 
