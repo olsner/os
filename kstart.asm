@@ -196,7 +196,14 @@ start32:
 	mov	word [edi-8],0x1c3
 
 	; Start mode-switching
-	mov	eax, 10100000b ; PAE and PGE
+CR4_PAE equ 0x020
+CR4_MCE equ 0x040
+CR4_PGE equ 0x080
+CR4_PCE equ 0x100
+CR4_OSFXSR equ 0x200
+CR4_OSXMMEXCPT equ 0x400
+
+	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
 	mov	cr4, eax
 
 	mov	edx, 0xa000 ; address of PML4
