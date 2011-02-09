@@ -916,7 +916,6 @@ user_entry_2:
 
 	jmp	user_entry_2
 
-	times 4096-($-$$) db 0
 __DATA__:
 
 message:
@@ -1007,3 +1006,4 @@ idtr:
 ENDOFTAPE:
 TAPELENGTH equ ENDOFTAPE-$$
 
+	times 4800-($-$$) db 0
