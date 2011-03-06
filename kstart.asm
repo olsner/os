@@ -50,11 +50,16 @@ start16:
 
 	; Protect Enable -> 1
 	mov	eax,cr0
-	or	eax,1
+	or	al,1
 	mov	cr0,eax
 	
 	lidt	[idtr - 0x8000]
 	lgdt	[gdtr - 0x8000]
+
+	mov	ax,data_seg
+	mov	ds,ax
+	mov	es,ax
+	mov	ss,ax
 
 	; Reset cs by far-jumping to the other side
 	jmp	code_seg:dword start32
@@ -102,11 +107,6 @@ endstruc
 %endmacro
 
 start32:
-	mov	ax,data_seg
-	mov	ds,ax
-	mov	es,ax
-	mov	ss,ax
-
 	mov	ebx, 0xb8000
 	mov	edi, ebx
 
