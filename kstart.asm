@@ -372,7 +372,10 @@ init_frames:
 	zero	ecx
 
 	; r8: kernel_base
-	; r9d: first page to actually use, reserving 0-0x8000 for null pointers and waste, and 0x8000 to 0x13000 for kernel crap
+	; r9d: first page to actually use, reserving:
+	; 0..0x8000 for null pointers and waste,
+	; 0x8000..0x13000 for kernel crap,
+	; 0x13000..0x100000 because it contains fiddly legacy stuff
 	lea	r8, [0]
 	mov	r9d, 0x100000
 	zero	r10
