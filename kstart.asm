@@ -300,7 +300,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 
 
 
-	mov	ecx, 0c000_0081h ; TODO Make symbolic
+	mov	ecx, MSR_STAR
 	; cs for syscall (high word) and sysret (low word).
 	; cs is loaded from selector or selector+16 depending on whether we're returning to compat (+16) or long mode (+0)
 	; ss is loaded from cs+8 (where cs is the cs selector chosen above)
