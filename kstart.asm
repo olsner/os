@@ -356,14 +356,10 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	stosq ; gs:24 - VGA buffer end
 	zero	eax
 	stosq ; gs:32/36 - current time (and tick)
-	mov	eax,dword [rel user_proc_1-proc+proc.rsp]
 	stosq ; gs:40 - user-mode stack seg
-	zero	eax
 	stosq ; gs:48 - current process
-	lea	rax,[rel user_proc_2-proc]
 	stosq ; gs:48 - runqueue
 	stosq ; gs:56 - runqueue_last
-	zero	eax
 	stosq ; gs:64 - fpu_process, the last process to have used the FPU
 	stosq ; gs:72 - free_frame (starts as zero, cpu:s will bootstrap by asking from global pool)
 	; gs:80,88 - temporary storage for page clearing function.
@@ -430,13 +426,25 @@ init_frames:
 
 test_alloc:
 	zero	ebx
+	zero	ebp
+.loop:
 	call	allocate_frame
 	test	rax,rax
-	jz	launch_user
+	jz	.done
 	inc	rbx
+	mov	[rax],rbp
+	mov	rbp,rax
 	;mov	rdi,rbx
 	;call	print_hex
-	jmp	test_alloc
+	jmp	.loop
+
+.done:
+	mov	rax,rbp
+	test	rax,rax
+	jz	launch_user
+	mov	rbp,[rax]
+	call	free_frame
+	jmp	.done
 
 launch_user:
 	; Make the first use of fpu/multimedia instructions cause an exception
@@ -444,7 +452,26 @@ launch_user:
 	bts	eax,CR0_TS_BIT
 	mov	cr0,rax
 
-	lea	rax,[rel user_proc_1-proc]
+	call	allocate_frame
+	mov	rdi,rax
+	mov	esi,user_entry_2
+	mov	edx, 0xa000 ; CR3 for user processes
+	mov	ecx, 0x11000
+	call	init_proc
+	mov	rbp,rax
+
+	call	allocate_frame
+	mov	rdi,rax
+	mov	esi,user_entry
+	mov	edx, 0xa000 ; CR3 for user processes
+	mov	ecx, 0x11000
+	call	init_proc
+
+	zero	edi
+	mov	rdi,[gs:rdi]
+	mov	[rdi+gseg.runqueue], rbp
+	mov	[rdi+gseg.runqueue_last], rbp
+
 	jmp	switch_to
 
 ; note to self:
@@ -458,24 +485,28 @@ launch_user:
 
 ; arg0/rdi = process-struct pointer
 ; arg1/rsi = entry-point
+; arg2/rdx = cr3
+; arg3/rcx = stack
 ; returns process-struct pointer in rax
 ; all "saved" registers are set to 0, except rip and rflags - use other
 ; functions to e.g. set the address space and link the proc. into the runqueue
 init_proc:
-	ud2 ; FIXME This function is not updated for the offset proc struct.
-
-	mov	rdx,rcx
+	mov	r8,rcx
 	; rdi = proc
-	; rdx = entry-point
-	mov	cl,proc_size / 8
-	movzx	rcx,cl
-	xor	eax,eax
+	; rsi = entry-point
+	; rcx = temp
+	; r8 = stack pointer
+	; rdx = cr3
+	mov	ecx,proc_size / 8
+	zero	eax
 	rep stosq
-	mov	[rdi-proc_size+proc.rip],rdx
+	lea	rax, [rdi-proc_size-proc]
+	mov	[rax+proc.rip],rsi
+	mov	[rax+proc.cr3],rdx
+	mov	[rax+proc.rsp],r8
 	; bit 1 of byte 1 of rflags: the IF bit
 	; all other bits are set to 0 by default
-	mov	byte [rdi-proc_size+proc.rflags+1], RFLAGS_IF >> 8
-	lea	rax, [rdi-proc_size]
+	mov	byte [rax+proc.rflags+1], RFLAGS_IF >> 8
 	ret
 
 ; rax is already saved, and now points to the process base
@@ -953,23 +984,6 @@ syscall:
 
 
 __USER__:
-
-user_proc_1:
-istruc proc
-	at proc.rsp, dq 0x11000
-	at proc.rip, dq user_entry
-	at proc.rflags, dq RFLAGS_IF
-	;at proc.flags, dq (1 << PROC_FASTRET)
-	at proc.cr3, dq 0xa000
-iend
-user_proc_2:
-istruc proc
-	at proc.rsp, dq 0 ; Doesn't use stack, but that should be fixed...
-	at proc.rip, dq user_entry_2
-	at proc.rflags, dq RFLAGS_IF
-	at proc.flags, dq (1 << PROC_FASTRET)
-	at proc.cr3, dq 0xa000
-iend
 
 user_entry:
 	xor	eax,eax
