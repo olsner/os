@@ -2,6 +2,12 @@
 ; This is the real bootstrap of the kernel, and
 ; it is this part that is loaded by the boot sector (boot.asm)
 
+CR0_PE		equ	1
+CR0_MP		equ	0x00000002
+CR0_EM		equ	0x00000004
+CR0_TS_BIT	equ	3
+CR0_PG		equ	0x80000000
+
 org 0x8000
 bits 16
 start16:
@@ -50,7 +56,7 @@ start16:
 
 	; Protect Enable -> 1
 	mov	eax,cr0
-	or	al,1
+	or	al,CR0_PE
 	mov	cr0,eax
 	
 	lidt	[idtr - 0x8000]
@@ -203,11 +209,6 @@ CR4_PGE equ 0x080
 CR4_PCE equ 0x100
 CR4_OSFXSR equ 0x200
 CR4_OSXMMEXCPT equ 0x400
-
-CR0_MP		equ	0x00000002
-CR0_EM		equ	0x00000004
-CR0_TS_BIT	equ	3
-CR0_PG		equ	0x80000000
 
 	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
 	mov	cr4, eax
@@ -775,6 +776,7 @@ handler_no_err:
 %assign i 0
 %rep 18
 handler_n %+ i:
+	mov	eax, i
 	cli
 	hlt
 %assign i i+1
@@ -880,7 +882,6 @@ syscall:
 	mov	rdx, [gs:rdx+gseg.self]
 
 	mov	rdi, [rdx+gseg.vga_pos] ; current pointer
-	;mov	___, [gs:24] ; end of screen
 	cmp	rdi, [rdx+gseg.vga_end] ; end of screen
 	cmovge	rdi, [rdx+gseg.vga_base] ; beginning of screen, if current >= end
 
@@ -952,7 +953,7 @@ syscall:
 	bts	qword [rax+proc.flags], PROC_FASTRET
 
 	; Return value: always 0 for yield
-	xor	rbx,rbx
+	zero	ebx
 	mov	[rax+proc.rax], rbx
 
 	; The rcx we pushed in the prologue
@@ -979,7 +980,7 @@ syscall:
 	jmp	switch_next
 
 .no_yield:
-	xor	rax,rax
+	zero	eax
 	jmp	.sysret
 
 
