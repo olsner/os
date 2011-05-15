@@ -97,6 +97,7 @@ struc	gseg
 	.process	resq 1
 	.runqueue	resq 1
 	.runqueue_last	resq 1
+	.fpu_process	resq 1 ; Process last in use of the floating point registers
 
 	.free_frame	resq 1
 	.temp_xmm0	resq 2
@@ -203,6 +204,11 @@ CR4_PCE equ 0x100
 CR4_OSFXSR equ 0x200
 CR4_OSXMMEXCPT equ 0x400
 
+CR0_MP		equ	0x00000002
+CR0_EM		equ	0x00000004
+CR0_TS_BIT	equ	3
+CR0_PG		equ	0x80000000
+
 	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
 	mov	cr4, eax
 
@@ -215,7 +221,8 @@ CR4_OSXMMEXCPT equ 0x400
 	wrmsr
 
 	mov	eax,cr0
-	or	eax,0x80000000 ; Enable paging
+	or	eax, CR0_PG | CR0_MP ; Enable paging, monitor-coprocessor
+	and	al, ~CR0_EM ; Disable Emulate Coprocessor
 	mov	cr0,eax
 
 	jmp	code64_seg:start64
@@ -357,8 +364,9 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	stosq ; gs:48 - runqueue
 	stosq ; gs:56 - runqueue_last
 	zero	eax
-	stosq ; gs:64 - free_frame (starts as zero, cpu:s will bootstrap by asking from global pool)
-	; gs:72,80 - temporary storage for page clearing function.
+	stosq ; gs:64 - fpu_process, the last process to have used the FPU
+	stosq ; gs:72 - free_frame (starts as zero, cpu:s will bootstrap by asking from global pool)
+	; gs:80,88 - temporary storage for page clearing function.
 	stosq
 	stosq
 
@@ -431,6 +439,11 @@ test_alloc:
 	jmp	test_alloc
 
 launch_user:
+	; Make the first use of fpu/multimedia instructions cause an exception
+	mov	rax,cr0
+	bts	eax,CR0_TS_BIT
+	mov	cr0,rax
+
 	lea	rax,[rel user_proc_1-proc]
 	jmp	switch_to
 
@@ -693,6 +706,9 @@ allocate_frame:
 	mov	rsi, rax
 	add	rsi, 128
 	mov	ecx, 16
+	; Clear the task-switched flag while we reuse some registers
+	mov	rdx, cr0
+	clts
 	movdqu	[rdi+gseg.temp_xmm0], xmm0
 	xorps	xmm0, xmm0
 .loop:
@@ -704,6 +720,8 @@ allocate_frame:
 	add	rsi, 16*16
 	loop	.loop
 	movdqu	xmm0, [rdi+gseg.temp_xmm0]
+	; Reset TS to whatever it was before
+	mov	cr0, rdx
 
 .ret_oom:
 	; TODO release global-page-structures spinlock
@@ -758,6 +776,30 @@ timer_handler:
 	mov	rdx, rax
 	mov	rax, [rdi+gseg.runqueue]
 	jmp	switch_next
+
+handler_NM:
+	push	rdi
+	; FIXME If we get here in kernel mode?
+	swapgs
+
+	; Clear the TS bit
+	clts
+
+	zero	edi
+	mov	rdi,[gs:edi]
+	mov	rax,[rdi+gseg.fpu_process]
+	test	rax,rax
+	; No previous process has unsaved fpu state, just clear it
+	jz	.load_fpu_state
+
+	; Save FPU state in process rax
+	;call	save_fpu_state
+.load_fpu_state:
+	;call	load_fpu_state
+
+	pop	rdi
+	swapgs
+	iretq
 
 syscall_entry_compat:
 	ud2
@@ -1048,10 +1090,11 @@ idt:
 	; - 17/#AC/Alignment Check
 
 %assign i 0
-	; 0-7
-	%rep 8
+	; 0-6
+	%rep 7
 	default_no_error
 	%endrep
+	interrupt_gate handler_NM ; vector 7, #NM, Device-Not-Available
 	default_error ; 8
 	default_no_error ; 9
 	%rep 5
