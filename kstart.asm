@@ -826,9 +826,10 @@ handler_NM:
 	jz	.load_fpu_state
 
 	; Save FPU state in process rax
-	;call	save_fpu_state
+	o64 fxsave [rax+proc.fxsave]
 .load_fpu_state:
-	;call	load_fpu_state
+	mov	rax,[rdi+gseg.process]
+	o64 fxrstor [rax+proc.fxsave]
 
 	pop	rdi
 	swapgs
