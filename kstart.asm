@@ -439,10 +439,10 @@ test_alloc:
 	jmp	.loop
 
 .done:
-	mov	rax,rbp
-	test	rax,rax
+	mov	rdi,rbp
+	test	rdi,rdi
 	jz	launch_user
-	mov	rbp,[rax]
+	mov	rbp,[rdi]
 	call	free_frame
 	jmp	.done
 
@@ -727,9 +727,10 @@ allocate_frame:
 ; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storeage?
 free_frame:
 	; TODO acquire global-page-structures spinlock
-	mov	rcx, [globals.garbage_frame]
-	mov	[rax], rcx
-	mov	[globals.garbage_frame], rax
+	lea	rax, [rel globals.garbage_frame]
+	mov	rcx, [rax]
+	mov	[rdi], rcx
+	mov	[rax], rdi
 	; TODO release global-page-structures spinlock
 	ret
 
