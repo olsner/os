@@ -518,49 +518,6 @@ init_proc:
 	rep	movsq
 	ret
 
-; rax is already saved, and now points to the process base
-; rdi is already saved (points to the gseg, but not used by this function)
-; rsp, rip, rflags are on the stack in "iretq format"
-; returns with ret; call with call
-save_from_iret:
-	; Save the rsp so we can fiddle with it here and restore before ret.
-	mov	[rax+proc.rcx], rcx
-	mov	rcx, rsp
-
-	add	rsp,8 ; return address
-	pop	qword [rax+proc.rip]
-	add	rsp,8 ; CS
-	pop	qword [rax+proc.rflags]
-	pop	qword [rax+proc.rsp]
-	add	rsp,8 ; SS
-
-	; Reset fastret flag so that iretq is used next time
-	btr	qword [rax+proc.flags], PROC_FASTRET
-
-	; Now save GPR:s in process. rsp can be clobbered (we'll restore it),
-	; and rcx is already saved.
-	lea	rsp, [rax+proc.endregs] ; note: as long as endregs == 0, this has the same size as a plain mov, but this expression will keep working :)
-	push	r15
-	push	r14
-	push	r13
-	push	r12
-	push	r11
-	push	r10
-	push	r9
-	push	r8
-	;.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
-	sub	rsp,8 ; rdi is already saved
-	push	rsi
-	push	rbp
-	sub	rsp,8 ; rsp is already saved ... should rsp be stored outside the gpr file?
-	push	rbx
-	push	rdx
-	; rcx is already saved
-	; rax is already saved
-
-	mov	rsp, rcx
-	ret
-
 switch_next:
 	; Now NEXT (switching to) is in rax, and OLD (switching from) is in rdx
 	; runqueue_last points to LAST
@@ -790,6 +747,48 @@ handler_n %+ i:
 %assign i i+1
 %endrep
 
+; rax is already saved, and now points to the process base
+; rdi is already saved (points to the gseg, but not used by this function)
+; rsp, rip, rflags are on the stack in "iretq format"
+; returns with ret; call with call
+save_from_iret:
+	; Save the rsp so we can fiddle with it here and restore before ret.
+	mov	[rax+proc.rcx], rcx
+	mov	rcx, rsp
+
+	add	rsp,8 ; return address
+	pop	qword [rax+proc.rip]
+	add	rsp,8 ; CS
+	pop	qword [rax+proc.rflags]
+	pop	qword [rax+proc.rsp]
+	add	rsp,8 ; SS
+
+	; Reset fastret flag so that iretq is used next time
+	btr	qword [rax+proc.flags], PROC_FASTRET
+
+	; Now save GPR:s in process. rsp can be clobbered (we'll restore it),
+	; and rcx is already saved.
+	lea	rsp, [rax+proc.endregs] ; note: as long as endregs == 0, this has the same size as a plain mov, but this expression will keep working :)
+	push	r15
+	push	r14
+	push	r13
+	push	r12
+	push	r11
+	push	r10
+	push	r9
+	push	r8
+	;.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
+	sub	rsp,8 ; rdi is already saved
+	push	rsi
+	push	rbp
+	sub	rsp,8 ; rsp is already saved ... should rsp be stored outside the gpr file?
+	push	rbx
+	push	rdx
+	; rcx is already saved
+	; rax is already saved
+
+	mov	rsp, rcx
+	ret
 
 timer_handler:
 	push	rax
