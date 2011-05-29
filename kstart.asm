@@ -656,8 +656,20 @@ switch_to:
 
 	; For a slightly slower "fast" return, also restore callee-save regs.
 	; IPC:s will have a specific calling convention (which probably only defines r11 and rcx)
-	;lodregs rbp,rbx,r12,r13,r14,r15
 .fast_ret:
+%macro lodregs 1-*
+	%rep %0
+	%ifidni %1,rax
+	%error rax is in use by this macro
+	%else
+	mov	%1,[rax+proc. %+ %1]
+	%endif
+	%rotate 1
+	%endrep
+%endmacro
+
+	lodregs rbp,rbx,r12,r13,r14,r15
+.fast_fastret:
 	mov	rsp, [rax+proc.rsp]
 	mov	rcx, [rax+proc.rip]
 	mov	r11, [rax+proc.rflags]
@@ -879,11 +891,6 @@ syscall:
 
 	; interrupts are disabled the whole time, TODO enable interrupts after switching GS and stack
 
-	; TODO Update to match linux syscall clobbering convention:
-	; - reset non-saved registers to 0 to avoid leaking information
-	; - save callee-saved registers in process struct when yielding
-	; - switch_to must know to restore callee-saved registers
-
 	mov	word [rel 0xb8002], 0xf00|'S'
 
 	swapgs
@@ -935,6 +942,8 @@ syscall:
 	jmp	.finish_write
 
 .sysret:
+	pop	rcx
+.sysret_rcx_set:
 	; Be paranoid and evil - explicitly clear everything that we could have
 	; ever clobbered.
 	; rax, rcx, r11 are also in this list, but are used for return, rip and rflags respectively.
@@ -945,7 +954,6 @@ syscall:
 	zero	r9
 	zero	r10
 
-	pop	rcx
 	mov	rsp, [gs:gseg.user_rsp]
 	swapgs
 	o64 sysret
@@ -955,7 +963,7 @@ syscall:
 	jmp	.sysret
 
 .syscall_yield:
-	xor	edi,edi
+	zero	edi
 	mov	rdi, [gs:rdi+gseg.self]
 
 	; - Load current process pointer into rax
@@ -973,13 +981,15 @@ syscall:
 	save_regs rbp,rbx,r12,r13,r14,r15
 
 	; callee-save stuff is now saved and we can happily clobber!
+	; Except we can't! :) The .no_yield path (empty runqueue, errors) will
+	; sysret directly and requires that we didn't break anything.
 
 	; Set the fast return flag to return quickly after the yield
 	bts	qword [rax+proc.flags], PROC_FASTRET
 
 	; Return value: always 0 for yield
-	zero	ebx
-	mov	[rax+proc.rax], rbx
+	zero	edx
+	mov	[rax+proc.rax], rdx
 
 	; The rcx we pushed in the prologue
 	pop	qword [rax+proc.rip]
@@ -987,26 +997,24 @@ syscall:
 
 	; Get the stack pointer, save it for when we return.
 	; TODO We should store it directly in the right place in the prologue.
-	mov	rbx, [rdi+gseg.user_rsp]
-	mov	[rax+proc.rsp], rbx
+	mov	rdx, [rdi+gseg.user_rsp]
+	mov	[rax+proc.rsp], rdx
 
 	; - Load next-process pointer, bail out back to normal return if equal
 	mov	rdx, [rdi+gseg.runqueue]
-	; Same process on runqueue? (Probably really an error.)
-	cmp	rdx,rax
-	je	.no_yield
 	; Ran out of runnable processes?
 	test	rdx,rdx
 	jz	.no_yield
 
 	xchg	rax,rdx
 
-	; switch_next takes switch-to in rax, switch-from rdx
+	; switch_next takes switch-to in rax, switch-from in rdx
 	jmp	switch_next
 
 .no_yield:
+	mov	rcx, [rax+proc.rip]
 	zero	eax
-	jmp	.sysret
+	jmp	.sysret_rcx_set
 
 
 __USER__:
