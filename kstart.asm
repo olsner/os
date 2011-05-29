@@ -462,7 +462,18 @@ launch_user:
 	mov	edx, 0xa000 ; CR3 for user processes
 	mov	ecx, 0x11000
 	call	init_proc
-	mov	rbp,rax
+
+	mov	[gs:gseg.runqueue], rax
+	mov	rbp, rax
+
+	call	allocate_frame
+	mov	rdi,rax
+	mov	esi,user_entry_3
+	mov	edx,0xa000
+	mov	ecx,0x11000
+	call	init_proc
+	mov	[gs:gseg.runqueue_last], rax
+	mov	[rbp+proc.next], rax
 
 	call	allocate_frame
 	mov	rdi,rax
@@ -470,11 +481,6 @@ launch_user:
 	mov	edx, 0xa000 ; CR3 for user processes
 	mov	ecx, 0x11000
 	call	init_proc
-
-	zero	edi
-	mov	rdi,[gs:rdi]
-	mov	[rdi+gseg.runqueue], rbp
-	mov	[rdi+gseg.runqueue_last], rbp
 
 	jmp	switch_to
 
@@ -694,6 +700,8 @@ allocate_frame:
 
 	mov	rsi, [rax]
 	mov	[rdi+gseg.free_frame], rsi
+	zero	esi
+	mov	[rax], rsi
 	ret
 
 .steal_global_frames:
@@ -1072,6 +1080,35 @@ user_entry_2:
 	loop	$
 
 	jmp	user_entry_2
+
+user_entry_3:
+	mov	ebx, 7
+	movq	xmm1, rbx
+	movq	xmm0, xmm1
+.loop:
+	lea	edi,['a'+ebx]
+	xor	eax,eax
+	syscall
+
+	paddq	xmm0, xmm1
+	mov	eax, SYSCALL_YIELD
+	syscall
+	dec	ebx
+	jnz	.loop
+
+.end:
+	mov	edi,'3'
+	xor	eax,eax
+	syscall
+	mov	edi,'F'
+	xor	eax,eax
+	syscall
+
+	; Delay loop
+	mov	ecx, 100000
+	loop	$
+
+	jmp	.end
 
 __DATA__:
 
