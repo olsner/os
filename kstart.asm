@@ -1,8 +1,8 @@
 ; vim:ts=8:sts=8:sw=8:filetype=nasm:
-; This is the real bootstrap of the kernel, and
-; it is this part that is loaded by the boot sector (boot.asm)
+; This is the real bootstrap of the kernel, and it is this part that is loaded
+; by the boot sector (boot.asm)
 
-CR0_PE		equ	1
+CR0_PE		equ	0x00000001
 CR0_MP		equ	0x00000002
 CR0_EM		equ	0x00000004
 CR0_TS_BIT	equ	3
@@ -267,25 +267,24 @@ start64:
 	mov	eax, APIC_PBASE | 0x800 | 0x100
 	wrmsr
 
-	mov	ebp,APIC_LBASE
-	; TODO Should point into the kernel area, but the page must have the
-	; right cache attributes (which the kernel area doesn't).
-	;lea	rbp,[rel APIC_LBASE]
+APIC_REG_TPR		equ	0x80
+APIC_REG_EOI		equ	0xb0
+APIC_REG_SPURIOUS	equ	0xf0
+; Bit in APIC_REG_SPURIOUS
+APIC_SOFTWARE_ENABLE	equ	0x100
 
-APIC_REG_APICTIC	equ	0x380
 APIC_REG_TIMER_LVT	equ	0x320
 APIC_REG_PERFC_LVT	equ	0x340
 APIC_REG_LINT0_LVT	equ	0x350
 APIC_REG_LINT1_LVT	equ	0x360
 APIC_REG_ERROR_LVT	equ	0x370
-APIC_REG_SPURIOUS equ 0xf0
-APIC_SOFTWARE_ENABLE equ 0x100
-APIC_REG_EOI	equ	0xb0
+APIC_REG_APICTIC	equ	0x380
+APIC_REG_APICTCC	equ	0x390
 APIC_REG_TIMER_DIV	equ	0x3e0
 
 %assign rbpoffset 0x380
 
-	add	bp,rbpoffset
+	mov	ebp,APIC_LBASE+rbpoffset
 	mov	dword [rbp+APIC_REG_APICTIC-rbpoffset],APIC_TICKS
 	mov	ax,1010b
 	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
@@ -304,8 +303,8 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	; Set end-of-interrupt flag so we get some interrupts.
 	mov	dword [rbp+APIC_REG_EOI-rbpoffset],eax
 	; Set the task priority register to 0 (accept all interrupts)
-	mov	dword [abs 0xe080], 0
-
+	zero	eax
+	mov	cr8,rax
 
 
 	mov	ecx, MSR_STAR
@@ -805,10 +804,10 @@ timer_handler:
 	xor	edi, edi
 	mov	rdi, [gs:rdi+gseg.self]
 	inc	dword [rdi+gseg.curtime]
-	mov	eax, dword [abs 0xe390]
+	mov	eax, dword [abs APIC_LBASE + APIC_REG_APICTCC]
 	mov	dword [rdi+gseg.tick], eax
-	mov	dword [abs 0xe380],APIC_TICKS ; APICTIC
-	mov	dword [abs APIC_LBASE+APIC_REG_EOI],0 ; EndOfInterrupt
+	mov	dword [abs APIC_LBASE + APIC_REG_APICTIC], APIC_TICKS
+	mov	dword [abs APIC_LBASE + APIC_REG_EOI], 0
 
 	mov	rax,[rdi+gseg.process]
 	; The rax and rdi we saved above, store them in process
