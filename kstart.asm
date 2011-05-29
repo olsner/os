@@ -1105,6 +1105,11 @@ user_entry_3:
 	lea	rdi,[rel .test_message]
 	call	puts
 
+	lea	rdi,[rel .test_format]
+	lea	rsi,[rel .test_arg1]
+	mov	edx,'C'
+	call	printf
+
 	; Delay loop
 	mov	ecx, 100000
 	loop	$
@@ -1113,6 +1118,10 @@ user_entry_3:
 
 .test_message:
 	db	'Hello World from puts',10,0
+.test_format:
+	db	'printf %% "%s" %c',10,0
+.test_arg1:
+	db	'Hello World',0
 
 puts:
 	; callee-save: rbp, rbx, r12-r15
@@ -1134,6 +1143,73 @@ puts:
 	pop	rbx
 	pop	rbp
 	ret
+
+printf:
+	; al: number of vector arguments (won't be used...)
+	; rdi: format string
+	; rsi,rdx,rcx,r8,r9: consequtive arguments
+
+	; reorder the stack a bit so that we have all our parameters in a row
+	mov	[rsp-32],rsi
+	mov	rsi,[rsp]
+	mov	[rsp-40],rsi ; rsp-40 is now the return address!
+	mov	[rsp-24],rdx
+	mov	[rsp-16],rcx
+	mov	[rsp-8],r8
+	mov	[rsp],r9
+	sub	rsp,40
+	; rdi: pointer to parameters
+	; rsi: pointer to format string
+	mov	rsi,rdi
+	lea	rdi,[rsp+8]
+
+.nextchar:
+	lodsb
+	test	al,al
+	jz	.done
+	cmp	al,'%'
+	je	.handle_format
+
+.write_al:
+	mov	r12,rdi
+	mov	r13,rsi
+	mov	edi,eax
+	mov	eax,SYSCALL_WRITE
+	syscall
+	mov	rsi,r13
+	mov	rdi,r12
+	jmp	.nextchar
+
+.handle_format:
+	lodsb
+	cmp	al,'%'
+	je	.write_al
+	cmp	al,'c'
+	je	.fmt_c
+	cmp	al,'s'
+	je	.fmt_s
+
+.fmt_c:
+	mov	rax,[rdi]
+	add	rdi,8
+	jmp	.write_al
+
+.fmt_s:
+	mov	rbp,[rdi]
+	; syscall will clobber rsi and rdi but not r12 and r13
+	lea	r13,[rdi+8]
+	mov	r12,rsi
+
+	mov	rdi,rbp
+	call	puts
+
+	mov	rsi,r12
+	mov	rdi,r13
+	jmp	.nextchar
+
+.done:
+	add	rsp,48
+	jmp	[rsp-48]
 
 __DATA__:
 
