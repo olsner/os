@@ -663,7 +663,7 @@ switch_to:
 	; For a slightly slower "fast" return, also restore callee-save regs.
 	; IPC:s will have a specific calling convention (which probably only defines r11 and rcx)
 .fast_ret:
-%macro lodregs 1-*
+%macro load_regs 1-*
 	%rep %0
 	%ifidni %1,rax
 	%error rax is in use by this macro
@@ -674,7 +674,7 @@ switch_to:
 	%endrep
 %endmacro
 
-	lodregs rbp,rbx,r12,r13,r14,r15
+	load_regs rbp,rbx,r12,r13,r14,r15
 .fast_fastret:
 	mov	rsp, [rax+proc.rsp]
 	mov	rcx, [rax+proc.rip]
