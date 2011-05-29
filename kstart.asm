@@ -539,7 +539,7 @@ switch_next:
 	; rcx = last, rax = next, rdx = current/new last
 	; note: we've already checked that the runqueue is not empty, so we
 	; must have a last-pointer too.
-	xor	esi,esi
+	zero	esi
 
 	; LAST->next = (LAST == NEXT ? NULL : OLD)
 	mov	rbx,rcx
@@ -555,7 +555,7 @@ switch_next:
 	mov	[rdi+gseg.runqueue], rcx
 
 	; - Load next-process pointer into rax
-	xor	ecx,ecx
+	zero	ecx
 	; OLD->next = NEXT->next = NULL (OLD because it's the tail of the list, NEXT because it's now unlinked)
 	mov	[rax+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 	mov	[rdx+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
@@ -569,8 +569,9 @@ switch_to:
 	cli	; I don't dare running this thing with interrupts enabled.
 
 	; Update pointer to current process
-	xor	edi,edi
-	mov	[gs:rdi+gseg.process], rax
+	zero	edi
+	mov	rdi, [gs:rdi]
+	mov	[rdi+gseg.process], rax
 
 	; Make sure we don't invalidate the TLB if we don't have to.
 	mov	rcx, [rax+proc.cr3]
@@ -586,7 +587,7 @@ switch_to:
 
 	; Exit to kernel thread
 	; If we don't need to switch rsp this should be easier - restore all
-	; regs, rflags, push new cs and do a near return
+	; regs, rflags, push new rip and do a near return
 	push	qword data64_seg
 	push	qword [rax+proc.rsp]
 	push	qword [rax+proc.rflags]
