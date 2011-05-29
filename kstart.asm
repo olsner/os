@@ -1102,18 +1102,38 @@ user_entry_3:
 	jnz	.loop
 
 .end:
-	mov	edi,'3'
-	xor	eax,eax
-	syscall
-	mov	edi,'F'
-	xor	eax,eax
-	syscall
+	lea	rdi,[rel .test_message]
+	call	puts
 
 	; Delay loop
 	mov	ecx, 100000
 	loop	$
 
 	jmp	.end
+
+.test_message:
+	db	'Hello World from puts',10,0
+
+puts:
+	; callee-save: rbp, rbx, r12-r15
+	push	rbp
+	push	rbx
+	mov	rbp,rdi
+
+.loop:
+	mov	dil,[rbp]
+	test	dil,dil
+	jz	.ret
+	inc	rbp
+
+	mov	eax,SYSCALL_WRITE
+	syscall
+	jmp	.loop
+
+.ret:
+	pop	rbx
+	pop	rbp
+	ret
 
 __DATA__:
 
