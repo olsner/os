@@ -567,11 +567,20 @@ switch_next:
 ; new stuff from the switched-to process
 switch_to:
 	cli	; I don't dare running this thing with interrupts enabled.
+	clts	; We'll set it again below, if appropriate
 
 	; Update pointer to current process
 	zero	edi
 	mov	rdi, [gs:rdi]
 	mov	[rdi+gseg.process], rax
+
+	mov	rbx, cr0
+	; If switching back before anything else uses the FPU, don't set TS
+	cmp	rax, [rdi+gseg.fpu_process]
+	je	.no_set_ts
+	bts	rbx, CR0_TS_BIT
+	mov	cr0, rbx
+.no_set_ts:
 
 	; Make sure we don't invalidate the TLB if we don't have to.
 	mov	rcx, [rax+proc.cr3]
@@ -819,27 +828,33 @@ timer_handler:
 	mov	rax, [rdi+gseg.runqueue]
 	jmp	switch_next
 
-handler_NM:
+handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	push	rdi
+	push	rax
 	; FIXME If we get here in kernel mode?
 	swapgs
 
-	; Clear the TS bit
 	clts
 
+	; Find the previous process and save fpu/media state to its process struct
 	zero	edi
 	mov	rdi,[gs:edi]
 	mov	rax,[rdi+gseg.fpu_process]
 	test	rax,rax
-	; No previous process has unsaved fpu state, just clear it
-	jz	.load_fpu_state
+	; No previous process has unsaved fpu state, just load this process' state
+	jz	.no_save_state
 
 	; Save FPU state in process rax
 	o64 fxsave [rax+proc.fxsave]
-.load_fpu_state:
+.no_save_state:
 	mov	rax,[rdi+gseg.process]
 	o64 fxrstor [rax+proc.fxsave]
 
+.ret:
+	; FPU state now owned by current process
+	mov	[rdi+gseg.fpu_process], rax
+
+	pop	rax
 	pop	rdi
 	swapgs
 	iretq
