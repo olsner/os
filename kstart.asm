@@ -448,9 +448,13 @@ test_alloc:
 	jmp	.done
 
 launch_user:
+	call	allocate_frame
+	o64 fxsave [rax]
+	mov	[rel globals.initial_fpstate], rax
+
 	; Make the first use of fpu/multimedia instructions cause an exception
 	mov	rax,cr0
-	bts	eax,CR0_TS_BIT
+	bts	rax,CR0_TS_BIT
 	mov	cr0,rax
 
 	call	allocate_frame
@@ -508,6 +512,11 @@ init_proc:
 	; bit 1 of byte 1 of rflags: the IF bit
 	; all other bits are set to 0 by default
 	mov	byte [rax+proc.rflags+1], RFLAGS_IF >> 8
+	; Copy initial FPU/Media state to process struct
+	mov	rsi, [rel globals.initial_fpstate]
+	lea	rdi, [rax+proc.fxsave]
+	mov	ecx, 512/8
+	rep	movsq
 	ret
 
 ; rax is already saved, and now points to the process base
@@ -1051,6 +1060,10 @@ globals:
 .free_frame	dq 0
 ; free frames that are tainted and need to be zeroed before use
 .garbage_frame	dq 0
+; Pointer to initial FPU state, used to fxrstor before a process' first use of
+; media/fpu instructions. Points to a whole page but only 512 bytes is actually
+; required.
+.initial_fpstate	dq 0
 
 tss:
 	dd 0 ; Reserved
