@@ -640,7 +640,7 @@ switch_to:
 %macro lodregs 1-*
 	%rep %0
 	%ifidni %1,skip
-	lea	rsi,[rsi+4]
+	lea	rsi,[rsi+8]
 	%elifidni %1,rsi
 	%error rsi is in use by this macro
 	%elifidni %1,rax
