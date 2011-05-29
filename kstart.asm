@@ -151,7 +151,7 @@ start32:
 
 	; Write PML4 (one entry, pointing to one PDP)
 	mov	edi, 0xa000 ; base address, where we put the PML4's
-	mov	eax, 0xb005 ; 0xb000 is where the PDP starts
+	mov	eax, 0xb007 ; 0xb000 is where the PDP starts
 	stosd
 
 	zero	eax
@@ -162,7 +162,7 @@ start32:
 	mov	dword [edi-8], 0x11003
 
 	; Write PDP (one entry, pointing to one PD)
-	mov	eax, 0xc005 ; 0xc000 is the start of the PD
+	mov	eax, 0xc007 ; 0xc000 is the start of the PD
 	stosd
 
 	xor	eax,eax
@@ -170,7 +170,7 @@ start32:
 	rep stosd
 
 	; Write PD (one entry, pointing to one PT)
-	mov	eax, 0xd005 ; 0xd000 points to the final page table
+	mov	eax, 0xd007 ; 0xd000 points to the final page table
 	stosd
 	xor	eax,eax
 	mov	ecx, 0x03ff
@@ -258,6 +258,11 @@ start64:
 	;movzx	rax, eax
 	mov	qword [rel 0xd000+(APIC_LBASE >> 12)*8], rax
 	invlpg	[abs APIC_LBASE]
+	; Make page 0x10000 accessible to user-mode with write access, used
+	; for user-process stack (at least until we have virtual memory
+	; management...)
+	mov	eax, 0x10000 | 7 ; user-mode accessible, read/write, present
+	mov	qword [rel 0xd000+(0x10000 >> 12)*8], rax
 
 	mov	ecx, MSR_APIC_BASE
 	rdmsr
