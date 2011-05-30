@@ -8,37 +8,23 @@ CR0_EM		equ	0x00000004
 CR0_TS_BIT	equ	3
 CR0_PG		equ	0x80000000
 
-org 0x8000
-bits 16
-%include "start16.inc"
-	
-bits 32
-
-; Per-CPU data (theoretically)
-struc	gseg
-	; Pointer to self
-	.self	resq	1
-	.vga_base	resq 1
-	.vga_pos	resq 1
-	.vga_end	resq 1
-	
-	.curtime	resd 1
-	.tick		resd 1
-
-	.user_rsp	resq 1
-	.process	resq 1
-	.runqueue	resq 1
-	.runqueue_last	resq 1
-	.fpu_process	resq 1 ; Process last in use of the floating point registers
-
-	.free_frame	resq 1
-	.temp_xmm0	resq 2
-endstruc
+CR4_PAE		equ	0x020
+CR4_MCE		equ	0x040
+CR4_PGE		equ	0x080
+CR4_PCE		equ	0x100
+CR4_OSFXSR	equ	0x200
+CR4_OSXMMEXCPT	equ	0x400
 
 %macro zero 1
 	xor %1,%1
 %endmacro
 
+org 0x8000
+
+bits 16
+%include "start16.inc"
+
+bits 32
 start32:
 	mov	ebx, 0xb8000
 	mov	edi, ebx
@@ -129,13 +115,6 @@ start32:
 	mov	word [edi-8],0x1c3
 
 	; Start mode-switching
-CR4_PAE equ 0x020
-CR4_MCE equ 0x040
-CR4_PGE equ 0x080
-CR4_PCE equ 0x100
-CR4_OSFXSR equ 0x200
-CR4_OSXMMEXCPT equ 0x400
-
 	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
 	mov	cr4, eax
 
@@ -156,6 +135,27 @@ CR4_OSXMMEXCPT equ 0x400
 
 bits 64
 default rel
+
+; Per-CPU data (theoretically)
+struc	gseg
+	; Pointer to self
+	.self	resq	1
+	.vga_base	resq 1
+	.vga_pos	resq 1
+	.vga_end	resq 1
+	
+	.curtime	resd 1
+	.tick		resd 1
+
+	.user_rsp	resq 1
+	.process	resq 1
+	.runqueue	resq 1
+	.runqueue_last	resq 1
+	.fpu_process	resq 1 ; Process last in use of the floating point registers
+
+	.free_frame	resq 1
+	.temp_xmm0	resq 2
+endstruc
 
 %include "msr.inc"
 %include "proc.inc"
