@@ -72,22 +72,6 @@ start16:
 	
 bits 32
 
-%include "msr.inc"
-%include "proc.inc"
-%include "segments.inc"
-
-RFLAGS_IF_BIT	equ	9
-RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
-RFLAGS_VM	equ	(1 << 17)
-
-APIC_TICKS	equ	10000
-APIC_LBASE	equ	0x0000e000
-APIC_PBASE	equ	0xfee00000
-
-SYSCALL_WRITE	equ	0
-SYSCALL_GETTIME	equ	1
-SYSCALL_YIELD	equ	2
-
 ; Per-CPU data (theoretically)
 struc	gseg
 	; Pointer to self
@@ -230,6 +214,22 @@ CR4_OSXMMEXCPT equ 0x400
 
 bits 64
 default rel
+
+%include "msr.inc"
+%include "proc.inc"
+%include "segments.inc"
+
+RFLAGS_IF_BIT	equ	9
+RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
+RFLAGS_VM	equ	(1 << 17)
+
+APIC_TICKS	equ	10000
+APIC_LBASE	equ	0x0000e000
+APIC_PBASE	equ	0xfee00000
+
+SYSCALL_WRITE	equ	0
+SYSCALL_GETTIME	equ	1
+SYSCALL_YIELD	equ	2
 
 kernel_base equ -(1 << 30)
 
