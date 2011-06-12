@@ -1,21 +1,23 @@
 ; vim:ts=8:sts=8:sw=8:filetype=nasm:
 
+%assign i 0
+
+%macro	reglabels 1-*
+%rep	%0
+	.r %+ %1 equ .regs+(i * 8)
+	%assign i i+1
+	%rotate 1
+%endrep
+%endmacro
+
 struc	proc, -0x80
 	.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
 
 	; Aliases for offsets into regs
-	.rax	equ	.regs+(0*8)
-	.rcx	equ	.regs+(1*8)
-	.rbx	equ	.regs+(3*8)
-	.rsp	equ	.regs+(4*8)
-	.rbp	equ	.regs+(5*8)
-	.rsi	equ	.regs+(6*8)
-	.rdi	equ	.regs+(7*8)
-	%assign i 8
-	%rep 8
-	.r%+i	equ	.regs+(i*8)
-	%assign i i+1
-	%endrep
+	reglabels ax,cx,dx,bx,sp,bp,si,di
+%rep 8
+	reglabels i
+%endrep
 
 	.rip	resq 1
 	.endregs equ .rip
