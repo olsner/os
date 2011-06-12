@@ -62,10 +62,15 @@ struc	gseg
 	.temp_xmm0	resq 2
 endstruc
 
+org 0x8000
+section .text vstart=0x8000
+section data follows=.text
+section usermode follows=data
+section memory_map nobits align=4096 start=0x9000
+
 ; Note: Must all be in the same section, otherwise trouble with complicated
 ; expressions that rely on bitwise arithmetic on symbol relocations
-section text vstart=0x8000
-org 0x8000
+section .text
 bits 16
 %include "start16.inc"
 ; start16 jumps to start32
@@ -1052,7 +1057,7 @@ printf:
 	add	rsp,48
 	jmp	[rsp-48]
 
-section data follows=text
+section data
 
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
@@ -1067,7 +1072,7 @@ globals:
 ; required.
 .initial_fpstate	dq 0
 
-section text
+section .text
 tss:
 	dd 0 ; Reserved
 	dq kernel_base+0x10000 ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
@@ -1104,7 +1109,7 @@ gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
 	dd	gdt_start  ; Offset
 
-section text
+section .text
 idt:
 %macro interrupt_gate 1
 	define_gate64 code64_seg,kernel_base+0x8000+(%1 - start16),GATE_PRESENT|GATE_TYPE_INTERRUPT
@@ -1150,3 +1155,9 @@ idtr:
 
 section .bss align=4096 start=0x9000
 ENDOFTAPE:
+
+section data
+section.data.end:
+
+section usermode
+section.usermode.end:
