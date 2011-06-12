@@ -2,6 +2,8 @@
 ; This is the real bootstrap of the kernel, and it is this part that is loaded
 ; by the boot sector (boot.asm)
 
+[map all kstart.map]
+
 CR0_PE		equ	0x00000001
 CR0_MP		equ	0x00000002
 CR0_EM		equ	0x00000004
@@ -60,8 +62,10 @@ struc	gseg
 	.temp_xmm0	resq 2
 endstruc
 
+; Note: Must all be in the same section, otherwise trouble with complicated
+; expressions that rely on bitwise arithmetic on symbol relocations
+section text vstart=0x8000
 org 0x8000
-
 bits 16
 %include "start16.inc"
 ; start16 jumps to start32
@@ -227,7 +231,7 @@ init_frames:
 	zero	r10
 
 	lea	rbp, [0xb8020]
-	lea	rsi, [0x8000+(ENDOFTAPE - $$ + 15)&~15]
+	lea	rsi, [ENDOFTAPE]
 	lodsd
 	mov	ebx, eax
 	add	rbx, rsi ; rbx is now end-of-buffer
@@ -867,7 +871,7 @@ syscall:
 	jmp	.sysret_rcx_set
 
 
-__USER__:
+section usermode
 
 user_entry:
 	xor	eax,eax
@@ -1048,7 +1052,7 @@ printf:
 	add	rsp,48
 	jmp	[rsp-48]
 
-__DATA__:
+section data follows=text
 
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
@@ -1063,6 +1067,7 @@ globals:
 ; required.
 .initial_fpstate	dq 0
 
+section text
 tss:
 	dd 0 ; Reserved
 	dq kernel_base+0x10000 ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
@@ -1093,14 +1098,16 @@ gdt_start:
 	define_segment 0,0,RW_ACCESS | SEG_DPL3
 gdt_end:
 
+section data
 align	4
 gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
 	dd	gdt_start  ; Offset
 
+section text
 idt:
 %macro interrupt_gate 1
-	define_gate64 code64_seg,kernel_base+0x8000+%1-$$,GATE_PRESENT|GATE_TYPE_INTERRUPT
+	define_gate64 code64_seg,kernel_base+0x8000+(%1 - start16),GATE_PRESENT|GATE_TYPE_INTERRUPT
 %assign i i+1
 %endmacro
 %define default_error interrupt_gate handler_n%+i
@@ -1136,11 +1143,10 @@ idt:
 	interrupt_gate timer_handler ; APIC Timer
 idt_end:
 
+section data
 idtr:
 	dw	idt_end-idt-1
 	dd	idt
 
+section .bss align=4096 start=0x9000
 ENDOFTAPE:
-TAPELENGTH equ ENDOFTAPE-$$
-
-	times 4800-($-$$) db 0

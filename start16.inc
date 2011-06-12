@@ -16,7 +16,7 @@ start16:
 	out	0x21, al
 
 	; Safe area to put random crap like the e820 address map.
-	mov	ax,0x800+(ENDOFTAPE - $$ + 15)/16
+	mov	ax,0x900
 	mov	es,ax
 	mov	di,4
 	xor	ebx,ebx
