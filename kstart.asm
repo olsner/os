@@ -66,6 +66,7 @@ org 0x8000
 section .text vstart=0x8000
 section data follows=.text
 section usermode follows=data
+section bss nobits follows=usermode align=8
 section memory_map nobits align=4096 start=0x9000
 
 ; Note: Must all be in the same section, otherwise trouble with complicated
@@ -89,6 +90,13 @@ start64:
 	mov	ds,ax
 	mov	ss,ax
 	; TODO Should we reset fs and gs too?
+
+	lea	rdi,[rel section.bss.start]
+	lea	rcx,[rel section.bss.end]
+	sub	rcx,rdi
+	shr	rcx,3
+	zero	eax
+	rep	stosq
 
 	lea	rdi,[rel 0xb8004]
 	lea	rsi,[rel message]
@@ -1062,15 +1070,16 @@ section data
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
 
+section bss
 globals:
 ; Pointer to first free page frame..
-.free_frame	dq 0
+.free_frame	resq 1
 ; free frames that are tainted and need to be zeroed before use
-.garbage_frame	dq 0
+.garbage_frame	resq 1
 ; Pointer to initial FPU state, used to fxrstor before a process' first use of
 ; media/fpu instructions. Points to a whole page but only 512 bytes is actually
 ; required.
-.initial_fpstate	dq 0
+.initial_fpstate	resq 1
 
 section .text
 tss:
@@ -1157,6 +1166,10 @@ section memory_map
 memory_map:
 .size	resd	1
 .data:
+
+section bss
+align 8
+section.bss.end:
 
 section memory_map
 section.memory_map.end:
