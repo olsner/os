@@ -18,7 +18,7 @@ start16:
 	; Safe area to put random crap like the e820 address map.
 	mov	ax,0x900
 	mov	es,ax
-	mov	di,4
+	mov	di,memory_map.data - 0x9000
 	xor	ebx,ebx
 .e820_loop:
 	mov	ax,0xe820 ; Function code
@@ -39,7 +39,7 @@ start16:
 	add	di,20
 	jmp	.e820_loop
 .done:
-	mov	dword [es:0], edi
+	mov	dword [es:memory_map.size - 0x9000], edi
 
 	mov	ax,0x0e00+'B'
 	mov	bl,0x0f

@@ -236,7 +236,7 @@ init_frames:
 	zero	r10
 
 	lea	rbp, [0xb8020]
-	lea	rsi, [ENDOFTAPE]
+	lea	rsi, [memory_map.size]
 	lodsd
 	mov	ebx, eax
 	add	rbx, rsi ; rbx is now end-of-buffer
@@ -1153,8 +1153,13 @@ idtr:
 	dw	idt_end-idt-1
 	dd	idt
 
-section .bss align=4096 start=0x9000
-ENDOFTAPE:
+section memory_map
+memory_map:
+.size	resd	1
+.data:
+
+section memory_map
+section.memory_map.end:
 
 section data
 section.data.end:
