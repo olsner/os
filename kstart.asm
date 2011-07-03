@@ -83,10 +83,10 @@ default rel
 start64:
 	; Start by jumping into the kernel memory area at -1GB. Since that's a
 	; 64-bit address, we must do it in long mode...
-	lea	rax,[rel kernel_base+.moved]
-	jmp	rax
+	jmp	kernel_base+.moved
 .moved:
-	mov	ax,data64_seg
+	mov	al,data64_seg
+	mov	ah,0
 	mov	ds,ax
 	mov	ss,ax
 	; TODO Should we reset fs and gs too?
@@ -366,7 +366,8 @@ init_proc:
 	; rcx = temp
 	; r8 = stack pointer
 	; rdx = cr3
-	mov	ecx,proc_size / 8
+	zero	ecx
+	mov	cl, proc_size / 8
 	zero	eax
 	rep stosq
 	lea	rax, [rdi-proc_size-proc]
@@ -379,7 +380,7 @@ init_proc:
 	; Copy initial FPU/Media state to process struct
 	mov	rsi, [rel globals.initial_fpstate]
 	lea	rdi, [rax+proc.fxsave]
-	mov	ecx, 512/8
+	mov	cl, 512 / 8 ; we know rcx is 0 since the last loop
 	rep	movsq
 	ret
 
