@@ -62,12 +62,22 @@ struc	gseg
 	.temp_xmm0	resq 2
 endstruc
 
-org 0x8000
 section .text vstart=0x8000
-section .data follows=.text align=4
-section usermode follows=.data align=1
-section bss nobits follows=usermode align=8
-section memory_map nobits align=4096 start=0x9000
+section .data vfollows=.text follows=.text align=4
+section usermode vfollows=.data follows=.data align=1
+section bss nobits align=8
+section memory_map nobits vstart=0x9000
+section core nobits vstart=((1 << 64) - (1 << 30))
+
+; get the physical address of a symbol in the .text section
+%define text_paddr(sym) (section..text.vstart + sym - start16)
+; get the virtual (kernel) address for a symbol in the .text section
+%define text_vpaddr(sym) phys_vaddr(text_paddr(sym))
+; translate a physical address to a virtual address in the 'core'
+; Note: in most cases, RIP-relative addressing is enough (since we tell the
+; assembler we're based at 0x8000 while we're actually at kernel_base+0x8000),
+; but this can be used for constant data or wherever we need the full address.
+%define phys_vaddr(phys) kernel_base + phys
 
 ; Note: Must all be in the same section, otherwise trouble with complicated
 ; expressions that rely on bitwise arithmetic on symbol relocations
@@ -83,7 +93,7 @@ default rel
 start64:
 	; Start by jumping into the kernel memory area at -1GB. Since that's a
 	; 64-bit address, we must do it in long mode...
-	jmp	kernel_base+.moved
+	jmp	phys_vaddr(.moved)
 .moved:
 	mov	al,data64_seg
 	mov	ah,0
@@ -91,14 +101,14 @@ start64:
 	mov	ss,ax
 	; TODO Should we reset fs and gs too?
 
-	lea	rdi,[rel section.bss.start]
+	lea	rdi,[rel section.bss.vstart]
 	lea	rcx,[rel section.bss.end]
 	sub	rcx,rdi
 	shr	rcx,3
 	zero	eax
 	rep	stosq
 
-	lea	rdi,[rel 0xb8004]
+	mov	rdi,phys_vaddr(0xb8004)
 	lea	rsi,[rel message]
 	movsq
 	movsq
@@ -107,16 +117,14 @@ start64:
 	ltr	ax
 	lea	rsp, [rel 0x11000]
 
+	mov	rdi, phys_vaddr(0xd080)
 	; Set page 0xe000 to uncacheable and map it to the APIC address.
-	mov	eax, APIC_PBASE | 0x13
-	;movzx	rax, eax
-	mov	qword [rel 0xd000+(APIC_LBASE >> 12)*8], rax
+	mov	dword [rdi+(APIC_LBASE >> 12)*8-0x80], APIC_PBASE | 0x13
 	invlpg	[abs APIC_LBASE]
 	; Make page 0x10000 accessible to user-mode with write access, used
 	; for user-process stack (at least until we have virtual memory
 	; management...)
-	mov	eax, 0x10000 | 7 ; user-mode accessible, read/write, present
-	mov	qword [rel 0xd000+(0x10000 >> 12)*8], rax
+	mov	dword [rdi+(0x10000 >> 12)*8-0x80], 0x10000 | 7 ; user-mode accessible, read/write, present
 
 	mov	ecx, MSR_APIC_BASE
 	rdmsr
@@ -206,7 +214,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	cdqe
 	mov	rdi,rax
 	stosq ; gs:0 - selfpointer
-	lea	rax,[rel 0xb8000]
+	mov	rax,phys_vaddr(0xb8000)
 	;mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
 	lea	rax,[rax+32] ; 32 means start 16 characters into the first line
@@ -239,11 +247,11 @@ init_frames:
 	; 0..0x8000 for null pointers and waste,
 	; 0x8000..0x13000 for kernel crap,
 	; 0x13000..0x100000 because it contains fiddly legacy stuff
-	lea	r8, [0]
+	mov	r8, phys_vaddr(0)
 	mov	r9d, 0x100000
 	zero	r10
 
-	lea	rbp, [0xb8020]
+	mov	rbp, phys_vaddr(0xb8020)
 	lea	rsi, [memory_map.size]
 	lodsd
 	mov	ebx, eax
@@ -550,6 +558,9 @@ switch_to:
 
 ; End switch
 
+; Allocate a frame and return its *virtual* address in the physical-memory
+; mapping area. Subtract kernel_base (eugh, wrong name) to get the actual
+; physical address.
 allocate_frame:
 	zero	edi
 	mov	rdi, [gs:rdi]
@@ -616,7 +627,7 @@ allocate_frame:
 	; TODO release global-page-structures spinlock
 	ret
 
-; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storeage?
+; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storage?
 free_frame:
 	; TODO acquire global-page-structures spinlock
 	lea	rax, [rel globals.garbage_frame]
@@ -1086,7 +1097,7 @@ globals:
 section .text
 tss:
 	dd 0 ; Reserved
-	dq kernel_base+0x10000 ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
+	dq phys_vaddr(0x10000) ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
 	dq 0
 	dq 0
 	times 0x66-28 db 0
@@ -1104,7 +1115,7 @@ gdt_start:
 	define_segment 0,0,RX_ACCESS | SEG_64BIT
 	define_segment 0,0,RW_ACCESS
 	; 64-bit TSS
-	define_tss64 0x68, (0x8000+tss-$$)
+	define_tss64 0x68, text_paddr(tss)
 	; USER segments
 	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
 	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
@@ -1123,11 +1134,11 @@ gdtr:
 section .text
 idt:
 %macro interrupt_gate 1
-	define_gate64 code64_seg,kernel_base+0x8000+(%1 - start16),GATE_PRESENT|GATE_TYPE_INTERRUPT
+	define_gate64 code64_seg,text_vpaddr(%1),GATE_PRESENT|GATE_TYPE_INTERRUPT
 %assign i i+1
 %endmacro
-%define default_error interrupt_gate handler_n %+ i
-%define default_no_error interrupt_gate handler_n %+ i
+%define default_error interrupt_gate (handler_n %+ i)
+%define default_no_error interrupt_gate (handler_n %+ i)
 %define null_gate define_gate64 0,0,GATE_TYPE_INTERRUPT
 
 	; exceptions with errors:
