@@ -341,33 +341,24 @@ launch_user:
 	bts	rax,CR0_TS_BIT
 	mov	cr0,rax
 
-	call	allocate_frame
-	mov	rdi,rax
-	mov	esi,user_entry_2
-	mov	edx, pages.pml4
-	mov	ecx, user_stack_end
-	call	init_proc
+	mov	edi, user_entry_2
+	mov	esi, user_stack_end
+	call	new_proc
 
 	zero	ebx
 	mov	rbx, [gs:rbx + gseg.self]
 	mov	[rbx + gseg.runqueue], rax
 	mov	rbp, rax
 
-	call	allocate_frame
-	mov	rdi,rax
-	mov	esi,user_entry_3
-	mov	edx, pages.pml4
-	mov	ecx, user_stack_end
-	call	init_proc
+	mov	edi, user_entry_3
+	mov	esi, user_stack_end
+	call	new_proc
 	mov	[rbx + gseg.runqueue_last], rax
 	mov	[rbp + proc.next], rax
 
-	call	allocate_frame
-	mov	rdi,rax
-	mov	esi,user_entry
-	mov	edx, pages.pml4
-	mov	ecx, user_stack_end
-	call	init_proc
+	mov	edi, user_entry
+	mov	esi, user_stack_end
+	call	new_proc
 
 	jmp	switch_to
 
@@ -380,36 +371,54 @@ launch_user:
 
 ; arguments: rdi, rsi, rdx, rcx (r10 in syscall), r8, r9
 
-; arg0/rdi = process-struct pointer
-; arg1/rsi = entry-point
-; arg2/rdx = cr3
-; arg3/rcx = stack
+; arg0/rdi = entry-point
+; arg1/rsi = stack
 ; returns process-struct pointer in rax
 ; all "saved" registers are set to 0, except rip and rflags - use other
 ; functions to e.g. set the address space and link the proc. into the runqueue
-init_proc:
-	mov	r8,rcx
-	; rdi = proc
+new_proc:
+	push	rdi
+	push	rsi
+	call	allocate_frame
+
+	; rax = proc page
 	; rsi = entry-point
-	; rcx = temp
-	; r8 = stack pointer
-	; rdx = cr3
-	zero	ecx
-	mov	cl, proc_size / 8
-	zero	eax
-	rep stosq
-	lea	rax, [rdi-proc_size-proc]
-	mov	[rax+proc.rip],rsi
-	mov	[rax+proc.cr3],rdx
-	mov	[rax+proc.rsp],r8
+	; rcx = stack pointer
+	pop	rcx
+	pop	rsi
+
+	test	eax,eax
+	jz	.oom_no_pop
+
+	push	rbx
+	lea	rbx, [rax-proc]
+	mov	[rbx+proc.rip],rsi
+	mov	[rbx+proc.rsp],rcx
 	; bit 1 of byte 1 of rflags: the IF bit
 	; all other bits are set to 0 by default
-	mov	byte [rax+proc.rflags+1], RFLAGS_IF >> 8
+	mov	byte [rbx+proc.rflags+1], RFLAGS_IF >> 8
 	; Copy initial FPU/Media state to process struct
 	mov	rsi, [rel globals.initial_fpstate]
-	lea	rdi, [rax+proc.fxsave]
-	mov	cl, 512 / 8 ; we know rcx is 0 since the last loop
+	lea	rdi, [rbx+proc.fxsave]
+	mov	ecx, 512 / 8
 	rep	movsq
+
+	; Allocate page table
+	call	allocate_frame
+	test	eax,eax
+	jz	.oom
+
+	mov	rdi, rax
+	mov	rsi, pages.pml4
+	mov	ecx, 4096 / 8
+	rep	movsq
+	sub	rax, phys_vaddr(0)
+	mov	[rbx + proc.cr3], rax
+
+	mov	rax,rbx
+.oom:
+	pop	rbx
+.oom_no_pop:
 	ret
 
 switch_next:
