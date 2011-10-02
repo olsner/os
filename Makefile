@@ -7,7 +7,7 @@ DD=dd 2>/dev/null
 
 SYSTEM := $(shell uname -s)
 
-YASM ?= yasm
+YASM ?= yasm/yasm
 
 ifeq ($(VERBOSE),YES)
 HUSH_ASM=
