@@ -7,12 +7,14 @@ DD=dd 2>/dev/null
 
 SYSTEM := $(shell uname -s)
 
+YASM ?= yasm
+
 ifeq ($(VERBOSE),YES)
 HUSH_ASM=
 HUSH_CC=
 HUSH_CXX=
 else
-HUSH_ASM=@echo ' [NASM]\t'$@;
+HUSH_ASM=@echo ' [ASM]\t'$@;
 HUSH_CC=@echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 endif
@@ -24,7 +26,7 @@ else
 BUILD_OBJ ?= elf64
 endif
 
-ASMFILES := $(wildcard *.asm)
+ASMFILES := kstart.asm boot.asm
 DEPFILES := $(ASMFILES:.asm=.dep)
 
 all: shaman cpuid rflags retbench
@@ -47,7 +49,8 @@ clean:
 
 boot/%.b: %.asm
 	@mkdir -p $(@D)
-	$(HUSH_ASM) nasm -w+all -MD $*.dep -MT $@ -MP -Ox -f bin $< -o $@ -l $*.lst
+	@$(YASM) -e -M $< -o $@ >$*.dep
+	$(HUSH_ASM) $(YASM) -f bin $< -o $@ -L nasm -l $*.lst
 
 bootfs.img: boot/kstart.b
 	genromfs -f bootfs.img -d boot -a 512 -x boot.b
