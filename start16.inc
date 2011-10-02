@@ -59,4 +59,4 @@ start16:
 	mov	ss,ax
 
 	; Reset cs by far-jumping to the other side
-	jmp	code_seg:dword start32
+	o32 jmp	code_seg:start32
