@@ -841,7 +841,7 @@ syscall_entry:
 	;   - Move saved callee-save registers from stack to PCB
 %macro save_regs 1-*
 %rep %0
-	mov qword [rax+proc.%+ %1], %1
+	mov qword [rax+proc.%1], %1
 	%rotate 1
 %endrep
 %endmacro
@@ -1124,8 +1124,8 @@ idt:
 	define_gate64 code64_seg,kernel_base+0x8000+(%1 - start16),GATE_PRESENT|GATE_TYPE_INTERRUPT
 %assign i i+1
 %endmacro
-%define default_error interrupt_gate handler_n%+i
-%define default_no_error interrupt_gate handler_n%+i
+%define default_error interrupt_gate handler_n %+ i
+%define default_no_error interrupt_gate handler_n %+ i
 %define null_gate define_gate64 0,0,GATE_TYPE_INTERRUPT
 
 	; exceptions with errors:
