@@ -64,8 +64,8 @@ endstruc
 
 org 0x8000
 section .text vstart=0x8000
-section data follows=.text
-section usermode follows=data
+section .data follows=.text align=4
+section usermode follows=.data align=1
 section bss nobits follows=usermode align=8
 section memory_map nobits align=4096 start=0x9000
 
@@ -1065,7 +1065,7 @@ printf:
 	add	rsp,48
 	jmp	[rsp-48]
 
-section data
+section .data
 
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
@@ -1112,7 +1112,7 @@ gdt_start:
 	define_segment 0,0,RW_ACCESS | SEG_DPL3
 gdt_end:
 
-section data
+section .data
 align	4
 gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
@@ -1157,7 +1157,7 @@ idt:
 	interrupt_gate timer_handler ; APIC Timer
 idt_end:
 
-section data
+section .data
 idtr:
 	dw	idt_end-idt-1
 	dd	idt
@@ -1174,7 +1174,7 @@ section.bss.end:
 section memory_map
 section.memory_map.end:
 
-section data
+section .data
 section.data.end:
 
 section usermode
