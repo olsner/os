@@ -463,10 +463,10 @@ switch_to:
 	; Exit to kernel thread
 	; If we don't need to switch rsp this should be easier - restore all
 	; regs, rflags, push new rip and do a near return
-	push	qword data64_seg
+	push	data64_seg
 	push	qword [rax+proc.rsp]
 	push	qword [rax+proc.rflags]
-	push	qword code64_seg
+	push	code64_seg
 	jmp	.restore_and_iretq
 
 .user_exit:
@@ -483,10 +483,10 @@ switch_to:
 
 ; push cs before this
 	; Push stuff for iretq
-	push	qword user_ds
+	push	user_ds
 	push	qword [rax+proc.rsp]
 	push	qword [rax+proc.rflags]
-	push	qword user_cs
+	push	user_cs
 .restore_and_iretq:
 	push	qword [rax+proc.rip]
 	; rax is first, but we'll take it last...
