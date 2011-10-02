@@ -30,7 +30,6 @@ RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
 RFLAGS_VM	equ	(1 << 17)
 
 APIC_TICKS	equ	10000
-APIC_LBASE	equ	0x0000e000
 APIC_PBASE	equ	0xfee00000
 
 SYSCALL_WRITE	equ	0
@@ -61,6 +60,34 @@ struc	gseg
 	.free_frame	resq 1
 	.temp_xmm0	resq 2
 endstruc
+
+%macro respage 0-1 1
+	resb (4096*%1)
+%endmacro
+struc pages, 0x8000
+.kernel		respage
+.memory_map	respage
+
+.page_tables:
+.pml4		respage
+.low_pdp	respage
+.low_pd		respage
+.low_pt		respage
+.page_tables_end:
+
+.apic		respage
+.kernel_stack	respage
+.kernel_stack_end:
+.user_stack	respage
+.user_stack_end:
+
+.kernel_pdp	respage
+.gseg_cpu0	respage
+endstruc
+
+kernel_stack_end equ pages.kernel_stack_end
+user_stack_end equ pages.user_stack_end
+APIC_LBASE equ pages.apic
 
 section .text vstart=0x8000
 section .data vfollows=.text follows=.text align=4
@@ -115,16 +142,7 @@ start64:
 
 	mov	ax,tss64_seg
 	ltr	ax
-	lea	rsp, [rel 0x11000]
-
-	mov	rdi, phys_vaddr(0xd080)
-	; Set page 0xe000 to uncacheable and map it to the APIC address.
-	mov	dword [rdi+(APIC_LBASE >> 12)*8-0x80], APIC_PBASE | 0x13
-	invlpg	[abs APIC_LBASE]
-	; Make page 0x10000 accessible to user-mode with write access, used
-	; for user-process stack (at least until we have virtual memory
-	; management...)
-	mov	dword [rdi+(0x10000 >> 12)*8-0x80], 0x10000 | 7 ; user-mode accessible, read/write, present
+	mov	rsp, phys_vaddr(kernel_stack_end)
 
 	mov	ecx, MSR_APIC_BASE
 	rdmsr
@@ -203,8 +221,8 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	bts	eax, 0 ; Set SCE
 	wrmsr
 
-	; This is the kernel GS, at 0x12000 (the top of the kernel stack)
-	lea	eax, [rel 0x12000]
+	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
+	mov	eax, pages.gseg_cpu0
 	cdq
 	mov	ecx, MSR_GSBASE
 	wrmsr
@@ -326,8 +344,8 @@ launch_user:
 	call	allocate_frame
 	mov	rdi,rax
 	mov	esi,user_entry_2
-	mov	edx, 0xa000 ; CR3 for user processes
-	mov	ecx, 0x11000
+	mov	edx, pages.pml4
+	mov	ecx, user_stack_end
 	call	init_proc
 
 	zero	ebx
@@ -338,8 +356,8 @@ launch_user:
 	call	allocate_frame
 	mov	rdi,rax
 	mov	esi,user_entry_3
-	mov	edx,0xa000
-	mov	ecx,0x11000
+	mov	edx, pages.pml4
+	mov	ecx, user_stack_end
 	call	init_proc
 	mov	[rbx + gseg.runqueue_last], rax
 	mov	[rbp + proc.next], rax
@@ -347,8 +365,8 @@ launch_user:
 	call	allocate_frame
 	mov	rdi,rax
 	mov	esi,user_entry
-	mov	edx, 0xa000 ; CR3 for user processes
-	mov	ecx, 0x11000
+	mov	edx, pages.pml4
+	mov	ecx, user_stack_end
 	call	init_proc
 
 	jmp	switch_to
@@ -776,7 +794,7 @@ syscall_entry:
 	swapgs
 	mov	[gs:gseg.user_rsp], rsp
 	; Hardcoded kernel stack
-	lea	rsp, [rel 0x10000]
+	mov	rsp, phys_vaddr(kernel_stack_end)
 	push	rcx
 	cmp	eax, SYSCALL_WRITE
 	je	.syscall_write
@@ -1097,7 +1115,7 @@ globals:
 section .text
 tss:
 	dd 0 ; Reserved
-	dq phys_vaddr(0x10000) ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
+	dq phys_vaddr(kernel_stack_end) ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
 	dq 0
 	dq 0
 	times 0x66-28 db 0
@@ -1192,3 +1210,4 @@ section.data.end:
 
 section usermode
 section.usermode.end:
+

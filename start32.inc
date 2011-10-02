@@ -37,8 +37,8 @@ start32:
 	
 
 	; Write PML4 (one entry, pointing to one PDP)
-	mov	edi, 0xa000 ; base address, where we put the PML4's
-	mov	eax, 0xb007 ; 0xb000 is where the PDP starts
+	mov	edi, pages.pml4
+	mov	eax, pages.low_pdp | 7 ; 0xb000 is where the PDP starts
 	stosd
 
 	zero	eax
@@ -46,10 +46,11 @@ start32:
 	rep stosd
 
 	; In 0x11000 we have another PDP. It's global and *not* user-accessible.
-	mov	dword [edi-8], 0x11003
+	mov	dword [edi-8], pages.kernel_pdp | 3
 
+	; edi fallthrough, now == 0xb000
 	; Write PDP (one entry, pointing to one PD)
-	mov	eax, 0xc007 ; 0xc000 is the start of the PD
+	mov	eax, pages.low_pd | 7 ; 0xc000 is the start of the PD
 	stosd
 
 	xor	eax,eax
@@ -57,7 +58,7 @@ start32:
 	rep stosd
 
 	; Write PD (one entry, pointing to one PT)
-	mov	eax, 0xd007 ; 0xd000 points to the final page table
+	mov	eax, pages.low_pt | 7
 	stosd
 	xor	eax,eax
 	mov	ecx, 0x03ff
@@ -82,11 +83,21 @@ start32:
 	stosd
 	loop	.loop
 
+	mov	edi, pages.low_pt + 0x80
+	; Set page 0xe000 to uncacheable and map it to the APIC address.
+	mov	dword [edi+(APIC_LBASE >> 12)*8-0x80], APIC_PBASE | 0x13
+	invlpg	[abs APIC_LBASE]
+	; Make user stack page accessible to user-mode with write access, used
+	; for user-process stack (at least until we have virtual memory
+	; management...)
+	mov	dword [edi+(pages.user_stack >> 12)*8-0x80], pages.user_stack | 7 ; user-mode accessible, read/write, present
+
 	; Page mapping for kernel space (top 4TB part)
-	mov	edi,0x11000
+	mov	edi, pages.kernel_pdp
 	xor	eax,eax
 	mov	ecx,0x0400
 	rep	stosd
+	; Write a single 1GB page mapping at physical address 0
 	mov	word [edi-8],0x1c3
 
 	; Start mode-switching
