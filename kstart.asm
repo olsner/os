@@ -322,7 +322,9 @@ launch_user:
 	mov	ecx, 0x11000
 	call	init_proc
 
-	mov	[gs:gseg.runqueue], rax
+	zero	ebx
+	mov	rbx, [gs:rbx + gseg.self]
+	mov	[rbx + gseg.runqueue], rax
 	mov	rbp, rax
 
 	call	allocate_frame
@@ -331,8 +333,8 @@ launch_user:
 	mov	edx,0xa000
 	mov	ecx,0x11000
 	call	init_proc
-	mov	[gs:gseg.runqueue_last], rax
-	mov	[rbp+proc.next], rax
+	mov	[rbx + gseg.runqueue_last], rax
+	mov	[rbp + proc.next], rax
 
 	call	allocate_frame
 	mov	rdi,rax
