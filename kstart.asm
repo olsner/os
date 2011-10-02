@@ -174,7 +174,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	wrmsr
 
 	inc	ecx ; c000_0082h - LSTAR
-	lea	rax,[rel syscall.entry]
+	lea	rax,[rel syscall_entry]
 	mov	rdx,rax
 	mov	eax,eax
 	shr	rdx,32
@@ -751,8 +751,7 @@ syscall_entry_compat:
 
 ; arguments: rdi, rsi, rdx, rcx (r10 in syscall), r8, r9
 
-syscall:
-.entry:
+syscall_entry:
 	; r11 = old rflags
 	; rcx = old rip
 	; rax = syscall number, rax = return value (error code)
