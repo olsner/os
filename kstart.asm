@@ -422,6 +422,10 @@ new_proc:
 	ret
 
 switch_next:
+	mov	bx, 0x1f00 | 'N'
+	call	kputchar
+	call	print_procstate
+
 	; Now NEXT (switching to) is in rax, and OLD (switching from) is in rdx
 	; runqueue_last points to LAST
 	; runqueue currently points to NEXT
@@ -463,7 +467,74 @@ switch_next:
 	mov	[rax+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 	mov	[rdx+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 
+	mov	bx, 0x4f00 | 'N'
+	call	kputchar
+	mov	rbx, rax
+	call	print_proc
+	call	print_procstate
+
 	jmp	switch_to
+
+kputchar:
+	push	rsi
+	mov	rsi, [rdi+gseg.vga_pos]
+	mov	[rsi], bx
+	add	rsi, 2
+	cmp	rsi, [rdi+gseg.vga_end]
+	cmove	rsi, [rdi+gseg.vga_base]
+	mov	[rdi+gseg.vga_pos], rsi
+	pop	rsi
+	ret
+
+print_proc:
+	push	rbx
+	shr	ebx, 12
+	and	ebx, 0xf
+	add	bx, 0x1f00 | '@'
+	call	kputchar
+	pop	rbx
+	ret
+
+; requires rdi = gseg self-pointer
+print_procstate:
+	push	rbx
+	push	rax
+	mov	bx, 0x1f00 | '<'
+	call	kputchar
+	mov	rbx, [rdi+gseg.process]
+	call	print_proc
+	mov	bx, 0x1f00 | ':'
+	call	kputchar
+	mov	rbx, [rdi+gseg.runqueue]
+.loop:
+	call	print_proc
+	test	rbx,rbx
+	jz	.end_of_q
+	mov	rax, [rbx+proc.next]
+	cmp	rax, rbx
+	mov	rbx, rax
+	je	.error
+	jmp	.loop
+
+.error:
+	call	print_proc
+	mov	bx, 0x4f00 | '!'
+	call	kputchar
+	cli
+	hlt
+
+.end_of_q:
+	mov	bx, 0x1f00 | ':'
+	call	kputchar
+	mov	rbx, [rdi+gseg.runqueue_last]
+	call	print_proc
+	mov	bx, 0x1f00 | '>'
+	call	kputchar
+	pop	rax
+	pop	rbx
+	;cli
+	;hlt
+	ret
 
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
 ; All registers other than rax will be ignored, trampled, and replaced with the
@@ -474,7 +545,14 @@ switch_to:
 
 	; Update pointer to current process
 	zero	edi
-	mov	rdi, [gs:rdi]
+	mov	rdi, [gs:rdi + gseg.self]
+
+	mov	bx, 0x1f00 | 'T'
+	call	kputchar
+	mov	rbx, rax
+	call	print_proc
+	call	print_procstate
+
 	mov	[rdi+gseg.process], rax
 
 	mov	rbx, cr0
