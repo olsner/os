@@ -1065,17 +1065,16 @@ user_entry_2:
 	jmp	.loop
 
 user_entry_3:
-	mov	ebx, 7
 	movq	xmm1, rbx
 	movq	xmm0, xmm1
-.loop:
+.start:
+	mov	ebx, 7
+.loop
 	lea	edi,['a'+ebx]
 	xor	eax,eax
 	syscall
 
 	paddq	xmm0, xmm1
-	mov	eax, SYSCALL_YIELD
-	syscall
 	dec	ebx
 	jnz	.loop
 
@@ -1092,7 +1091,7 @@ user_entry_3:
 	mov	ecx, 100000
 	loop	$
 
-	jmp	.end
+	jmp	.start
 
 .test_message:
 	db	'Hello World from puts',10,0
