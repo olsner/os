@@ -439,13 +439,13 @@ switch_next:
 	mov	rcx, [rdi+gseg.runqueue_last]
 	mov	[rdi+gseg.runqueue_last], rdx ; runqueue_last = OLD
 
-	; rcx = last, rax = next, rdx = current/new last
+	; rcx = last, rax = next, rdx = old/current/new last
 	; note: we've already checked that the runqueue is not empty, so we
 	; must have a last-pointer too.
 	zero	esi
 
 	; LAST->next = (LAST == NEXT ? NULL : OLD)
-	mov	rbx,rcx
+	mov	rbx,rdx
 	cmp	rcx,rax ; if LAST == NEXT, we want to store NULL instead of OLD
 	cmove	rbx,rsi
 	mov	[rcx+proc.next], rbx
