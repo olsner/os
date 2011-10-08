@@ -1048,15 +1048,21 @@ user_entry:
 	jmp	.notchanged
 
 user_entry_2:
+	mov	ebx, 2
+	movq	xmm1, rbx
+	movq	xmm0, xmm1
+.loop:
 	mov	edi,'2'
 	xor	eax,eax
 	syscall
+
+	paddq	xmm0,xmm1
 
 	; Delay loop
 	mov	ecx, 100000
 	loop	$
 
-	jmp	user_entry_2
+	jmp	.loop
 
 user_entry_3:
 	mov	ebx, 7
