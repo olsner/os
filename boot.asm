@@ -17,9 +17,6 @@ zero:
 magic:	db	'-rom1fs-'
 file:	db	'kstart.b'
 
-; bogus, let's just assume sizeof(kernel) < 15*512
-KERNEL_SIZE EQU 0x0f
-
 disk_burp:
 	xor	cx,cx
 	mov	cl,ah
@@ -148,19 +145,21 @@ notfound:
 	jnz	find_loop
 	
 found:
-	mov	ebx,[es:0x1e8]
-	shr	ebx,9
-	mov	ax,0x0200+KERNEL_SIZE
+	; File size in bytes, big endian 32-bit - round up to nearest number
+	; of sectors (al is number of sectors to read).
+	mov	eax,[es:0x1e8]
+	bswap	eax
+	add	eax,511
+	shr	eax,9
+
+	mov	ah,0x02
 	mov	dx,0x0180
-	add	al,bl
 	xor	bx,bx
 	inc	cx
-	
+
 	int	13h
-	jc	near disk_burp
-	cmp	al,KERNEL_SIZE
-	jne	near disk_burp
-	
+	jc	disk_burp
+
 	mov	ax,0x0e00+'!'
 	mov	bl,0x0f
 	int	10h
