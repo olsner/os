@@ -30,14 +30,14 @@ db_loop:
 	jmp	burp
 
 magic_burp:
-	mov	ax,0x0e4d
+	mov	ax,0x0e00 | 'M'
 	mov	bl,0x0f
 	int	0x10
 	
 	jmp	burp
 	
 find_burp:
-	mov	ax,0x0e46
+	mov	ax,0x0e00 | 'F'
 	mov	bl,0x0f
 	int	0x10
 
