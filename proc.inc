@@ -27,7 +27,7 @@ struc	proc, -0x80
 	.next	resq 1 ; If/when in a list, points to next process in list
 	.cr3	resq 1
 
-	; FIXME Align to 16 bytes
+	align 16
 	.fxsave	resb	512
 endstruc
 
