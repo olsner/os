@@ -270,7 +270,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	mov	rax,phys_vaddr(0xb8000)
 	;mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
-	lea	rax,[rax+32] ; 32 means start 16 characters into the first line
+	lea	rax,[rax+160] ; Start on line 2, line 1 has some boot-time debug printouts
 	stosq ; gs:16 - VGA writing position
 	lea	rax,[rax+80*25*2-32]
 	stosq ; gs:24 - VGA buffer end
@@ -320,7 +320,7 @@ init_frames:
 	cmp	eax, E820_MEM
 	; TODO ranges with value 3 (E820_ACPI_RECLAIM) are reusable once we're done with the ACPI data in them
 	jne	.loop
-	add	ax,0f30h
+	add	ax,0x0f00 | '0'
 	mov	word [rbp], ax
 	cmp	rdi, r9
 	cmovb	rdi, r9
