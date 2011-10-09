@@ -829,6 +829,7 @@ timer_handler:
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	push	rdi
 	push	rax
+	push	rbx
 	; FIXME If we get here in kernel mode?
 	swapgs
 
@@ -837,6 +838,15 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	; Find the previous process and save fpu/media state to its process struct
 	zero	edi
 	mov	rdi,[gs:edi]
+	mov	bx, 0x2f00 | 'F'
+	call	kputchar
+	mov	rbx,[rdi+gseg.fpu_process]
+	call	print_proc
+	mov	rbx,[rdi+gseg.process]
+	call	print_proc
+	mov	bx, 0x2f00 | '>'
+	call	kputchar
+
 	mov	rax,[rdi+gseg.fpu_process]
 	test	rax,rax
 	; No previous process has unsaved fpu state, just load this process' state
@@ -852,6 +862,7 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	; FPU state now owned by current process
 	mov	[rdi+gseg.fpu_process], rax
 
+	pop	rbx
 	pop	rax
 	pop	rdi
 	swapgs
