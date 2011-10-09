@@ -798,9 +798,9 @@ handler_no_err:
 %assign i 0
 %rep 18
 handler_n %+ i:
-	mov	eax, i
 	cli
 	hlt
+	mov	al, i
 %assign i i+1
 %endrep
 
@@ -966,13 +966,19 @@ syscall_entry:
 .sysret:
 	pop	rcx
 .sysret_rcx_set:
+	mov	rsp, [gs:gseg.user_rsp]
+	bt	r11, RFLAGS_IF_BIT
+	jnc	.no_intr
 	; Be paranoid and evil - explicitly clear everything that we could have
 	; ever clobbered.
 	clear_clobbered_syscall
 
-	mov	rsp, [gs:gseg.user_rsp]
 	swapgs
 	o64 sysret
+.no_intr:
+	cli
+	hlt
+	mov	al,0xff
 
 .syscall_gettime:
 	movzx	rax,byte [gs:rax+gseg.curtime-1] ; ax=1 when we get here
