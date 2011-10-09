@@ -1251,6 +1251,8 @@ printf:
 	je	.fmt_c
 	cmp	al,'s'
 	je	.fmt_s
+	cmp	al,'p'
+	je	.fmt_p
 	;cmp	al,'%'
 	jmp	.write_al
 
@@ -1269,6 +1271,34 @@ printf:
 
 	mov	rsi,r12
 	mov	rdi,r13
+	jmp	.nextchar
+
+.fmt_p:
+	lea	r12,[rdi+8]
+	mov	r13,rsi
+	mov	rbx, [rdi]
+
+	mov	edi, '0'
+	call	putchar
+	mov	edi, 'x'
+	call	putchar
+
+	mov	cl, 64
+
+.loop:
+	sub	cl, 4
+	mov	rdi, rbx
+	shr	rdi, cl
+	and	edi, 0xf
+	mov	dil, byte [digits + rdi]
+	mov	bpl, cl
+	call	putchar
+	mov	cl, bpl
+	test	cl, cl
+	jnz	.loop
+
+	mov	rsi,r13
+	mov	rdi,r12
 	jmp	.nextchar
 
 .done:
