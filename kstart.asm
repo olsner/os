@@ -49,6 +49,13 @@ CR4_OSXMMEXCPT	equ	0x400
 	zero	r11
 %endmacro
 
+%macro pushsection 1
+[section %1]
+%endmacro
+%macro popsection 0
+__SECT__
+%endmacro
+
 %include "msr.inc"
 %include "proc.inc"
 %include "segments.inc"
@@ -387,8 +394,17 @@ launch_user:
 	mov	edi, user_entry
 	mov	esi, user_stack_end
 	call	new_proc
+	; save in non-clobbered register
+	mov	rbx, rax
 
+	lea	rdi, [.test_kprintf]
+	mov	rsi, rdi
+	call	printf
+
+	mov	rax, rbx
 	jmp	switch_to
+.test_kprintf:
+	db	10, 'Hello, this is the kernel speaking: %p', 10, 0
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15
@@ -450,10 +466,21 @@ new_proc:
 	ret
 
 switch_next:
-	mov	bx, 0x1f00 | 'N'
-	call	kputchar
-	call	print_procstate
+	mov	rbp, rdi
+	mov	r12, rax
+	mov	r13, rdx
 
+.gseg_rbp:
+[section .data]
+.message:	db 'switch_next', 10, 0
+.message_after:	db 'switch_next to %p', 10, 0
+__SECT__
+	;lea	rdi, [.message]
+	;call	puts
+	;call	print_procstate
+
+	mov	rax, r12
+	mov	rdx, r13
 	; Now NEXT (switching to) is in rax, and OLD (switching from) is in rdx
 	; runqueue_last points to LAST
 	; runqueue currently points to NEXT
@@ -468,8 +495,8 @@ switch_next:
 	; NEXT->next -> NULL
 
 	; - Put old process at end of run-queue
-	mov	rcx, [rdi+gseg.runqueue_last]
-	mov	[rdi+gseg.runqueue_last], rdx ; runqueue_last = OLD
+	mov	rcx, [rbp+gseg.runqueue_last]
+	mov	[rbp+gseg.runqueue_last], rdx ; runqueue_last = OLD
 
 	; rcx = last, rax = next, rdx = old/current/new last
 	; note: we've already checked that the runqueue is not empty, so we
@@ -487,7 +514,7 @@ switch_next:
 	mov	rcx, [rax+proc.next]
 	test	rcx,rcx
 	cmovz	rcx,rdx
-	mov	[rdi+gseg.runqueue], rcx
+	mov	[rbp+gseg.runqueue], rcx
 
 	; - Load next-process pointer into rax
 	zero	ecx
@@ -495,48 +522,29 @@ switch_next:
 	mov	[rax+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 	mov	[rdx+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 
-	mov	bx, 0x4f00 | 'N'
-	call	kputchar
-	mov	rbx, rax
-	call	print_proc
-	call	print_procstate
+	;mov	rbx, rax
+	;lea	rdi, [.message_after]
+	;mov	rsi, rax
+	;call	printf
+	;call	print_procstate
+	;mov	rax, rbx
 
 	jmp	switch_to
 
-kputchar:
-	push	rsi
-	mov	rsi, [rdi+gseg.vga_pos]
-	mov	[rsi], bx
-	add	rsi, 2
-	cmp	rsi, [rdi+gseg.vga_end]
-	cmove	rsi, [rdi+gseg.vga_base]
-	mov	[rdi+gseg.vga_pos], rsi
-	pop	rsi
-	ret
-
-print_proc:
-	push	rbx
-	shr	ebx, 12
-	and	ebx, 0xf
-	add	bx, 0x1f00 | '@'
-	call	kputchar
-	pop	rbx
-	ret
-
-; requires rdi = gseg self-pointer
+; requires rbp = gseg self-pointer
 print_procstate:
 	push	rbx
-	push	rax
-	mov	bx, 0x1f00 | '<'
-	call	kputchar
-	mov	rbx, [rdi+gseg.process]
-	call	print_proc
-	mov	bx, 0x1f00 | ':'
-	call	kputchar
-	mov	rbx, [rdi+gseg.runqueue]
+	lea	rdi, [.current_proc]
+	mov	rsi, [rbp+gseg.process]
+	call	printf
+	lea	rdi, [.runqueue]
+	call	puts
+	mov	rbx, [rbp+gseg.runqueue]
 .loop:
-	call	print_proc
-	test	rbx,rbx
+	lea	rdi, [.rq_entry]
+	mov	rsi, rbx
+	call	printf
+	test	rbx, rbx
 	jz	.end_of_q
 	mov	rax, [rbx+proc.next]
 	cmp	rax, rbx
@@ -544,24 +552,29 @@ print_procstate:
 	je	.error
 	jmp	.loop
 
+.current_proc:
+	db	'    Current process: %p', 10, 0
+.runqueue:
+	db	'    Run queue:', 10, 0
+.rq_entry:
+	db	'        - %p', 10, 0
+.runqueue_last:
+	db	'    Runqueue_last: %p', 10, 0
+.error_msg:
+	db	'*** LOOP IN RUNQUEUE: %p points to itself.', 10, 0
+
 .error:
-	call	print_proc
-	mov	bx, 0x4f00 | '!'
-	call	kputchar
+	lea	rdi, [.error_msg]
+	mov	rsi, rbx
+	call	printf
 	cli
 	hlt
 
 .end_of_q:
-	mov	bx, 0x1f00 | ':'
-	call	kputchar
-	mov	rbx, [rdi+gseg.runqueue_last]
-	call	print_proc
-	mov	bx, 0x1f00 | '>'
-	call	kputchar
-	pop	rax
+	lea	rdi, [.runqueue_last]
+	mov	rsi, [rbp+gseg.runqueue_last]
+	call	printf
 	pop	rbx
-	;cli
-	;hlt
 	ret
 
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
@@ -571,46 +584,52 @@ switch_to:
 	cli	; I don't dare running this thing with interrupts enabled.
 	clts	; We'll set it again below, if appropriate
 
-	; Update pointer to current process
 	zero	edi
-	mov	rdi, [gs:rdi + gseg.self]
+	mov	rbp, [gs:rdi + gseg.self]
 
-	mov	bx, 0x1f00 | 'T'
-	call	kputchar
+pushsection .data
+.message:
+	db 'Switching to %p.', 10, 0
+popsection
+
 	mov	rbx, rax
-	call	print_proc
-	call	print_procstate
+	;lea	rdi, [.message]
+	;mov	rsi, rax
+	;call	printf
+	;call	print_procstate
 
-	mov	[rdi+gseg.process], rax
+	; Update pointer to current process
+	mov	[rbp+gseg.process], rbx
 
-	mov	rbx, cr0
 	; If switching back before anything else uses the FPU, don't set TS
-	cmp	rax, [rdi+gseg.fpu_process]
+	cmp	rbx, [rbp+gseg.fpu_process]
 	je	.no_set_ts
-	bts	rbx, CR0_TS_BIT
-	mov	cr0, rbx
+	mov	rax, cr0
+	bts	rax, CR0_TS_BIT
+	mov	cr0, rax
 .no_set_ts:
 
 	; Make sure we don't invalidate the TLB if we don't have to.
-	mov	rcx, [rax+proc.cr3]
-	mov	rbx, cr3
-	cmp	rbx, rcx
+	mov	rcx, [rbx + proc.cr3]
+	mov	rax, cr3
+	cmp	rax, rcx
 	je	.no_set_cr3
-	mov	cr3, rcx
+	mov	cr3, rax
 .no_set_cr3:
 
-	mov	rbx, [rax+proc.flags]
-	bt	rbx, PROC_KERNEL
+	mov	rax, [rbx+proc.flags]
+	bt	rax, PROC_KERNEL
 	jnc	.user_exit
 
 	; Exit to kernel thread
 	; If we don't need to switch rsp this should be easier - restore all
 	; regs, rflags, push new rip and do a near return
 	push	data64_seg
-	push	qword [rax+proc.rsp]
-	push	qword [rax+proc.rflags]
+	push	qword [rbx+proc.rsp]
+	push	qword [rbx+proc.rflags]
 	push	code64_seg
 	jmp	.restore_and_iretq
+
 
 .user_exit:
 	; If we stop disabling interrupts above, this will be wildly unsafe.
@@ -618,22 +637,22 @@ switch_to:
 	; restore flags and go to user mode. The risk is if we switch "from
 	; kernel" while having the user GS loaded!
 	swapgs
-	bt	rbx, PROC_FASTRET
+	bt	rax, PROC_FASTRET
 	jc	.fast_ret
 
-	bt	qword [rax+proc.rflags], RFLAGS_IF_BIT
+	bt	qword [rbx+proc.rflags], RFLAGS_IF_BIT
 	jnc	.ret_no_intrs
 
 ; push cs before this
 	; Push stuff for iretq
 	push	user_ds
-	push	qword [rax+proc.rsp]
-	push	qword [rax+proc.rflags]
+	push	qword [rbx+proc.rsp]
+	push	qword [rbx+proc.rflags]
 	push	user_cs
 .restore_and_iretq:
-	push	qword [rax+proc.rip]
+	push	qword [rbx+proc.rip]
 	; rax is first, but we'll take it last...
-	lea	rsi, [rax+proc.rax+8]
+	lea	rsi, [rbx+proc.rax+8]
 
 %macro lodregs 1-*
 	%rep %0
@@ -677,6 +696,7 @@ switch_to:
 	%endrep
 %endmacro
 
+	mov	rax, rbx
 	load_regs rbp,rbx,r12,r13,r14,r15
 .fast_fastret:
 	mov	rsp, [rax+proc.rsp]
@@ -855,6 +875,7 @@ timer_handler:
 	jmp	switch_next
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
+	push	rbp
 	push	rdi
 	push	rax
 	push	rbx
@@ -865,17 +886,16 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 
 	; Find the previous process and save fpu/media state to its process struct
 	zero	edi
-	mov	rdi,[gs:edi]
-	mov	bx, 0x2f00 | 'F'
-	call	kputchar
-	mov	rbx,[rdi+gseg.fpu_process]
-	call	print_proc
-	mov	rbx,[rdi+gseg.process]
-	call	print_proc
-	mov	bx, 0x2f00 | '>'
-	call	kputchar
+	mov	rbp,[gs:edi + gseg.self]
+	lea	rdi,[.message_fpu_switch]
+	mov	rsi,[rbp+gseg.fpu_process]
+	mov	rdx,[rbp+gseg.process]
+	; FIXME printf may clobber more stuff than what we've actually saved.
+	; All caller-save registers must be preserved since we're in an
+	; interrupt handler.
+	call	printf
 
-	mov	rax,[rdi+gseg.fpu_process]
+	mov	rax,[rbp+gseg.fpu_process]
 	test	rax,rax
 	; No previous process has unsaved fpu state, just load this process' state
 	jz	.no_save_state
@@ -883,18 +903,22 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	; Save FPU state in process rax
 	o64 fxsave [rax+proc.fxsave]
 .no_save_state:
-	mov	rax,[rdi+gseg.process]
+	mov	rax,[rbp+gseg.process]
 	o64 fxrstor [rax+proc.fxsave]
 
 .ret:
 	; FPU state now owned by current process
-	mov	[rdi+gseg.fpu_process], rax
+	mov	[rbp+gseg.fpu_process], rax
 
 	pop	rbx
 	pop	rax
 	pop	rdi
+	pop	rbp
 	swapgs
 	iretq
+
+.message_fpu_switch:
+	db 'FPU-switch: %p to %p', 10, 0
 
 syscall_entry_compat:
 	ud2
@@ -932,38 +956,12 @@ syscall_entry:
 
 	; Syscall #0: write byte to screen
 .syscall_write:
-	mov	eax, edi ; put the byte in eax instead of edi, edi now = 0
-	; FIXME Use a different register than dx so we can reuse the gseg-pointer...
-	zero	edx
-	mov	rdx, [gs:rdx+gseg.self]
-
-	mov	rdi, [rdx+gseg.vga_pos] ; current pointer
-	cmp	rdi, [rdx+gseg.vga_end] ; end of screen
-	cmovge	rdi, [rdx+gseg.vga_base] ; beginning of screen, if current >= end
-
-	cmp	al,10
-	je .newline
-.write_char:
-	mov	ah, 0x0f
-	stosw
-.finish_write:
-	xor	eax,eax
-	mov	[gs:rax+gseg.vga_pos], rdi ; new pointer, after writing
+	push	r11
+	movzx	edi, dil
+	or	di, 0xf00
+	call	kputchar
+	pop	r11
 	jmp	short .sysret
-.newline:
-	mov	rax, rdi
-	sub	rax, [gs:gseg.vga_base] ; Result fits in 16 bits.
-	cwd ; ax -> dx:ax
-	mov	si, 160
-	div	si
-	; dx now has the remainder
-	mov	ecx,160
-	sub	cx,dx
-	shr	cx,1
-	mov	ax,0x0f00+'-'
-	rep	stosw
-
-	jmp	.finish_write
 
 .sysret:
 	pop	rcx
@@ -1136,7 +1134,6 @@ user_entry_3:
 puts:
 	; callee-save: rbp, rbx, r12-r15
 	push	rbp
-	push	rbx
 	mov	rbp,rdi
 
 .loop:
@@ -1145,15 +1142,69 @@ puts:
 	jz	.ret
 	inc	rbp
 
-	mov	eax,SYSCALL_WRITE
-	syscall
+	call	putchar
 	jmp	.loop
 
 .ret:
-	pop	rbx
 	pop	rbp
 	clear_clobbered
 	ret
+
+; edi: character to put
+putchar:
+	mov	eax, cs
+	lar	eax, ax
+	test	eax, 3 << 13
+	jz	.kputchar
+
+	mov	eax, SYSCALL_WRITE
+	syscall
+	clear_clobbered
+	ret
+.kputchar:
+	mov	edx, edi
+	test	dh, dh
+	jnz	.set
+	mov	dh, 0x1f
+	mov	edi, edx
+.set:
+	;jmp	kputchar
+
+kputchar:
+	push	rbp
+	zero	eax
+	mov	rbp, [gs:eax + gseg.self]
+.have_rbp:
+	mov	eax, edi
+	mov	rdi, [rbp+gseg.vga_pos]
+	cmp	al,10
+	je	.newline
+
+	stosw
+
+.finish_write:
+	cmp	rdi, [rbp+gseg.vga_end]
+	cmovge	rdi, [rbp+gseg.vga_base]
+	mov	[rbp+gseg.vga_pos], rdi
+	clear_clobbered
+	pop	rbp
+	ret
+
+.newline:
+	mov	esi, eax
+	mov	rax, rdi
+	sub	rax, [rbp + gseg.vga_base] ; Result fits in 16 bits.
+	cwd ; ax -> dx:ax
+	mov	ecx,160
+	div	cx
+	; dx now has the remainder
+	sub	cx,dx
+	shr	cx,1
+	mov	eax,esi
+	mov	al,'-'
+	rep	stosw
+
+	jmp	.finish_write
 
 printf:
 	; al: number of vector arguments (won't be used...)
@@ -1174,6 +1225,10 @@ printf:
 	mov	rsi,rdi
 	lea	rdi,[rsp+8]
 
+	push	r12
+	push	r13
+	push	rbx
+
 .nextchar:
 	lodsb
 	test	al,al
@@ -1184,21 +1239,20 @@ printf:
 .write_al:
 	mov	r12,rdi
 	mov	r13,rsi
-	mov	edi,eax
-	mov	eax,SYSCALL_WRITE
-	syscall
+	movzx	edi,al
+	call	putchar
 	mov	rsi,r13
 	mov	rdi,r12
 	jmp	.nextchar
 
 .handle_format:
 	lodsb
-	cmp	al,'%'
-	je	.write_al
 	cmp	al,'c'
 	je	.fmt_c
 	cmp	al,'s'
 	je	.fmt_s
+	;cmp	al,'%'
+	jmp	.write_al
 
 .fmt_c:
 	mov	rax,[rdi]
@@ -1206,12 +1260,11 @@ printf:
 	jmp	.write_al
 
 .fmt_s:
-	mov	rbp,[rdi]
 	; syscall will clobber rsi and rdi but not r12 and r13
 	lea	r13,[rdi+8]
 	mov	r12,rsi
 
-	mov	rdi,rbp
+	mov	rdi,[rdi]
 	call	puts
 
 	mov	rsi,r12
@@ -1219,6 +1272,10 @@ printf:
 	jmp	.nextchar
 
 .done:
+	pop	rbx
+	pop	r13
+	pop	r12
+	clear_clobbered
 	add	rsp,48
 	jmp	[rsp-48]
 
@@ -1226,6 +1283,8 @@ section .data
 
 message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
+digits:
+	db '0123456789abcdef'
 
 section bss
 globals:
