@@ -205,7 +205,6 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 %assign rbpoffset 0x380
 
 	mov	ebp,APIC_LBASE+rbpoffset
-	mov	dword [rbp+APIC_REG_APICTIC-rbpoffset],APIC_TICKS
 	mov	ax,1010b
 	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
 
@@ -214,6 +213,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	mov	dword [rbp+APIC_REG_LINT0_LVT-rbpoffset], 0x8700
 	mov	dword [rbp+APIC_REG_LINT1_LVT-rbpoffset], 0x0400
 	mov	dword [rbp+APIC_REG_ERROR_LVT-rbpoffset], 0x10000
+	mov	dword [rbp+APIC_REG_APICTIC-rbpoffset],APIC_TICKS
 
 	; Enable the APIC and set the spurious interrupt vector to 0xff
 	xor	eax,eax
