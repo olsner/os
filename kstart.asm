@@ -920,6 +920,29 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 .message_fpu_switch:
 	db 'FPU-switch: %p to %p', 10, 0
 
+handler_PF:
+	swapgs
+	push	rdi
+	push	rbp
+	zero	edi
+	mov	rbp, [gs:edi + gseg.self]
+
+	lea	rdi, [.message_pf]
+	mov	rsi, cr2
+	; Fault
+	mov	rdx, [rsp + 16]
+	call printf
+
+	pop	rbp
+	pop	rdi
+	; Pop error code
+	add	rsp, 8
+	swapgs
+	iretq
+
+.message_pf:
+	db 'ZOMG PAGE FAULT! fault addr %p error %p', 10, 10, 0
+
 syscall_entry_compat:
 	ud2
 
@@ -1397,9 +1420,10 @@ idt:
 	interrupt_gate handler_NM ; vector 7, #NM, Device-Not-Available
 	default_error ; 8
 	default_no_error ; 9
-	%rep 5
-	default_error ; 10-14
+	%rep 4
+	default_error ; 10-13
 	%endrep
+	interrupt_gate handler_PF ; 14, #PF
 	default_no_error ; 15
 	default_no_error
 	default_error
