@@ -21,6 +21,13 @@ CR4_OSXMMEXCPT	equ	0x400
 	xor %1,%1
 %endmacro
 
+%macro restruc 1-2 1
+	resb (%1 %+ _size) * %2
+%endmacro
+%macro respage 0-1 1
+	resb (4096*%1)
+%endmacro
+
 ; callee-save: rbp, rbx, r12-r15
 ; caller-save: rax, rcx, rdx, rsi, rdi, r8-r11
 %macro clear_clobbered_syscall 0
@@ -96,9 +103,6 @@ struc	gseg
 	.temp_xmm0	resq 2
 endstruc
 
-%macro respage 0-1 1
-	resb (4096*%1)
-%endmacro
 struc pages, 0x8000
 .kernel		respage
 .memory_map	respage
@@ -397,14 +401,29 @@ launch_user:
 	; save in non-clobbered register
 	mov	rbx, rax
 
-	lea	rdi, [.test_kprintf]
-	mov	rsi, rdi
-	call	printf
+	call	allocate_frame
+	mov	rbp, rax
+	call	allocate_frame
+	mov	[rax + region.paddr], rbp
+	mov	dword [rax + region.size], 0x1000
+	mov	rsi, rax
+
+	mov	rdi, phys_vaddr(aspace_test)
+	mov	[rbx + proc.aspace], rdi
+	mov	rax, [rbx + proc.cr3]
+	mov	[rdi + aspace.pml4], rax
+	mov	rdx, 0x1234000
+	mov	rcx, 0x1000
+	call	map_region
+
+	;lea	rdi, [.test_kprintf]
+	;mov	rsi, rdi
+	;call	printf
 
 	mov	rax, rbx
 	jmp	switch_to
-.test_kprintf:
-	db	10, 'Hello, this is the kernel speaking: %p', 10, 0
+;.test_kprintf:
+;	db	10, 'Hello, this is the kernel speaking: %p', 10, 0
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15
@@ -533,6 +552,7 @@ __SECT__
 
 ; requires rbp = gseg self-pointer
 print_procstate:
+%if 0
 	push	rbx
 	lea	rdi, [.current_proc]
 	mov	rsi, [rbp+gseg.process]
@@ -575,6 +595,7 @@ print_procstate:
 	mov	rsi, [rbp+gseg.runqueue_last]
 	call	printf
 	pop	rbx
+%endif
 	ret
 
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
@@ -790,6 +811,124 @@ free_frame:
 	; TODO release global-page-structures spinlock
 	ret
 
+struc dlist
+	.head	resq 1 ; points to the dlist_node, not to the data
+endstruc
+struc dlist_node
+	.prev	resq 1
+	.next	resq 1
+endstruc
+
+; A region is a sequential range of pages that can be mapped into various
+; address spaces. Not all pages need to be backed by actual frames, e.g. for
+; memory-mapped objects. Pages that don't have frames here may have frames in
+; the parent region.
+struc region
+	.parent	resq 1
+	.count	resd 1
+	.flags	resd 1
+	.paddr	resq 1
+	.size	resq 1
+	; Arbitrary mapping, if there are any
+	.mappings restruc dlist
+	; Links in the global list of regions
+	.node restruc dlist_node
+endstruc
+
+struc mapping
+	.owner	resq 1 ; address_space
+	.region	resq 1
+	.flags	resq 1
+	; Offset into region that corresponds to the first page mapped here
+	.reg_offset resq 1
+	.vaddr	resq 1
+	.size	resq 1
+	; Links for region.mappings
+	.reg_node	restruc dlist_node
+	; Links for process.mappings
+	.as_node	restruc dlist_node
+endstruc
+
+struc aspace
+	; TODO: Is it sane to allocate all page tables privately (once), per
+	; address space? Sharing seems to require something fairly complicated
+	; to keep track of usage counts etc.
+	.pml4	resq 1
+	; TODO Lock structure for multiprocessing
+	.count	resd 1
+	.flags	resd 1
+	; Do we need a list of processes that share an address space?
+	;.procs	resq 1
+	.mappings	resq 1
+endstruc
+
+section .data
+
+aspace_test:
+	dq	0
+	dd	0,0
+	;dq	0 ; not sure if need
+	dq	0
+
+section .text
+
+; rdi = dlist
+; rsi = dlist_node
+; Clobbers rdi, r8
+dlist_prepend:
+	mov	r8, [rdi + dlist.head]
+	test	r8, r8
+	jz	.empty
+	mov	[rsi + dlist_node.next], r8
+	mov	rdi, [r8 + dlist_node.prev]
+	mov	[rdi + dlist_node.prev], rsi
+	mov	[rsi + dlist_node.prev], rdi
+	mov	[rdi + dlist_node.next], rsi
+	ret
+.empty:
+	mov	[rdi + dlist.head], rsi
+	ret
+
+; rdi: the process (address space!) being mapped into
+; rsi: the region to map
+; rdx: the virtual address to map the region at
+; rcx: the size of the virtual mapping (must be <= size of region?)
+map_region:
+	push	rdi
+	push	rsi
+	push	rdx
+	push	rcx
+	call	allocate_frame ; TODO mappings are small: kmalloc (or slab)
+	pop	rcx
+	pop	rdx
+	pop	rsi
+	pop	rdi
+	test	eax,eax
+	jz	.oom
+
+	mov	[rax + mapping.owner], rdi
+	mov	[rax + mapping.region], rsi
+	mov	[rax + mapping.vaddr], rdx
+	mov	[rax + mapping.size], rcx
+
+	mov	r9, rdi
+	mov	r10, rsi
+	lea	rdi, [rdi + aspace.mappings]
+	lea	rsi, [rax + mapping.as_node]
+	call	dlist_prepend
+
+	lea	rdi, [r10 + region.mappings]
+	lea	rsi, [rax + mapping.reg_node]
+	call	dlist_prepend
+
+	mov	rdi, r9
+	;mov	rsi, r10
+
+	inc	dword [r10 + region.count]
+
+.oom:
+	ret
+
 handler_err:
 handler_no_err:
 	cli
@@ -921,18 +1060,53 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	db 'FPU-switch: %p to %p', 10, 0
 
 handler_PF:
+	;test	byte [rsp], 0x4
+	;jz	.kernel_fault
+
 	swapgs
 	push	rdi
 	push	rbp
+	push	rsi
 	zero	edi
 	mov	rbp, [gs:edi + gseg.self]
 
 	lea	rdi, [.message_pf]
 	mov	rsi, cr2
 	; Fault
-	mov	rdx, [rsp + 16]
+	mov	rdx, [rsp + 24]
 	call printf
 
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
+	mov	rdi, [rdi + aspace.mappings]
+	mov	rsi, cr2
+.test_mapping:
+	test	rdi, rdi
+	jz	.no_match
+	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
+	cmp	rsi, rax
+	je	.found
+	jb	.next_mapping
+	add	rax, [rdi + mapping.size - mapping.as_node]
+	cmp	rsi, rax
+	jb	.found
+	; vaddr <= cr2 < vaddr+size
+.next_mapping:
+	mov	rdi, [rdi + dlist_node.next]
+	jmp	.test_mapping
+.no_match:
+	cli
+	hlt
+.found:
+	mov	rdx, rdi
+	mov	rcx, [rdi + mapping.vaddr - mapping.as_node]
+	lea	rdi, [.message_found_map]
+	call	printf
+
+.ret:
+	cli
+	hlt
+	pop	rsi
 	pop	rbp
 	pop	rdi
 	; Pop error code
@@ -940,8 +1114,18 @@ handler_PF:
 	swapgs
 	iretq
 
+.no_mappings:
+.kernel_fault:
+	cli
+	hlt
+	mov	al,0xe
+
 .message_pf:
-	db 'ZOMG PAGE FAULT! fault addr %p error %p', 10, 10, 0
+	db 'PF %p %p', 10, 10, 0
+.message_found_map:
+	db 'MAP %p %p %p', 10, 0
+.message_kp:
+	;db 'Oh noes, kernel panic! fault addr %p error %p', 10, 10, 0
 
 syscall_entry_compat:
 	ud2
@@ -1065,6 +1249,12 @@ syscall_entry:
 section usermode
 
 user_entry:
+
+	mov	rdx, 0x1234000
+	mov	[rdx], edx
+	;mov	edi, 0x8000
+	;mov	[rdi], edi
+
 	xor	eax,eax
 
 	mov	edi,'U'

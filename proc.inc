@@ -26,6 +26,7 @@ struc	proc, -0x80
 	.waiting_for resq 1 ; Pointer to proc
 	.next	resq 1 ; If/when in a list, points to next process in list
 	.cr3	resq 1
+	.aspace	resq 1
 
 	align 16
 	.fxsave	resb	512
