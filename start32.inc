@@ -104,7 +104,7 @@ start32:
 	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
 	mov	cr4, eax
 
-	mov	edx, 0xa000 ; address of PML4
+	mov	edx, pages.pml4 ; address of PML4
 	mov	cr3, edx
 
 	mov	ecx, MSR_EFER
