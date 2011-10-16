@@ -74,6 +74,9 @@ start32:
 	; Map 8^H16 pages starting at 0x8000 to the same physical address
 	mov	eax, 0x8005 ; page #8/0x8000 -> physical 0x8000 (i.e. here)
 	stosd
+	add	edi, 4
+	mov	eax, 0x9005
+	stosd
 
 	mov	edi, pages.low_pt + 0x80
 	; Set page 0xe000 to uncacheable and map it to the APIC address.

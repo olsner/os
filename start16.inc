@@ -16,9 +16,9 @@ start16:
 	out	0x21, al
 
 	; Safe area to put random crap like the e820 address map.
-	mov	ax,0x900
+	mov	ax,pages.memory_map / 16
 	mov	es,ax
-	mov	di,memory_map.data - 0x9000
+	mov	di,memory_map.data - pages.memory_map
 	xor	ebx,ebx
 .e820_loop:
 	mov	ax,0xe820 ; Function code
@@ -39,7 +39,7 @@ start16:
 	add	di,20
 	jmp	.e820_loop
 .done:
-	mov	dword [es:memory_map.size - 0x9000], edi
+	mov	dword [es:memory_map.size - pages.memory_map], edi
 
 	mov	ax,0x0e00+'B'
 	mov	bl,0x0f
@@ -49,7 +49,8 @@ start16:
 	mov	eax,cr0
 	or	al,CR0_PE
 	mov	cr0,eax
-	
+
+	; I think the offsets here are because it's DS-relative and DS is 0x800
 	lidt	[idtr - 0x8000]
 	lgdt	[gdtr - 0x8000]
 

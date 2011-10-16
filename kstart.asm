@@ -104,7 +104,7 @@ struc	gseg
 endstruc
 
 struc pages, 0x8000
-.kernel		respage
+.kernel		respage 2
 .memory_map	respage
 
 .page_tables:
@@ -132,7 +132,7 @@ section .text vstart=0x8000
 section .data vfollows=.text follows=.text align=4
 section usermode vfollows=.data follows=.data align=1
 section bss nobits align=8
-section memory_map nobits vstart=0x9000
+section memory_map nobits vstart=pages.memory_map
 section core nobits vstart=((1 << 64) - (1 << 30))
 
 ; get the physical address of a symbol in the .text section
