@@ -261,8 +261,10 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	wrmsr
 
 	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
-	mov	eax, pages.gseg_cpu0
-	cdq
+	mov	rax, phys_vaddr(pages.gseg_cpu0)
+	mov	rdx,rax
+	mov	eax,eax
+	shr	rdx,32
 	mov	ecx, MSR_GSBASE
 	wrmsr
 
@@ -472,7 +474,7 @@ new_proc:
 	jz	.oom
 
 	mov	rdi, rax
-	mov	rsi, pages.pml4
+	mov	rsi, phys_vaddr(pages.pml4)
 	mov	ecx, 4096 / 8
 	rep	movsq
 	sub	rax, phys_vaddr(0)
