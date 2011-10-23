@@ -1238,10 +1238,8 @@ section usermode
 
 user_entry:
 
-	mov	rdx, 0x1234000
+	mov	rdx, 0x1234123
 	mov	[rdx], edx
-	;mov	edi, 0x8000
-	;mov	[rdi], edi
 
 	xor	eax,eax
 
