@@ -1050,8 +1050,8 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 	iretq
 
 handler_PF:
-	;test	byte [rsp], 0x4
-	;jz	.kernel_fault
+	test	byte [rsp], 0x4
+	jz	.kernel_fault
 
 	swapgs
 	push	rdi
