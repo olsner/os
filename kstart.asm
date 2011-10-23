@@ -66,6 +66,12 @@ __SECT__
 %include "msr.inc"
 %include "proc.inc"
 %include "segments.inc"
+%include "string.inc"
+
+%define log_switch_to 0
+%define log_switch_next 0
+
+%assign need_print_procstate (log_switch_to | log_switch_next)
 
 RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
@@ -133,7 +139,6 @@ section .data vfollows=.text follows=.text align=4
 section usermode vfollows=.data follows=.data align=1
 section bss nobits align=8
 section memory_map nobits vstart=pages.memory_map
-section core nobits vstart=((1 << 64) - (1 << 30))
 
 ; get the physical address of a symbol in the .text section
 %define text_paddr(sym) (section..text.vstart + sym - start16)
@@ -492,13 +497,11 @@ switch_next:
 	mov	r13, rdx
 
 .gseg_rbp:
-[section .data]
-.message:	db 'switch_next', 10, 0
-.message_after:	db 'switch_next to %p', 10, 0
-__SECT__
-	;lea	rdi, [.message]
-	;call	puts
-	;call	print_procstate
+%if log_switch_next
+lodstr	rdi, 'switch_next', 10
+	call	puts
+	call	print_procstate
+%endif
 
 	mov	rax, r12
 	mov	rdx, r13
@@ -543,27 +546,29 @@ __SECT__
 	mov	[rax+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 	mov	[rdx+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
 
-	;mov	rbx, rax
-	;lea	rdi, [.message_after]
-	;mov	rsi, rax
-	;call	printf
-	;call	print_procstate
-	;mov	rax, rbx
+%if log_switch_next
+	mov	rbx, rax
+lodstr	rdi, 'switch_next to %p', 10
+	mov	rsi, rax
+	call	printf
+	call	print_procstate
+	mov	rax, rbx
+%endif
 
 	jmp	switch_to
 
+%ifdef need_print_procstate
 ; requires rbp = gseg self-pointer
 print_procstate:
-%if 0
 	push	rbx
-	lea	rdi, [.current_proc]
+lodstr	rdi,	'    Current process: %p', 10
 	mov	rsi, [rbp+gseg.process]
 	call	printf
-	lea	rdi, [.runqueue]
+lodstr	rdi,	'    Run queue:', 10, 0
 	call	puts
 	mov	rbx, [rbp+gseg.runqueue]
 .loop:
-	lea	rdi, [.rq_entry]
+lodstr	rdi,	'        - %p', 10, 0
 	mov	rsi, rbx
 	call	printf
 	test	rbx, rbx
@@ -574,31 +579,20 @@ print_procstate:
 	je	.error
 	jmp	.loop
 
-.current_proc:
-	db	'    Current process: %p', 10, 0
-.runqueue:
-	db	'    Run queue:', 10, 0
-.rq_entry:
-	db	'        - %p', 10, 0
-.runqueue_last:
-	db	'    Runqueue_last: %p', 10, 0
-.error_msg:
-	db	'*** LOOP IN RUNQUEUE: %p points to itself.', 10, 0
-
 .error:
-	lea	rdi, [.error_msg]
+lodstr	rdi,	'*** LOOP IN RUNQUEUE: %p points to itself.', 10, 0
 	mov	rsi, rbx
 	call	printf
 	cli
 	hlt
 
 .end_of_q:
-	lea	rdi, [.runqueue_last]
+lodstr	rdi,	'    Runqueue_last: %p', 10, 0
 	mov	rsi, [rbp+gseg.runqueue_last]
 	call	printf
 	pop	rbx
-%endif
 	ret
+%endif ;need_print_procstate
 
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
 ; All registers other than rax will be ignored, trampled, and replaced with the
@@ -610,16 +604,13 @@ switch_to:
 	zero	edi
 	mov	rbp, [gs:rdi + gseg.self]
 
-pushsection .data
-.message:
-	db 'Switching to %p.', 10, 0
-popsection
-
 	mov	rbx, rax
-	;lea	rdi, [.message]
-	;mov	rsi, rax
-	;call	printf
-	;call	print_procstate
+%if log_switch_to
+lodstr	rdi, 'Switching to %p.', 10
+	mov	rsi, rax
+	call	printf
+	call	print_procstate
+%endif
 
 	; Update pointer to current process
 	mov	[rbp+gseg.process], rbx
@@ -1028,7 +1019,7 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	; Find the previous process and save fpu/media state to its process struct
 	zero	edi
 	mov	rbp,[gs:edi + gseg.self]
-	lea	rdi,[.message_fpu_switch]
+lodstr	rdi,	'FPU-switch: %p to %p', 10
 	mov	rsi,[rbp+gseg.fpu_process]
 	mov	rdx,[rbp+gseg.process]
 	; FIXME printf may clobber more stuff than what we've actually saved.
@@ -1058,9 +1049,6 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	swapgs
 	iretq
 
-.message_fpu_switch:
-	db 'FPU-switch: %p to %p', 10, 0
-
 handler_PF:
 	;test	byte [rsp], 0x4
 	;jz	.kernel_fault
@@ -1072,7 +1060,7 @@ handler_PF:
 	zero	edi
 	mov	rbp, [gs:edi + gseg.self]
 
-	lea	rdi, [.message_pf]
+lodstr	rdi,	'Page-fault:', 10, 'cr2=%p error=%p', 10, 10
 	mov	rsi, cr2
 	; Fault
 	mov	rdx, [rsp + 24]
@@ -1100,10 +1088,12 @@ handler_PF:
 	cli
 	hlt
 .found:
-	mov	rdx, rdi
+	lea	rdx, [rdi - mapping.as_node]
 	mov	rcx, [rdi + mapping.vaddr - mapping.as_node]
-	lea	rdi, [.message_found_map]
+lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	call	printf
+	; FIXME All the data (rdx = mapping, rsi = cr2) is now blown away since
+	; printf clobbered all caller-save registers.
 
 .ret:
 	cli
@@ -1122,10 +1112,6 @@ handler_PF:
 	hlt
 	mov	al,0xe
 
-.message_pf:
-	db 'PF %p %p', 10, 10, 0
-.message_found_map:
-	db 'MAP %p %p %p', 10, 0
 .message_kp:
 	;db 'Oh noes, kernel panic! fault addr %p error %p', 10, 10, 0
 
