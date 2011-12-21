@@ -29,7 +29,7 @@ endif
 ASMFILES := kstart.asm boot.asm
 DEPFILES := $(ASMFILES:.asm=.dep)
 
-all: shaman cpuid rflags retbench
+all: shaman cpuid rflags
 
 shaman: disk.dat
 
