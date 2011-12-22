@@ -68,8 +68,8 @@ __SECT__
 %include "segments.inc"
 %include "string.inc"
 
-%define log_switch_to 0
-%define log_switch_next 0
+%define log_switch_to 1
+%define log_switch_next 1
 
 %assign need_print_procstate (log_switch_to | log_switch_next)
 
@@ -83,8 +83,53 @@ APIC_PBASE	equ	0xfee00000
 SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
 SYSCALL_YIELD	equ	2
+; Send a message without waiting for response, may need to wait for the
+; recipient process to become ready (if it isn't in a RECV call). Or should it
+; merely fail in that situation?
+SYSCALL_ASEND	equ	3
+; Send a message, wait synchronously for response
+SYSCALL_SENDRCV	equ	4
+; Receive a message
+; Returns in registers:
+; rax: sending process ID
+; <syscall argument register>: message parameters
+SYSCALL_RECV	equ	5
+SYSCALL_NEWPROC	equ	6
+
+; Map a page of this object (or an identified object in this process?)
+; * flags:
+;   * request to map or "grant" on page?
+;   * read-only/read-write/read-exec
+;   * shared or private/CoW
+; * virtual address on receiving side (depending on flag)
+; * offset inside object
+; * length to attempt to map
+; * (handle of object to map)
+MSG_MAP		equ	1
+; Received when a fault happens in a process that has mapped a page from you
+; Parameters:
+; * page(s) to fill with data. will be zeroed out and mapped by kernel
+; * offset inside object
+; * length/number of pages
+; * (handle (in local address space) of mapped object)
+; Status (in rax):
+; 0 if successfully filled
+; !0 on an error. the faulting process will terminate
+MSG_PFAULT	equ	2
+
+; Start of user-mapped message-type range
+MSG_USER	equ	16
+MSG_MAX		equ	255
+
+%define msg_code(msg, error, respflag) \
+	(msg | (error << 8) | (respflag << 9))
+%define msg_resperr(msg) msg_code(msg, 1, 1)
+%define msg_sendcode(msg) msg_code(msg, 0, 0)
+
+
 
 kernel_base equ -(1 << 30)
+handle_top equ 0x7fff_ffff_f000 ; For now, we waste one whole page per handle (I think)
 
 ; Per-CPU data (theoretically)
 struc	gseg
@@ -491,6 +536,24 @@ new_proc:
 .oom_no_pop:
 	ret
 
+; rdi: process to add to runqueue
+runqueue_append:
+	push	rbp
+	zero	ebp
+	mov	rbp, [gs:ebp + gseg.self]
+
+	mov	rcx, [rbp + gseg.runqueue_last]
+	mov	[rbp + gseg.runqueue_last], rdi
+	test	rcx,rcx
+	jz	.runqueue_empty
+	mov	[rcx + proc.next], rdi
+	pop	rbp
+	ret
+.runqueue_empty:
+	mov	[rbp + gseg.runqueue], rdi
+	pop	rbp
+	ret
+
 switch_next:
 	mov	rbp, rdi
 	mov	r12, rax
@@ -828,6 +891,14 @@ struc region
 	.node restruc dlist_node
 endstruc
 
+; Ordinary and boring flags
+MAPFLAG_X	equ 1
+MAPFLAG_W	equ 2
+MAPFLAG_R	equ 4
+MAPFLAG_COW	equ 8 ; Hmm, are mappings CoW or are regions?
+; "Special" flags are >= 0x10000
+MAPFLAG_HANDLE	equ 0x10000
+
 struc mapping
 	.owner	resq 1 ; address_space
 	.region	resq 1
@@ -853,6 +924,10 @@ struc aspace
 	; Do we need a list of processes that share an address space?
 	;.procs	resq 1
 	.mappings	resq 1
+	; Lowest handle used. The range may contain holes. Something clever
+	; similar to how we (will) handle noncontiguous mappings will apply :)
+	; Also, all handles have mappings.
+	.handles_bottom	resq 1
 endstruc
 
 section .data
@@ -910,16 +985,30 @@ map_region:
 	lea	rsi, [rax + mapping.as_node]
 	call	dlist_prepend
 
+	test	r10, r10
+	jz	.no_region
 	lea	rdi, [r10 + region.mappings]
 	lea	rsi, [rax + mapping.reg_node]
 	call	dlist_prepend
 
+	inc	dword [r10 + region.count]
+.no_region:
+
 	mov	rdi, r9
 	;mov	rsi, r10
 
-	inc	dword [r10 + region.count]
-
 .oom:
+	ret
+
+; rdi: the address space being mapped into
+; rsi: the kernel object being mapped
+; (rdx: flags etc. We have up to 11 bits available in the page table depending
+; on the minimum alignment of kernel objects. 1 bit is required to set the
+; 'present' bit (LSB) to 0, each bit of alignment above 1 is available. For
+; 16-byte alignment that means a whopping 3 bits!)
+; For starters, all handles point to processes and have no flags.
+map_handle:
+	
 	ret
 
 handler_err:
@@ -1147,6 +1236,8 @@ syscall_entry:
 	je	.syscall_gettime
 	cmp	eax, SYSCALL_YIELD
 	je	.syscall_yield
+	cmp	eax, SYSCALL_NEWPROC
+	je	.syscall_newproc
 	jmp	.sysret
 
 	; Syscall #0: write byte to screen
@@ -1233,13 +1324,74 @@ syscall_entry:
 	zero	eax
 	jmp	.sysret_rcx_set
 
+.syscall_newproc:
+	zero	edi
+	mov	rdi, [gs:rdi+gseg.self]
+
+	; - Load current process pointer into rax
+	mov	rax,[rdi+gseg.process]
+	save_regs rbp,rbx,r12,r13,r14,r15
+	mov	[rax+proc.rflags], r11
+	; See TODO above - the user rsp should be stored directly in the
+	; proces struct.
+	mov	rdx, [rdi+gseg.user_rsp]
+	mov	[rax+proc.rsp], rdx
+	; Save away the process pointer in a callee-save reg
+	mov	rbp, rax
+
+	; TODO: Save lots of registers!
+	; TODO: Validate some stuff
+	; rdi: entry point
+	; rsi: stack pointer of new process
+	; FIXME Forgets to set an address space on the created process!
+	call	new_proc
+	mov	rdi,rax
+	mov	rbx,rax ; Save new process id
+	call	runqueue_append
+
+	mov	rdi,rbp ; Process. Should be address space?
+	mov	rsi,rbx ; Handle of new process that should be mapped
+	call	map_handle
+	; rax is mapped 
+
+lodstr	rdi, '+NEWPROC %p', 10
+	mov	rsi, rbx
+	call	printf
+	zero	ebp
+	mov	rbp, [gs:rbp + gseg.self]
+	call	print_procstate
+lodstr rdi, '-NEWPROC', 10
+	call	printf
+
+	mov	rax, rbx
+	; TODO Restore callee-save registers from process struct, clear
+	; caller-save registers to avoid leaking kernel details.
+
+	mov	r11, [rbp + gseg.process]
+	mov	r11, [r11 + proc.rflags]
+	jmp	.sysret
 
 section usermode
 
+user_entry_new:
+lodstr	rdi, 'user_entry_new', 10
+	call	printf
+
+	mov	[0x1234123], edx
+	jmp	user_entry_new
+
+
 user_entry:
 
-	mov	rdx, 0x1234123
-	mov	[rdx], edx
+	;mov	rdx, 0x1234123
+	;mov	[rdx], edx
+
+	mov	edi, user_entry_new
+	mov	rsi, rsp
+	mov	eax, SYSCALL_NEWPROC
+	syscall
+
+	jmp	$
 
 	xor	eax,eax
 

@@ -40,4 +40,5 @@ PROC_KERNEL	equ	0
 ; rax: syscall return value
 ; Remaining registers will be 0 (?)
 PROC_FASTRET	equ	1
-
+; Similar to FASTRET but we can make a message-send rendezvous immediately
+PROC_IN_RECV	equ	2
