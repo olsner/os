@@ -181,7 +181,6 @@ endstruc
 
 kernel_stack_end equ pages.kernel_stack_end
 user_stack_end equ pages.user_stack_end
-APIC_LBASE equ pages.apic
 
 section .text vstart=0x8000
 section .data vfollows=.text follows=.text align=4
@@ -215,6 +214,12 @@ start64:
 	; 64-bit address, we must do it in long mode...
 	jmp	phys_vaddr(.moved)
 .moved:
+	; Need to reload gdt and ldt, since they are using 32-bit addresses
+	; (vaddr==paddr) that will get unmapped as soon as we leave the
+	; boot code.
+	lidt	[idtr]
+	lgdt	[gdtr]
+
 	mov	al,data64_seg
 	mov	ah,0
 	mov	ds,ax
@@ -245,6 +250,22 @@ start64:
 	mov	eax, APIC_PBASE | 0x800 | 0x100
 	wrmsr
 
+	; Clear out the page tables we're going to reuse
+	zero	eax
+	lea	rdi, [pages.low_pd]
+	mov	ecx, 512
+	rep	stosd
+
+	; Clear old link that points to low_pdp (where these mappings will
+	; otherwise be duplicated)
+	mov	[pages.pml4], dword 0
+	mov	[pages.kernel_pdp + 0xff0], dword pages.low_pd | 3
+	mov	[pages.low_pd + 0xff8], dword pages.low_pt | 3
+	; Set page kernel_base-0x1000 to uncacheable and map it to the APIC
+	; address.
+	mov	[pages.low_pt + 0xff8], dword APIC_PBASE | 0x13
+	invlpg	[rel -0x1000]
+
 APIC_REG_TPR		equ	0x80
 APIC_REG_EOI		equ	0xb0
 APIC_REG_SPURIOUS	equ	0xf0
@@ -262,7 +283,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 
 %assign rbpoffset 0x380
 
-	mov	ebp,APIC_LBASE+rbpoffset
+	mov	rbp,phys_vaddr(pages.apic)+rbpoffset
 	mov	ax,1010b
 	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
 
@@ -461,12 +482,9 @@ launch_user:
 	call	allocate_frame
 	mov	[rax + region.paddr], rbp
 	mov	dword [rax + region.size], 0x1000
-	mov	rsi, rax
 
-	mov	rdi, phys_vaddr(aspace_test)
-	mov	[rbx + proc.aspace], rdi
-	mov	rax, [rbx + proc.cr3]
-	mov	[rdi + aspace.pml4], rax
+	mov	rdi, [rbx + proc.aspace]
+	mov	rsi, rax
 	mov	rdx, 0x1234000
 	mov	rcx, 0x1000
 	call	map_region
@@ -509,27 +527,37 @@ new_proc:
 	jz	.oom_no_pop
 
 	push	rbx
-	lea	rbx, [rax-proc]
-	mov	[rbx+proc.rip],rsi
-	mov	[rbx+proc.rsp],rcx
+	lea	rbx, [rax - proc]
+	mov	[rbx + proc.rip],rsi
+	mov	[rbx + proc.rsp],rcx
 	; bit 1 of byte 1 of rflags: the IF bit
 	; all other bits are set to 0 by default
-	mov	byte [rbx+proc.rflags+1], RFLAGS_IF >> 8
+	mov	byte [rbx + proc.rflags+1], RFLAGS_IF >> 8
 	; Copy initial FPU/Media state to process struct
 	mov	rsi, [rel globals.initial_fpstate]
-	lea	rdi, [rbx+proc.fxsave]
+	lea	rdi, [rbx + proc.fxsave]
 	mov	ecx, 512 / 8
 	rep	movsq
+
+	; Allocate address space. Should use kmalloc/slab/etc, aspace is small
+	call	allocate_frame
+	test	eax, eax
+	jz	.oom
+	mov	[rbx + proc.aspace], rax
 
 	; Allocate page table
 	call	allocate_frame
 	test	eax,eax
 	jz	.oom
 
-	mov	rdi, rax
-	mov	rsi, phys_vaddr(pages.pml4)
-	mov	ecx, 4096 / 8
-	rep	movsq
+	; Copy a reference to the kernel memory range into the new PML4.
+	; Since this currently is at most one 4TB range, this is easy: only a
+	; single PML4 entry maps everything by sharing the kernel's lower
+	; page tables between all processes.
+	mov	esi, [pages.pml4 + 0xff8]
+	mov	[rax + 0xff8], esi
+	mov	rsi, [rbx + proc.aspace]
+	mov	[rsi + aspace.pml4], rax
 	sub	rax, phys_vaddr(0)
 	mov	[rbx + proc.cr3], rax
 
@@ -672,8 +700,9 @@ switch_to:
 
 	mov	rbx, rax
 %if log_switch_to
-lodstr	rdi, 'Switching to %p.', 10
+lodstr	rdi, 'Switching to %p (cr3=%p).', 10
 	mov	rsi, rax
+	mov	rdx, [rsi + proc.cr3]
 	call	printf
 	call	print_procstate
 %endif
@@ -694,7 +723,7 @@ lodstr	rdi, 'Switching to %p.', 10
 	mov	rax, cr3
 	cmp	rax, rcx
 	je	.no_set_cr3
-	mov	cr3, rax
+	mov	cr3, rcx
 .no_set_cr3:
 
 	mov	rax, [rbx+proc.flags]
@@ -919,9 +948,9 @@ struc mapping
 endstruc
 
 struc aspace
-	; TODO: Is it sane to allocate all page tables privately (once), per
-	; address space? Sharing seems to require something fairly complicated
-	; to keep track of usage counts etc.
+	; Upon setup, pml4 is set to a freshly allocated frame that is empty
+	; except for the mapping to the kernel memory area (which, as long as
+	; it's less than 4TB is only a single entry in the PML4).
 	.pml4	resq 1
 	; TODO Lock structure for multiprocessing
 	.count	resd 1
@@ -934,14 +963,6 @@ struc aspace
 	; Also, all handles have mappings.
 	.handles_bottom	resq 1
 endstruc
-
-section .data
-
-aspace_test:
-	dq	0
-	dd	0,0
-	;dq	0 ; not sure if need
-	dq	0
 
 section .text
 
@@ -1111,10 +1132,10 @@ timer_handler:
 	xor	edi, edi
 	mov	rdi, [gs:rdi+gseg.self]
 	inc	dword [rdi+gseg.curtime]
-	mov	eax, dword [abs APIC_LBASE + APIC_REG_APICTCC]
+	mov	eax, dword [rel -0x1000 + APIC_REG_APICTCC]
 	mov	dword [rdi+gseg.tick], eax
-	mov	dword [abs APIC_LBASE + APIC_REG_APICTIC], APIC_TICKS
-	mov	dword [abs APIC_LBASE + APIC_REG_EOI], 0
+	mov	dword [rel -0x1000 + APIC_REG_APICTIC], APIC_TICKS
+	mov	dword [rel -0x1000 + APIC_REG_EOI], 0
 
 	mov	rax,[rdi+gseg.process]
 	; The rax and rdi we saved above, store them in process
@@ -1178,6 +1199,13 @@ handler_PF:
 	push	rsi
 	zero	edi
 	mov	rbp, [gs:edi + gseg.self]
+
+	; Page-fault error code:
+	; Bit 0: "If this bit is cleared to 0, the page faultwas caused by a not-present page. If this bit is set to 1, the page fault was caused by a page-protection violation.
+	; Bit 1: clear = read access, set = write access
+	; Bit 2: set = user-space access, cleared = supervisor (tested above)
+	; Bit 3: RSV - a reserved bit in a page table was set to 1
+	; Bit 4: set = the access was an instruction fetch. Only used when NX is enabled.
 
 lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
 	mov	rsi, cr2
@@ -1275,8 +1303,6 @@ lodstr	rdi, 'Invalid syscall %p!', 10
 	mov	rsi, rax
 	call	printf
 	pop	r11
-	cli
-	hlt
 	jmp	.sysret
 
 	; Syscall #0: write byte to screen
@@ -1454,6 +1480,8 @@ user_entry:
 lodstr	rdi, 'newproc: %p', 10
 	mov	rsi, rax
 	call	printf
+
+	mov	dword [rbx], 0
 
 	mov	rsi, rbx
 	mov	eax, SYSCALL_SENDRCV
@@ -1716,7 +1744,7 @@ printf:
 	mov	rdi, rbx
 	shr	rdi, cl
 	and	edi, 0xf
-	mov	dil, byte [digits + rdi]
+	mov	dil, byte [phys_vaddr(digits) + rdi]
 	mov	bpl, cl
 	call	putchar
 	mov	cl, bpl
@@ -1774,7 +1802,7 @@ gdt_start:
 	define_segment 0,0,RX_ACCESS | SEG_64BIT
 	define_segment 0,0,RW_ACCESS
 	; 64-bit TSS
-	define_tss64 0x68, text_paddr(tss)
+	define_tss64 0x68, text_vpaddr(tss)
 	; USER segments
 	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
 	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
@@ -1788,7 +1816,7 @@ section .data
 align	4
 gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
-	dd	gdt_start  ; Offset
+	dq	text_vpaddr(gdt_start)  ; Offset
 
 section .text
 idt:
@@ -1833,7 +1861,7 @@ idt_end:
 section .data
 idtr:
 	dw	idt_end-idt-1
-	dd	idt
+	dq	text_vpaddr(idt)
 
 section memory_map
 memory_map:

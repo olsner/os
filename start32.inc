@@ -78,15 +78,6 @@ start32:
 	mov	eax, 0x9005
 	stosd
 
-	mov	edi, pages.low_pt + 0x80
-	; Set page 0xe000 to uncacheable and map it to the APIC address.
-	mov	dword [edi+(APIC_LBASE >> 12)*8-0x80], APIC_PBASE | 0x13
-	invlpg	[abs APIC_LBASE]
-	; Make user stack page accessible to user-mode with write access, used
-	; for user-process stack (at least until we have virtual memory
-	; management...)
-	mov	dword [edi+(pages.user_stack >> 12)*8-0x80], pages.user_stack | 7 ; user-mode accessible, read/write, present
-
 	; Page mapping for kernel space (top 4TB part)
 	mov	edi, pages.kernel_pdp
 	xor	eax,eax
