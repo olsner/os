@@ -88,12 +88,16 @@ SYSCALL_YIELD	equ	2
 ; merely fail in that situation?
 SYSCALL_ASEND	equ	3
 ; Send a message, wait synchronously for response
+; rdi: message ID
+; rsi: target process ID
 SYSCALL_SENDRCV	equ	4
 ; Receive a message
 ; Returns in registers:
-; rax: sending process ID
+; rax: message ID
+; rdx: sending process ID
 ; <syscall argument register>: message parameters
 SYSCALL_RECV	equ	5
+SYSCALL_SEND	equ	5
 SYSCALL_NEWPROC	equ	6
 
 ; Map a page of this object (or an identified object in this process?)
@@ -432,26 +436,25 @@ launch_user:
 	bts	rax,CR0_TS_BIT
 	mov	cr0,rax
 
-	mov	edi, user_entry_2
-	mov	esi, user_stack_end
-	call	new_proc
+	;mov	edi, user_entry_2
+	;mov	esi, user_stack_end
+	;call	new_proc
+	;mov	rdi, rax
+	;call	runqueue_append
 
-	zero	ebx
-	mov	rbx, [gs:rbx + gseg.self]
-	mov	[rbx + gseg.runqueue], rax
-	mov	rbp, rax
-
-	mov	edi, user_entry_3
-	mov	esi, user_stack_end
-	call	new_proc
-	mov	[rbx + gseg.runqueue_last], rax
-	mov	[rbp + proc.next], rax
+	;mov	edi, user_entry_3
+	;mov	esi, user_stack_end
+	;call	new_proc
+	;mov	rdi, rax
+	;call	runqueue_append
 
 	mov	edi, user_entry
 	mov	esi, user_stack_end
 	call	new_proc
 	; save in non-clobbered register
 	mov	rbx, rax
+	mov	rdi, rax
+	call	runqueue_append
 
 	call	allocate_frame
 	mov	rbp, rax
@@ -891,6 +894,8 @@ struc region
 	.node restruc dlist_node
 endstruc
 
+REGFLAG_HANDLE	equ 1
+
 ; Ordinary and boring flags
 MAPFLAG_X	equ 1
 MAPFLAG_W	equ 2
@@ -1008,8 +1013,33 @@ map_region:
 ; 16-byte alignment that means a whopping 3 bits!)
 ; For starters, all handles point to processes and have no flags.
 map_handle:
-	
+	test	rsi, 0xf
+	jnz	.unaligned_kernel_object
+
+	push	rdi
+	push	rsi
+	call	allocate_frame
+	pop	qword [rax + region.paddr] ; paddr (dummy) = kernel virtual address of object being mapped as a handle
+	mov	byte [rax + region.flags], REGFLAG_HANDLE
+	mov	rsi, rax
+
+	; Calculate the virtual address for the handle
+	pop	rdi
+	mov	rdx, [rdi + aspace.handles_bottom]
+	sub	rdx, 0x1000
+	mov	[rdi + aspace.handles_bottom], rdx
+
+	zero	ecx ; size is 0
+	push	rdx ; vaddr of handle, also return value
+	call	map_region
+	pop	rax
 	ret
+
+.unaligned_kernel_object:
+lodstr	rdi,	'Unaligned kobj %p', 10
+	call	printf
+	cli
+	hlt
 
 handler_err:
 handler_no_err:
@@ -1149,7 +1179,7 @@ handler_PF:
 	zero	edi
 	mov	rbp, [gs:edi + gseg.self]
 
-lodstr	rdi,	'Page-fault:', 10, 'cr2=%p error=%p', 10, 10
+lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
 	mov	rsi, cr2
 	; Fault
 	mov	rdx, [rsp + 24]
@@ -1238,6 +1268,15 @@ syscall_entry:
 	je	.syscall_yield
 	cmp	eax, SYSCALL_NEWPROC
 	je	.syscall_newproc
+	push	rdi
+	push	rsi
+	push	r11
+lodstr	rdi, 'Invalid syscall %p!', 10
+	mov	rsi, rax
+	call	printf
+	pop	r11
+	cli
+	hlt
 	jmp	.sysret
 
 	; Syscall #0: write byte to screen
@@ -1325,45 +1364,52 @@ syscall_entry:
 	jmp	.sysret_rcx_set
 
 .syscall_newproc:
-	zero	edi
-	mov	rdi, [gs:rdi+gseg.self]
+	zero	ecx
+	mov	rcx, [gs:rcx+gseg.self]
 
 	; - Load current process pointer into rax
-	mov	rax,[rdi+gseg.process]
+	mov	rax, [rcx + gseg.process]
 	save_regs rbp,rbx,r12,r13,r14,r15
-	mov	[rax+proc.rflags], r11
+	mov	[rax + proc.rflags], r11
 	; See TODO above - the user rsp should be stored directly in the
 	; proces struct.
-	mov	rdx, [rdi+gseg.user_rsp]
+	mov	rdx, [rcx+gseg.user_rsp]
 	mov	[rax+proc.rsp], rdx
-	; Save away the process pointer in a callee-save reg
+	; Save away the current process pointer in a callee-save reg
 	mov	rbp, rax
 
-	; TODO: Save lots of registers!
 	; TODO: Validate some stuff
 	; rdi: entry point
 	; rsi: stack pointer of new process
-	; FIXME Forgets to set an address space on the created process!
 	call	new_proc
 	mov	rdi,rax
 	mov	rbx,rax ; Save new process id
+	; FIXME How should we decide which address space to use for the new
+	; process?
+	;lea	rax, [phys_vaddr(aspace_test)]
+	;mov	[rbx + proc.aspace], rax
+	;mov	rsi, [rbp + proc.aspace]
+	;call	add_process_to_aspace
+	;call	rdi, rbx
 	call	runqueue_append
 
 	mov	rdi,rbp ; Process. Should be address space?
 	mov	rsi,rbx ; Handle of new process that should be mapped
 	call	map_handle
-	; rax is mapped 
+	mov	r12, rax
 
-lodstr	rdi, '+NEWPROC %p', 10
+lodstr	rdi, '+NEWPROC %p at %p', 10
 	mov	rsi, rbx
+	mov	rcx, rax
 	call	printf
 	zero	ebp
 	mov	rbp, [gs:rbp + gseg.self]
-	call	print_procstate
-lodstr rdi, '-NEWPROC', 10
-	call	printf
+	;call	print_procstate
+;lodstr rdi, '-NEWPROC', 10
+;	call	printf
 
-	mov	rax, rbx
+	mov	rax, r12
+
 	; TODO Restore callee-save registers from process struct, clear
 	; caller-save registers to avoid leaking kernel details.
 
@@ -1374,10 +1420,22 @@ lodstr rdi, '-NEWPROC', 10
 section usermode
 
 user_entry_new:
+	; TODO Define the initial program state for a process.
+	; - parent pid
+	; - function parameters in registers?
+
 lodstr	rdi, 'user_entry_new', 10
 	call	printf
 
-	mov	[0x1234123], edx
+	mov	eax, SYSCALL_RECV
+	syscall
+
+	mov	rsi, rdi
+lodstr	rdi, 'received %p', 10
+	mov	edi, msg_resperr(MSG_USER)
+	mov	eax, SYSCALL_SEND
+	syscall
+
 	jmp	user_entry_new
 
 
@@ -1389,6 +1447,17 @@ user_entry:
 	mov	edi, user_entry_new
 	mov	rsi, rsp
 	mov	eax, SYSCALL_NEWPROC
+	syscall
+
+	mov	rbx, rax
+
+lodstr	rdi, 'newproc: %p', 10
+	mov	rsi, rax
+	call	printf
+
+	mov	rsi, rbx
+	mov	eax, SYSCALL_SENDRCV
+	mov	edi, msg_sendcode(MSG_USER)
 	syscall
 
 	jmp	$
