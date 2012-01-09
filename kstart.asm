@@ -69,7 +69,7 @@ __SECT__
 %include "string.inc"
 
 %define log_switch_to 1
-%define log_switch_next 1
+%define log_switch_next 0
 
 %assign need_print_procstate (log_switch_to | log_switch_next)
 
@@ -172,15 +172,12 @@ struc pages, 0x8000
 .apic		respage
 .kernel_stack	respage
 .kernel_stack_end:
-.user_stack	respage
-.user_stack_end:
 
 .kernel_pdp	respage
 .gseg_cpu0	respage
 endstruc
 
 kernel_stack_end equ pages.kernel_stack_end
-user_stack_end equ pages.user_stack_end
 
 section .text vstart=0x8000
 section .data vfollows=.text follows=.text align=4
@@ -469,6 +466,8 @@ launch_user:
 	;mov	rdi, rax
 	;call	runqueue_append
 
+user_stack_end	equ	0x13000
+
 	mov	edi, user_entry
 	mov	esi, user_stack_end
 	call	new_proc
@@ -479,13 +478,31 @@ launch_user:
 
 	call	allocate_frame
 	mov	rbp, rax
-	call	allocate_frame
+	call	allocate_frame ; TODO Allocate region
 	mov	[rax + region.paddr], rbp
-	mov	dword [rax + region.size], 0x1000
+	mov	word [rax + region.size], 0x1000
 
 	mov	rdi, [rbx + proc.aspace]
 	mov	rsi, rax
 	mov	rdx, 0x1234000
+	mov	rcx, 0x1000
+	call	map_region
+
+	; Replicate the hard-coded read-only region for 0x8000 and 0x9000
+	call	allocate_frame ; allocate region, not whole page :)
+	mov	edx, 0x8000
+	mov	ecx, 0x2000
+	mov	[rax + region.paddr], edx
+	mov	[rax + region.size], ecx
+	mov	rdi, [rbx + proc.aspace]
+	mov	rsi, rax
+	call	map_region
+	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_X
+
+	mov	rdi, [rbx + proc.aspace]
+	zero	esi
+	; User stack
+	mov	rdx, user_stack_end - 0x1000
 	mov	rcx, 0x1000
 	call	map_region
 
@@ -923,19 +940,28 @@ struc region
 	.node restruc dlist_node
 endstruc
 
-REGFLAG_HANDLE	equ 1
+REGFLAG_COW	equ 1 ; Hmm, are *mappings* CoW or are *regions*?
 
 ; Ordinary and boring flags
 MAPFLAG_X	equ 1
 MAPFLAG_W	equ 2
 MAPFLAG_R	equ 4
-MAPFLAG_COW	equ 8 ; Hmm, are mappings CoW or are regions?
+MAPFLAG_RWX	equ 7 ; All/any of the R/W/X flags
+MAPFLAG_COW	equ 8 ; Hmm, are *mappings* CoW or are *regions*?
+MAPFLAG_ANON	equ 16 ; Anonymous page: allocate frame and region on first read.
 ; "Special" flags are >= 0x10000
 MAPFLAG_HANDLE	equ 0x10000
 
+; A non-present page in the page table with this flag set is a handle
+PT_FLAG_HANDLE	equ 0x2
+
+; A mapping is a mapped virtual memory range, sometimes backed by a region,
+; other times just a placeholder for virtual memory that may become a region by
+; allocating/loading-from-disk/whatever the frames that would be required.
 struc mapping
 	.owner	resq 1 ; address_space
 	.region	resq 1
+	.kobj	equ .region ; If flags has MAPFLAG_HANDLE, .region points to a kernel object instead
 	.flags	resq 1
 	; Offset into region that corresponds to the first page mapped here
 	.reg_offset resq 1
@@ -968,25 +994,25 @@ section .text
 
 ; rdi = dlist
 ; rsi = dlist_node
-; Clobbers rdi, r8
+; Non-standard calling convention!  Clobbers rdi, r8 but preserves all other
+; registers
 dlist_prepend:
 	mov	r8, [rdi + dlist.head]
 	test	r8, r8
-	jz	.empty
-	mov	[rsi + dlist_node.next], r8
-	mov	rdi, [r8 + dlist_node.prev]
-	mov	[rdi + dlist_node.prev], rsi
-	mov	[rsi + dlist_node.prev], rdi
-	mov	[rdi + dlist_node.next], rsi
-	ret
-.empty:
 	mov	[rdi + dlist.head], rsi
+	jz	.empty
+	; rsi.next = old head
+	mov	[rsi + dlist_node.next], r8
+	mov	[r8 + dlist_node.prev], rsi
+.empty:
 	ret
 
 ; rdi: the process (address space!) being mapped into
-; rsi: the region to map
+; rsi: the region or kernel object to map
 ; rdx: the virtual address to map the region at
-; rcx: the size of the virtual mapping (must be <= size of region?)
+; rcx: the size of the virtual mapping
+; Returns:
+; rax: Newly allocated mapping object
 map_region:
 	push	rdi
 	push	rsi
@@ -1021,7 +1047,7 @@ map_region:
 .no_region:
 
 	mov	rdi, r9
-	;mov	rsi, r10
+	mov	rsi, r10
 
 .oom:
 	ret
@@ -1039,10 +1065,6 @@ map_handle:
 
 	push	rdi
 	push	rsi
-	call	allocate_frame
-	pop	qword [rax + region.paddr] ; paddr (dummy) = kernel virtual address of object being mapped as a handle
-	mov	byte [rax + region.flags], REGFLAG_HANDLE
-	mov	rsi, rax
 
 	; Calculate the virtual address for the handle
 	pop	rdi
@@ -1050,15 +1072,93 @@ map_handle:
 	sub	rdx, 0x1000
 	mov	[rdi + aspace.handles_bottom], rdx
 
+	zero	rsi
 	zero	ecx ; size is 0
 	push	rdx ; vaddr of handle, also return value
 	call	map_region
+	; pop the kernel object pointer (the rsi we pushed above).
+	; MAPFLAG_HANDLE indicates the region pointer is not a region but a
+	; kernel object.
+	pop	qword [rax + mapping.region]
+	mov	byte [rax + mapping.flags + 2], MAPFLAG_HANDLE >> 16
 	pop	rax
 	ret
 
 .unaligned_kernel_object:
 lodstr	rdi,	'Unaligned kobj %p', 10
 	call	printf
+	cli
+	hlt
+
+; rdi: address space to add mapping to
+; rsi: physical address of page to add, plus relevant flags as they will appear
+; in the page table entry.
+; rdx: vaddr to map it to. May be unaligned for convenience.
+add_pte:
+	push	r12
+	push	rsi
+	push	rdx
+
+%macro index_table 4 ; source, shift, base, target for address
+	mov	rcx, %1
+	shr	rcx, %2 - 3
+	and	cx, 0xff8 ; Then 'and' away the boring bits
+	lea	%4, [%3 + rcx]
+%endmacro
+
+%macro do_table 2 ; shift and name
+	index_table [rsp], %1, rdi, r12
+
+lodstr	rdi,	'Found ', %2, ' %p at %p', 10
+	mov	rsi, [r12]
+	mov	rdx, r12
+	call	printf
+
+	test	qword [r12], 1
+	jnz	%%have_entry
+
+	cmp	qword [r12], 0
+	;PANIC: Not present in page table, but it has some data. This shouldn't happen :)
+	jnz	.panic
+
+	; No PDP - need to allocate new table
+	call	allocate_frame
+	lea	rdi, [rax - kernel_base]
+	mov	[r12], rdi
+
+lodstr	rdi,	'Allocated ', %2, ' at %p', 10
+	mov	rsi, rax
+	call	printf
+
+%%have_entry:
+	mov	al, [rsp + 8] ; rsp points to low byte of PTE
+	or	[r12], al
+	mov	rdi, [r12]
+	and	di, ~0xfff
+	add	rdi, kernel_base
+%endmacro
+
+	mov	rdi, [rdi + aspace.pml4] ; Confirm: vaddr of pml4?
+	do_table 39, 'PDP'
+	do_table 30, 'PD'
+	do_table 21, 'PT'
+	; r12 now points to PT, add the PTE
+	index_table [rsp], 12, rdi, r12
+	test	qword [r12], 1
+	; We should probably check and handle mapping the same page twice as a no-op
+	jnz	.panic
+
+	pop	rdx
+	pop	rsi
+	mov	[r12], rsi
+lodstr	rdi, 'Mapping %p to %p (at %p)!', 10
+	mov	rcx, r12
+	call	printf
+	pop	r12
+
+	ret
+
+.panic:
 	cli
 	hlt
 
@@ -1232,19 +1332,82 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
 	mov	rdi, [rdi + dlist_node.next]
 	jmp	.test_mapping
 .no_match:
+lodstr	rdi,	'No mapping found!', 10
+	call	printf
+.invalid_match:
 	cli
 	hlt
 .found:
 	lea	rdx, [rdi - mapping.as_node]
 	mov	rcx, [rdi + mapping.vaddr - mapping.as_node]
+	mov	r12, rdx
 lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	call	printf
-	; FIXME All the data (rdx = mapping, rsi = cr2) is now blown away since
-	; printf clobbered all caller-save registers.
 
-.ret:
+	; rsi is fault address (though we already know which mapping we're
+	; dealing with)
+	mov	rsi, cr2
+	mov	rdi, r12 ; Doesn't need offsetting by mapping.as_node anymore
+
+	mov	rax, [rdi + mapping.flags]
+	test	eax, MAPFLAG_HANDLE
+	jnz	.invalid_match ; Handles can never be accessed as memory
+	test	eax, MAPFLAG_RWX
+	jz	.invalid_match ; We had none of the read/write/execute permissions
+
+	; Was the access a write access? (bit 1: set == write)
+	test	byte [rsp + 24], 0x2
+	jz	.not_a_write
+	; Write to a read-only page: fault
+	test	eax, MAPFLAG_W
+	jz	.invalid_match
+.not_a_write:
+
+	test	eax, MAPFLAG_ANON
+	jz	.map_region
+
+	; Anonymous mapping: allocate a fresh zero page, create a region for
+	; it, link the mapping to that region and fall through to adding the
+	; new region to the page table.
 	cli
 	hlt
+	mov	ax, __LINE__
+
+	; TODO Check for access-during-instruction-fetch for a present NX page
+
+.map_region
+	; 1. The region has a physical page backing it already:
+	;   * Check that we are allowed to map it as it is (i.e. correct
+	;     permissions, no CoW required, etc)
+	;   * Add all required intermediate page table levels
+	;   * When reaching the bottom: add a mapping with the right parameters
+
+	mov	rsi, [rdi + mapping.region]
+	test	rsi, rsi
+	jz	.invalid_match
+
+	mov	r9, cr2
+	and	r9w, ~0xfff
+	sub	r9, [rdi + mapping.vaddr]
+	mov	r8, [rsi + region.paddr]
+	add	r8, [rdi + mapping.reg_offset]
+	add	r8, r9
+	; r8: page frame to add to page table
+
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
+	mov	rsi, r8
+	mov	rdx, cr2 ; Note: lower 12 bits will be ignored automatically
+	; TODO Set the correct flags for the PTE based on the mapping and region
+	; flags. Still not sure how to combine region and mapping flags to
+	; give what we wnat here :)
+	or	rsi, 5 ; [rsi + region.flags]
+	call	add_pte
+
+	; TODO Handle failures by killing the process.
+
+.ret:
+	; FIXME We've clobbered a whole lot more than this!
 	pop	rsi
 	pop	rbp
 	pop	rdi

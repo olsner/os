@@ -3,10 +3,10 @@
 %macro define_segment 3 ; limit, address, flags and access
 	dw	%1 & 0xffff ;seg_limit
 	dw	%2 & 0xffff ;addr_00_15
-	db	(%2) >> 16 ;addr_16_23
+	db	((%2) >> 16) & 0xff ;addr_16_23
 	db	(%3) >> 4 ;access
 	db	((%3) << 4) & 0xf0 | ((%1) >> 16) & 0x0f ;flags/limit
-	db	(%2) >> 24 ;addr_24_31
+	db	((%2) >> 24) & 0xff ;addr_24_31
 %endmacro
 
 %macro define_tss64 2 ; limit, address
