@@ -51,6 +51,7 @@ boot/%.b: %.asm
 	@mkdir -p $(@D)
 	@$(YASM) -e -M $< -o $@ >$*.dep
 	$(HUSH_ASM) $(YASM) -f bin $< -o $@ -L nasm -l $*.lst
+	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
 
 bootfs.img: boot/kstart.b
 	genromfs -f bootfs.img -d boot -a 512 -x boot.b
