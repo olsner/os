@@ -478,7 +478,7 @@ user_stack_end	equ	0x13000
 
 	call	allocate_frame
 	mov	rbp, rax
-	call	allocate_frame ; TODO Allocate region
+	call	allocate_frame
 	mov	[rax + region.paddr], rbp
 	mov	word [rax + region.size], 0x1000
 
@@ -505,6 +505,7 @@ user_stack_end	equ	0x13000
 	mov	rdx, user_stack_end - 0x1000
 	mov	rcx, 0x1000
 	call	map_region
+	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
 
 	;lea	rdi, [.test_kprintf]
 	;mov	rsi, rdi
@@ -1027,7 +1028,6 @@ map_region:
 	jz	.oom
 
 	mov	[rax + mapping.owner], rdi
-	mov	[rax + mapping.region], rsi
 	mov	[rax + mapping.vaddr], rdx
 	mov	[rax + mapping.size], rcx
 
@@ -1036,18 +1036,23 @@ map_region:
 	lea	rdi, [rdi + aspace.mappings]
 	lea	rsi, [rax + mapping.as_node]
 	call	dlist_prepend
+	mov	rdi, rax ; Mapping
+	mov	rsi, r10 ; Region
 
-	test	r10, r10
+.add:
+map_add_region equ .add
+	mov	[rdi + mapping.region], rsi
+	mov	rax, rdi
+
+	test	rsi, rsi
 	jz	.no_region
-	lea	rdi, [r10 + region.mappings]
-	lea	rsi, [rax + mapping.reg_node]
+	lea	rsi, [rsi + region.mappings]
+	lea	rdi, [rdi + mapping.reg_node]
+	xchg	rsi, rdi
 	call	dlist_prepend
 
-	inc	dword [r10 + region.count]
+	inc	dword [rsi + region.count]
 .no_region:
-
-	mov	rdi, r9
-	mov	rsi, r10
 
 .oom:
 	ret
@@ -1076,12 +1081,13 @@ map_handle:
 	zero	ecx ; size is 0
 	push	rdx ; vaddr of handle, also return value
 	call	map_region
+	pop	rdx
 	; pop the kernel object pointer (the rsi we pushed above).
 	; MAPFLAG_HANDLE indicates the region pointer is not a region but a
 	; kernel object.
 	pop	qword [rax + mapping.region]
 	mov	byte [rax + mapping.flags + 2], MAPFLAG_HANDLE >> 16
-	pop	rax
+	mov	rax, rdx
 	ret
 
 .unaligned_kernel_object:
@@ -1098,6 +1104,14 @@ add_pte:
 	push	r12
 	push	rsi
 	push	rdx
+	push	rdi
+
+	lea	rdi, [mapping_page_to_frame]
+	call	printf
+
+	pop	rdi
+	mov	rdx, [rsp]
+	mov	rsi, [rsp + 8]
 
 %macro index_table 4 ; source, shift, base, target for address
 	mov	rcx, %1
@@ -1145,13 +1159,18 @@ lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	; r12 now points to PT, add the PTE
 	index_table [rsp], 12, rdi, r12
 	test	qword [r12], 1
-	; We should probably check and handle mapping the same page twice as a no-op
+	; We should probably check and handle mapping the same page twice as a
+	; no-op. Or maybe not - since it indicates other code tried to map
+	; something - getting a fault for an already-mapped page might mean the
+	; user code is getting an actual fault of some kind and should be
+	; killed insted.
 	jnz	.panic
 
 	pop	rdx
 	pop	rsi
 	mov	[r12], rsi
 lodstr	rdi, 'Mapping %p to %p (at %p)!', 10
+mapping_page_to_frame equ _STR
 	mov	rcx, r12
 	call	printf
 	pop	r12
@@ -1293,12 +1312,20 @@ handler_PF:
 	test	byte [rsp], 0x4
 	jz	.kernel_fault
 
-	swapgs
+	push	rax
 	push	rdi
-	push	rbp
-	push	rsi
-	zero	edi
-	mov	rbp, [gs:edi + gseg.self]
+	swapgs
+
+	xor	edi, edi
+	mov	rdi, [gs:rdi+gseg.self]
+	mov	rax, [rdi + gseg.process]
+	; The rax and rdi we saved above, store them in process
+	pop	qword [rax + proc.rdi]
+	pop	qword [rax + proc.rax]
+	; Copy page-fault code further up the stack
+	pop	qword [rsp - 24]
+	call	save_from_iret
+	push	qword [rsp - 24]
 
 	; Page-fault error code:
 	; Bit 0: "If this bit is cleared to 0, the page faultwas caused by a not-present page. If this bit is set to 1, the page fault was caused by a page-protection violation.
@@ -1306,13 +1333,17 @@ handler_PF:
 	; Bit 2: set = user-space access, cleared = supervisor (tested above)
 	; Bit 3: RSV - a reserved bit in a page table was set to 1
 	; Bit 4: set = the access was an instruction fetch. Only used when NX is enabled.
+	; Bit 9: ??
+	; Bit 16: ??
 
 lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
 	mov	rsi, cr2
 	; Fault
-	mov	rdx, [rsp + 24]
+	mov	rdx, [rsp]
 	call printf
 
+	xor	edi, edi
+	mov	rbp, [gs:rdi+gseg.self]
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
 	mov	rdi, [rdi + aspace.mappings]
@@ -1320,6 +1351,15 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
 .test_mapping:
 	test	rdi, rdi
 	jz	.no_match
+	push	rdi
+	push	rsi
+	mov	rsi, rdi
+	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
+	mov	rcx, [rdi + mapping.size - mapping.as_node]
+lodstr	rdi, 'Map %p: %p sz %p', 10
+	call	printf
+	pop	rsi
+	pop	rdi
 	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
 	cmp	rsi, rax
 	je	.found
@@ -1335,6 +1375,8 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
 lodstr	rdi,	'No mapping found!', 10
 	call	printf
 .invalid_match:
+	mov	rdi, r12
+	call	printf
 	cli
 	hlt
 .found:
@@ -1350,30 +1392,49 @@ lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	mov	rdi, r12 ; Doesn't need offsetting by mapping.as_node anymore
 
 	mov	rax, [rdi + mapping.flags]
+	mov	rsi, rax
 	test	eax, MAPFLAG_HANDLE
+lodstr	r12, 'Memory-access to handle', 10
 	jnz	.invalid_match ; Handles can never be accessed as memory
 	test	eax, MAPFLAG_RWX
+lodstr	r12, 'Access to page without access (%p)', 10
 	jz	.invalid_match ; We had none of the read/write/execute permissions
 
 	; Was the access a write access? (bit 1: set == write)
-	test	byte [rsp + 24], 0x2
+	test	byte [rsp], 0x2
 	jz	.not_a_write
 	; Write to a read-only page: fault
 	test	eax, MAPFLAG_W
+lodstr	r12, 'Write access to read-only page', 10
 	jz	.invalid_match
+	; If page is "writeable" but also CoW, we need more handling here
 .not_a_write:
+	; TODO Check for access-during-instruction-fetch for a present NX page
+
 
 	test	eax, MAPFLAG_ANON
 	jz	.map_region
 
+	; If anonymous, but a region has already been set up, use that region
+	cmp	qword [rdi + mapping.region], 0
+	jnz	.map_region
+
+	mov	r12, rdi
+
 	; Anonymous mapping: allocate a fresh zero page, create a region for
 	; it, link the mapping to that region and fall through to adding the
 	; new region to the page table.
-	cli
-	hlt
-	mov	ax, __LINE__
+	call	allocate_frame
+	lea	rbx, [rax - kernel_base]
+	call	allocate_frame
+	mov	[rax + region.paddr], rbx
+	mov	word [rax + region.size], 0x1000
+	;mov	[rax + region.flags], REGFLAG_COW
+	mov	rdi, r12 ; mapping
+	mov	rsi, rax ; region
+	call	map_add_region
 
-	; TODO Check for access-during-instruction-fetch for a present NX page
+	mov	rdi, r12 ; mapping
 
 .map_region
 	; 1. The region has a physical page backing it already:
@@ -1384,6 +1445,7 @@ lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 
 	mov	rsi, [rdi + mapping.region]
 	test	rsi, rsi
+lodstr	r12, 'Mapping something without a region', 10
 	jz	.invalid_match
 
 	mov	r9, cr2
@@ -1394,27 +1456,41 @@ lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	add	r8, r9
 	; r8: page frame to add to page table
 
+	mov	eax, [rdi + mapping.flags]
+	mov	rsi, r8
+	; Some notes on how to (eventually) set PTE flags according to region
+	; flags:
+	; - In general, region permissions from region.flags are what should be
+	;   set in the PTE.
+	; - CoW: the region is set read-only with the CoW flag set, until we
+	;   have copied the data onto new pages - then we can update the page
+	;   frame pointer to the new private pages and change flags to R/W,
+	;   then without the CoW flag (nothing more to copy-on-write).
+	; - Anonymous: start out simply as a mapping of a null region, then we
+	;   create a region that CoW-maps a shared null page, then let CoW
+	;   take care of replacing it with a private null page and update the
+	;   permissions.
+	or	rsi, 5 ; Present, User-accessible
+	test	eax, MAPFLAG_W
+	jz	.no_write_access
+	or	rsi, 2
+.no_write_access:
+	; test	eax, MAPFLAG_X
+	; jnz	.has_exec
+	; bts	rsi, 63
+; .has_exec:
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
-	mov	rsi, r8
 	mov	rdx, cr2 ; Note: lower 12 bits will be ignored automatically
-	; TODO Set the correct flags for the PTE based on the mapping and region
-	; flags. Still not sure how to combine region and mapping flags to
-	; give what we wnat here :)
-	or	rsi, 5 ; [rsi + region.flags]
 	call	add_pte
 
 	; TODO Handle failures by killing the process.
 
 .ret:
-	; FIXME We've clobbered a whole lot more than this!
-	pop	rsi
-	pop	rbp
-	pop	rdi
-	; Pop error code
-	add	rsp, 8
-	swapgs
-	iretq
+	xor	edi, edi
+	mov	rdi, [gs:rdi+gseg.self]
+	mov	rax, [rdi + gseg.process]
+	jmp	switch_to
 
 .no_mappings:
 .kernel_fault:
@@ -1644,7 +1720,7 @@ lodstr	rdi, 'newproc: %p', 10
 	mov	rsi, rax
 	call	printf
 
-	mov	dword [rbx], 0
+	;mov	dword [rbx], 0
 
 	mov	rsi, rbx
 	mov	eax, SYSCALL_SENDRCV
