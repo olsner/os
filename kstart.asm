@@ -1372,8 +1372,7 @@ lodstr	rdi, 'Map %p: %p sz %p', 10
 	mov	rdi, [rdi + dlist_node.next]
 	jmp	.test_mapping
 .no_match:
-lodstr	rdi,	'No mapping found!', 10
-	call	printf
+lodstr	r12,	'No mapping found!', 10
 .invalid_match:
 	mov	rdi, r12
 	call	printf
@@ -1524,7 +1523,8 @@ syscall_entry:
 
 	swapgs
 	mov	[gs:gseg.user_rsp], rsp
-	; Hardcoded kernel stack
+	; Hardcoded kernel stack (FIXME put in gseg for a per-cpu kernel stack
+	; instead)
 	mov	rsp, phys_vaddr(kernel_stack_end)
 	push	rcx
 	cmp	eax, SYSCALL_WRITE
