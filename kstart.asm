@@ -1902,12 +1902,13 @@ printf:
 
 	mov	cl, 64
 
+	lea	r14, [rel digits]
 .loop:
 	sub	cl, 4
 	mov	rdi, rbx
 	shr	rdi, cl
 	and	edi, 0xf
-	mov	dil, byte [phys_vaddr(digits) + rdi]
+	mov	dil, byte [r14 + rdi]
 	mov	bpl, cl
 	call	putchar
 	mov	cl, bpl
