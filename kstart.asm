@@ -715,7 +715,7 @@ switch_to:
 
 	mov	rbx, rax
 %if log_switch_to
-lodstr	rdi, 'Switching to %p (cr3=%p, rip=%p).', 10
+lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	mov	rsi, rax
 	mov	rdx, [rsi + proc.cr3]
 	mov	rcx, [rsi + proc.rip]
@@ -1343,7 +1343,7 @@ handler_PF:
 	; Bit 16: ??
 
 %if log_page_fault
-lodstr	rdi,	'Page-fault: cr2=%p error=%p proc=%p', 10
+lodstr	rdi,	'Page-fault: cr2=%p error=%x proc=%p', 10
 	mov	rsi, cr2
 	; Fault
 	mov	rdx, [rsp]
@@ -1366,7 +1366,7 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%p proc=%p', 10
 	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
 	mov	rcx, [rdi + mapping.size - mapping.as_node]
 %if log_mappings
-lodstr	rdi, 'Map %p: %p sz %p', 10
+lodstr	rdi, 'Map %p: %p sz %x', 10
 	call	printf
 %endif
 	pop	rsi
@@ -1973,6 +1973,8 @@ printf:
 	je	.fmt_s
 	cmp	al,'p'
 	je	.fmt_p
+	cmp	al,'x'
+	je	.fmt_x
 	;cmp	al,'%'
 	jmp	.write_al
 
@@ -1993,10 +1995,14 @@ printf:
 	mov	rdi,r13
 	jmp	.nextchar
 
+.fmt_x:
 .fmt_p:
-	lea	r12,[rdi+8]
-	mov	r13,rsi
+	lea	r13,[rdi+8]
+	mov	r12,rsi
 	mov	rbx, [rdi]
+
+	cmp	al, 'x'
+	setz	r15b
 
 	mov	edi, '0'
 	call	putchar
@@ -2005,21 +2011,30 @@ printf:
 
 	mov	cl, 64
 
+	; cl = highest bit of first hex-digit to print (>= 4)
+	; rbx = number to print
+.print_digits:
 	lea	r14, [rel digits]
 .loop:
 	sub	cl, 4
 	mov	rdi, rbx
 	shr	rdi, cl
 	and	edi, 0xf
+	jnz	.print
+	test	r15b, r15b
+	jnz	.next_digit
+.print:
+	mov	r15b, 0
 	mov	dil, byte [r14 + rdi]
 	mov	bpl, cl
 	call	putchar
 	mov	cl, bpl
+.next_digit:
 	test	cl, cl
 	jnz	.loop
 
-	mov	rsi,r13
-	mov	rdi,r12
+	mov	rsi,r12
+	mov	rdi,r13
 	jmp	.nextchar
 
 .done:
