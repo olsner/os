@@ -142,7 +142,7 @@ struc	gseg
 	.vga_base	resq 1
 	.vga_pos	resq 1
 	.vga_end	resq 1
-	
+
 	.curtime	resd 1
 	.tick		resd 1
 
@@ -335,34 +335,29 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
 	mov	rax, phys_vaddr(pages.gseg_cpu0)
 	mov	rdx,rax
+	mov	rsi, rax
 	mov	eax,eax
 	shr	rdx,32
 	mov	ecx, MSR_GSBASE
 	wrmsr
 
-	; after this, ebx should be address to video memory and edi points to
+	; after this, ebx should be address to video memory and rdi points to
 	; the gs-segment data block
-	cdqe
-	mov	rdi,rax
+	mov	rdi, rsi
+	zero	eax
+	mov	ecx, 4096/4
+	rep	stosd
+
+	mov	rax, rsi
+	mov	rdi, rsi
 	stosq ; gs:0 - selfpointer
 	mov	rax,phys_vaddr(0xb8000)
 	;mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
 	lea	rax,[rax+160] ; Start on line 2, line 1 has some boot-time debug printouts
 	stosq ; gs:16 - VGA writing position
-	lea	rax,[rax+80*25*2-32]
+	lea	rax,[rax+80*25*2-160]
 	stosq ; gs:24 - VGA buffer end
-	zero	eax
-	stosq ; gs:32/36 - current time (and tick)
-	stosq ; gs:40 - user-mode stack seg
-	stosq ; gs:48 - current process
-	stosq ; gs:48 - runqueue
-	stosq ; gs:56 - runqueue_last
-	stosq ; gs:64 - fpu_process, the last process to have used the FPU
-	stosq ; gs:72 - free_frame (starts as zero, cpu:s will bootstrap by asking from global pool)
-	; gs:80,88 - temporary storage for page clearing function.
-	stosq
-	stosq
 
 E820_MEM	equ 1
 E820_RESERVED	equ 2
@@ -1877,11 +1872,24 @@ kputchar:
 
 .finish_write:
 	cmp	rdi, [rbp+gseg.vga_end]
-	cmovge	rdi, [rbp+gseg.vga_base]
+	jge	.scroll_line
 	mov	[rbp+gseg.vga_pos], rdi
+.ret:
 	clear_clobbered
 	pop	rbp
 	ret
+
+.scroll_line:
+	mov	rsi, [rbp + gseg.vga_base]
+	mov	rdi, rsi
+	add	rsi, 160
+	mov	ecx, 80*24*2/8
+	rep	movsq
+	mov	[rbp + gseg.vga_pos], rdi
+	mov	eax, 0
+	mov	ecx, 160 / 8
+	rep	movsq
+	jmp	.ret
 
 .newline:
 	mov	esi, eax
@@ -1894,7 +1902,7 @@ kputchar:
 	sub	cx,dx
 	shr	cx,1
 	mov	eax,esi
-	mov	al,'-'
+	mov	al,0
 	rep	stosw
 
 	jmp	.finish_write
