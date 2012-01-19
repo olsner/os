@@ -1707,7 +1707,7 @@ lodstr	rdi, 'user_entry_new', 10
 	syscall
 
 	mov	rsi, rdi
-lodstr	rdi, 'received %p', 10
+lodstr	rdi, 'new received %p', 10
 	call printf
 
 	mov	edi, msg_resperr(MSG_USER)
@@ -1735,12 +1735,19 @@ lodstr	rdi, 'newproc: %p', 10
 
 	;mov	dword [rbx], 0
 
+.recv_from_new:
 	mov	rsi, rbx
 	mov	eax, SYSCALL_SENDRCV
 	mov	edi, msg_sendcode(MSG_USER)
 	syscall
 
-	jmp	$
+	mov	rsi, rdi
+lodstr	rdi, 'old received %p', 10
+	call	printf
+
+	mov	eax, SYSCALL_YIELD
+	syscall
+	jmp	.recv_from_new
 
 	xor	eax,eax
 
@@ -2022,6 +2029,10 @@ printf:
 	shr	rdi, cl
 	and	edi, 0xf
 	jnz	.print
+	; There should be a bug when printing zero values using %x, but I
+	; haven't seen it yet
+	; test	cl, cl
+	; jz	.print
 	test	r15b, r15b
 	jnz	.next_digit
 .print:
