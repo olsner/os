@@ -1683,6 +1683,7 @@ user_entry_new:
 	; TODO Define the initial program state for a process.
 	; - parent pid
 	; - function parameters in registers?
+	; - address space
 
 lodstr	rdi, 'user_entry_new', 10
 	call	printf
@@ -1692,6 +1693,8 @@ lodstr	rdi, 'user_entry_new', 10
 
 	mov	rsi, rdi
 lodstr	rdi, 'received %p', 10
+	call printf
+
 	mov	edi, msg_resperr(MSG_USER)
 	mov	eax, SYSCALL_SEND
 	syscall
