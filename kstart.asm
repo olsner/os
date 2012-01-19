@@ -1988,15 +1988,21 @@ printf:
 	lea	r13,[rdi+8]
 	mov	r12,rsi
 
-	mov	rdi,[rdi]
+	lea	rsi, [rel null_str]
+	mov	rdi, [rdi]
+	test	rdi, rdi
+	cmovz	rdi, rsi
 	call	puts
 
 	mov	rsi,r12
 	mov	rdi,r13
 	jmp	.nextchar
 
-.fmt_x:
 .fmt_p:
+	cmp	qword [rdi], 0
+	; Rely on the special-case for null strings to print (null)
+	jz	.fmt_s
+.fmt_x:
 	lea	r13,[rdi+8]
 	mov	r12,rsi
 	mov	rbx, [rdi]
@@ -2051,6 +2057,8 @@ message:
 	dq 0x0747074e074f074c, 0x07450744074f074d
 digits:
 	db '0123456789abcdef'
+null_str:
+	db '(null)', 0
 
 section bss
 globals:
