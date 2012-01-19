@@ -1883,6 +1883,7 @@ kputchar:
 .have_rbp:
 	mov	eax, edi
 	mov	rdi, [rbp+gseg.vga_pos]
+	out	0xe9, byte al
 	cmp	al,10
 	je	.newline
 

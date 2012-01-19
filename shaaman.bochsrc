@@ -28,7 +28,7 @@ cpuid: cpuid_limit_winnt=0, mmx=1, sse=sse2, xapic=1, sep=1, aes=0, xsave=1, mov
 print_timestamps: enabled=0
 debugger_log: -
 magic_break: enabled=0
-port_e9_hack: enabled=0
+port_e9_hack: enabled=1
 text_snapshot_check: enabled=0
 private_colormap: enabled=0
 clock: sync=none, time0=local
