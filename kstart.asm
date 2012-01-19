@@ -1530,8 +1530,6 @@ syscall_entry:
 	je	.syscall_yield
 	cmp	eax, SYSCALL_NEWPROC
 	je	.syscall_newproc
-	push	rdi
-	push	rsi
 	push	r11
 lodstr	rdi, 'Invalid syscall %p!', 10
 	mov	rsi, rax
@@ -1653,7 +1651,7 @@ lodstr	rdi, 'Invalid syscall %p!', 10
 	;call	rdi, rbx
 	call	runqueue_append
 
-	mov	rdi,rbp ; Process. Should be address space?
+	mov	rdi,[rbp + proc.aspace]
 	mov	rsi,rbx ; Handle of new process that should be mapped
 	call	map_handle
 	mov	r12, rax
