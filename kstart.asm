@@ -68,8 +68,10 @@ __SECT__
 %include "segments.inc"
 %include "string.inc"
 
-%define log_switch_to 1
+%define log_switch_to 0
 %define log_switch_next 0
+%define log_page_fault 1
+%define log_mappings 0
 
 %assign need_print_procstate (log_switch_to | log_switch_next)
 
@@ -713,9 +715,10 @@ switch_to:
 
 	mov	rbx, rax
 %if log_switch_to
-lodstr	rdi, 'Switching to %p (cr3=%p).', 10
+lodstr	rdi, 'Switching to %p (cr3=%p, rip=%p).', 10
 	mov	rsi, rax
 	mov	rdx, [rsi + proc.cr3]
+	mov	rcx, [rsi + proc.rip]
 	call	printf
 	call	print_procstate
 %endif
@@ -1101,8 +1104,10 @@ add_pte:
 	push	rdx
 	push	rdi
 
+%if log_mappings
 	lea	rdi, [mapping_page_to_frame]
 	call	printf
+%endif
 
 	pop	rdi
 	mov	rdx, [rsp]
@@ -1118,10 +1123,12 @@ add_pte:
 %macro do_table 2 ; shift and name
 	index_table [rsp], %1, rdi, r12
 
+%if log_mappings
 lodstr	rdi,	'Found ', %2, ' %p at %p', 10
 	mov	rsi, [r12]
 	mov	rdx, r12
 	call	printf
+%endif
 
 	test	qword [r12], 1
 	jnz	%%have_entry
@@ -1135,9 +1142,11 @@ lodstr	rdi,	'Found ', %2, ' %p at %p', 10
 	lea	rdi, [rax - kernel_base]
 	mov	[r12], rdi
 
+%if log_mappings
 lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	mov	rsi, rax
 	call	printf
+%endif
 
 %%have_entry:
 	mov	al, [rsp + 8] ; rsp points to low byte of PTE
@@ -1164,10 +1173,12 @@ lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	pop	rdx
 	pop	rsi
 	mov	[r12], rsi
+%if log_mappings
 lodstr	rdi, 'Mapping %p to %p (at %p)!', 10
 mapping_page_to_frame equ _STR
 	mov	rcx, r12
 	call	printf
+%endif
 	pop	r12
 
 	ret
@@ -1331,11 +1342,14 @@ handler_PF:
 	; Bit 9: ??
 	; Bit 16: ??
 
-lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
+%if log_page_fault
+lodstr	rdi,	'Page-fault: cr2=%p error=%p proc=%p', 10
 	mov	rsi, cr2
 	; Fault
 	mov	rdx, [rsp]
+	mov	rcx, rax
 	call printf
+%endif
 
 	xor	edi, edi
 	mov	rbp, [gs:rdi+gseg.self]
@@ -1351,8 +1365,10 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%p', 10, 10
 	mov	rsi, rdi
 	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
 	mov	rcx, [rdi + mapping.size - mapping.as_node]
+%if log_mappings
 lodstr	rdi, 'Map %p: %p sz %p', 10
 	call	printf
+%endif
 	pop	rsi
 	pop	rdi
 	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
@@ -1369,16 +1385,20 @@ lodstr	rdi, 'Map %p: %p sz %p', 10
 .no_match:
 lodstr	r12,	'No mapping found!', 10
 .invalid_match:
+%if log_page_fault
 	mov	rdi, r12
 	call	printf
+%endif
 	cli
 	hlt
 .found:
 	lea	rdx, [rdi - mapping.as_node]
 	mov	rcx, [rdi + mapping.vaddr - mapping.as_node]
 	mov	r12, rdx
+%if log_mappings
 lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	call	printf
+%endif
 
 	; rsi is fault address (though we already know which mapping we're
 	; dealing with)
@@ -1656,15 +1676,12 @@ lodstr	rdi, 'Invalid syscall %p!', 10
 	call	map_handle
 	mov	r12, rax
 
-lodstr	rdi, '+NEWPROC %p at %p', 10
+lodstr	rdi, 'newproc %p at %p', 10
 	mov	rsi, rbx
 	mov	rcx, rax
 	call	printf
 	zero	ebp
 	mov	rbp, [gs:rbp + gseg.self]
-	;call	print_procstate
-;lodstr rdi, '-NEWPROC', 10
-;	call	printf
 
 	mov	rax, r12
 
