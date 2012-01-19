@@ -1868,13 +1868,8 @@ putchar:
 	clear_clobbered
 	ret
 .kputchar:
-	mov	edx, edi
-	test	dh, dh
-	jnz	.set
-	mov	dh, 0x1f
-	mov	edi, edx
-.set:
-	;jmp	kputchar
+	and	di, 0xff
+	or	di, 0x1f00
 
 kputchar:
 	push	rbp
