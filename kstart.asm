@@ -666,8 +666,8 @@ new_proc:
 ; rdi: process to add to runqueue
 runqueue_append:
 	push	rbp
-	zero	ebp
-	mov	rbp, [gs:ebp + gseg.self]
+	zero	ecx
+	mov	rbp, [gs:rcx + gseg.self]
 
 	mov	rcx, [rbp + gseg.runqueue_last]
 	mov	[rbp + gseg.runqueue_last], rdi
@@ -1336,7 +1336,7 @@ timer_handler:
 	mov	word [rel 0xb8002], 0x0700|'T'
 
 	xor	edi, edi
-	mov	rdi, [gs:rdi+gseg.self]
+	mov	rdi, [gs:rdi + gseg.self]
 	inc	dword [rdi+gseg.curtime]
 	mov	eax, dword [rel -0x1000 + APIC_REG_APICTCC]
 	mov	dword [rdi+gseg.tick], eax
@@ -1360,8 +1360,8 @@ handler_NM: ; Device-not-present, fpu/media being used after a task switch
 
 	clts
 
-	zero	ebp
-	mov	rbp,[gs:rbp + gseg.self]
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
 %if log_fpu_switch
 	; FIXME printf may clobber more stuff than what we've actually saved.
 	; All caller-save registers must be preserved since we're in an
@@ -1402,7 +1402,7 @@ handler_PF:
 	swapgs
 
 	xor	edi, edi
-	mov	rdi, [gs:rdi+gseg.self]
+	mov	rdi, [gs:rdi + gseg.self]
 	mov	rax, [rdi + gseg.process]
 	; The rax and rdi we saved above, store them in process
 	pop	qword [rax + proc.rdi]
@@ -1431,7 +1431,7 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%x proc=%p', 10
 %endif
 
 	xor	edi, edi
-	mov	rbp, [gs:rdi+gseg.self]
+	mov	rbp, [gs:rdi + gseg.self]
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
 	mov	rdi, [rdi + aspace.mappings]
@@ -1581,7 +1581,7 @@ lodstr	r12, 'Mapping something without a region', 10
 
 .ret:
 	xor	edi, edi
-	mov	rdi, [gs:rdi+gseg.self]
+	mov	rdi, [gs:rdi + gseg.self]
 	mov	rax, [rdi + gseg.process]
 	jmp	switch_to
 
@@ -1640,11 +1640,9 @@ lodstr	rdi, 'Invalid syscall %p!', 10
 
 	; Syscall #0: write byte to screen
 .syscall_write:
-	push	r11
 	movzx	edi, dil
 	or	di, 0xf00
 	call	kputchar
-	pop	r11
 	jmp	short .sysret
 
 .sysret:
@@ -1670,7 +1668,7 @@ lodstr	rdi, 'Invalid syscall %p!', 10
 
 .syscall_yield:
 	zero	edi
-	mov	rdi, [gs:rdi+gseg.self]
+	mov	rdi, [gs:rdi + gseg.self]
 
 	; - Load current process pointer into rax
 	mov	rax,[rdi+gseg.process]
@@ -1724,7 +1722,7 @@ lodstr	rdi, 'Invalid syscall %p!', 10
 
 .syscall_newproc:
 	zero	ecx
-	mov	rcx, [gs:rcx+gseg.self]
+	mov	rcx, [gs:rcx + gseg.self]
 
 	; - Load current process pointer into rax
 	mov	rax, [rcx + gseg.process]
@@ -1761,8 +1759,8 @@ lodstr	rdi, 'newproc %p at %p', 10
 	mov	rsi, rbx
 	mov	rcx, rax
 	call	printf
-	zero	ebp
-	mov	rbp, [gs:rbp + gseg.self]
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
 
 	mov	rax, r12
 
@@ -1774,7 +1772,7 @@ lodstr	rdi, 'newproc %p at %p', 10
 
 .syscall_sendrcv:
 	zero	ecx
-	mov	rcx, [gs:rcx+gseg.self]
+	mov	rcx, [gs:rcx + gseg.self]
 
 	; TODO Which registers are used for messages?
 
@@ -2019,10 +2017,10 @@ putchar:
 kputchar:
 	push	rbp
 	zero	eax
-	mov	rbp, [gs:eax + gseg.self]
+	mov	rbp, [gs:rax + gseg.self]
 .have_rbp:
 	mov	eax, edi
-	mov	rdi, [rbp+gseg.vga_pos]
+	mov	rdi, [rbp + gseg.vga_pos]
 	out	0xe9, byte al
 	cmp	al,10
 	je	.newline
