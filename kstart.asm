@@ -70,6 +70,7 @@ __SECT__
 
 %define log_switch_to 0
 %define log_switch_next 0
+%define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
 %define log_page_fault 1
 %define log_mappings 0
 
@@ -1353,25 +1354,26 @@ timer_handler:
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	push	rbp
-	push	rdi
 	push	rax
-	push	rbx
 	; FIXME If we get here in kernel mode?
 	swapgs
 
 	clts
 
-	; Find the previous process and save fpu/media state to its process struct
-	zero	edi
-	mov	rbp,[gs:edi + gseg.self]
-lodstr	rdi,	'FPU-switch: %p to %p', 10
-	mov	rsi,[rbp+gseg.fpu_process]
-	mov	rdx,[rbp+gseg.process]
+	zero	ebp
+	mov	rbp,[gs:rbp + gseg.self]
+%if log_fpu_switch
 	; FIXME printf may clobber more stuff than what we've actually saved.
 	; All caller-save registers must be preserved since we're in an
 	; interrupt handler.
-	call	printf
 
+lodstr	rdi,	'FPU-switch: %p to %p', 10
+	mov	rsi,[rbp+gseg.fpu_process]
+	mov	rdx,[rbp+gseg.process]
+	call	printf
+%endif
+
+	; Find the previous process and save fpu/media state to its process struct
 	mov	rax,[rbp+gseg.fpu_process]
 	test	rax,rax
 	; No previous process has unsaved fpu state, just load this process' state
@@ -1380,16 +1382,13 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 	; Save FPU state in process rax
 	o64 fxsave [rax+proc.fxsave]
 .no_save_state:
-	mov	rax,[rbp+gseg.process]
+	; Restore FPU stste for current process
+	mov	rax, [rbp+gseg.process]
 	o64 fxrstor [rax+proc.fxsave]
-
-.ret:
 	; FPU state now owned by current process
 	mov	[rbp+gseg.fpu_process], rax
 
-	pop	rbx
 	pop	rax
-	pop	rdi
 	pop	rbp
 	swapgs
 	iretq
