@@ -25,7 +25,7 @@ struc	proc, -0x80
 	.flags	resq 1 ; See PROC_*
 	; Pointer to the process we're waiting for (if any). See flags below.
 	.waiting_for resq 1
-	; Pointer either to the first process waiting on this process.
+	; Pointer to the first process waiting on this process.
 	.waiters resq 1
 	; If/when in a list, points to next process in list
 	.next	resq 1
@@ -37,7 +37,7 @@ struc	proc, -0x80
 endstruc
 
 ; Jump to CPL 0 instead of CPL 3. In reality unused. May be required for
-; device drivers?
+; device drivers? Untested!
 PROC_KERNEL	equ	0
 ; Return to user-mode with sysret, only some registers will be restored:
 ; rsp, rip: restored to previous values
@@ -48,5 +48,9 @@ PROC_FASTRET	equ	1
 ; Similar to FASTRET but we can make a message-send rendezvous immediately
 PROC_IN_RECV	equ	2
 ; Process is trying to do a synchronous send or sendrcv, blocking on the
-; waiting_for process to reach a PROC_IN_RECV state.
+; waiting_for process to reach a PROC_IN_RECV state. Both IN_SEND and IN_RECV
+; can be set at the same time (TODO does it have to be sending to and
+; receiving from the same process? Currently: yes. But servers will want to
+; do a fastret-style sending of the first response and receiving the next
+; command)
 PROC_IN_SEND	equ	4

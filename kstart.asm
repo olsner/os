@@ -82,26 +82,92 @@ RFLAGS_VM	equ	(1 << 17)
 APIC_TICKS	equ	10000
 APIC_PBASE	equ	0xfee00000
 
+; SYSCALLS!
+;
+; arguments: rdi, rsi, rdx, (not rcx! rcx stores rip), r8, r9, r10 (used instead
+; of rcx in syscalls)
+; syscall-clobbered: rcx = rip, r11 = flags
+; syscall-preserved: rbp, rbx, r12-r15, rsp
+; return value(s): rax, rdx
+;
+; Message-passing through registers uses rax and rdi to send and return the
+; message code and sender/recipient. rsi, rdx, r8-10 are message parameters.
+
 SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
 SYSCALL_YIELD	equ	2
-; Send a message without waiting for response, may need to wait for the
-; recipient process to become ready (if it isn't in a RECV call). Or should it
-; merely fail in that situation?
-SYSCALL_ASEND	equ	3
-; Send a message, wait synchronously for response
-; rdi: message ID
-; rsi: target process ID
-SYSCALL_SENDRCV	equ	4
-; Receive a message
-; Returns in registers:
-; rax: message ID
-; rdx: sending process ID
-; <syscall argument register>: message parameters
-SYSCALL_RECV	equ	5
-SYSCALL_SEND	equ	5
-SYSCALL_NEWPROC	equ	6
 
+; Create a new process. Is this similar to fork? Details not really determined.
+;
+; The new process will have an empty address space, making it crash as soon as
+; it can.
+;
+; rdi: entry-point for new process
+; rsi: rsp for new process
+; Returns:
+; rax: process handle for child process or 0 on error (but what about error
+; codes?)
+; The entry point will have
+; rdi: process handle for parent process
+; rsi: ???
+; rax: 0
+; (remaining registers could be parameters for the process entry point, copied
+; from the calling process)
+SYSCALL_NEWPROC	equ	3
+
+; Send a message, wait synchronously for response from the same process.
+; Works the same as SYSCALL_SEND followed by SYSCALL_RECV but more efficient,
+;
+; Should add some way to let the receive part be a receive-from-any. A server
+; can get rid of a lot of syscalls by allowing it to send the response to proc
+; A at the same time as it receives the next request from any process.
+; Otherwise it'd need to SEND then return back just so that it can do a new
+; receive-from-any RECV.
+;
+; Takes:
+; rax: message code
+; rdi: send-to (and receive-from) process handle.
+; <message parameters>
+;
+; (See also SYSCALL_SEND)
+;
+; Returns:
+; If the send was successful: see SYSCALL_RECV.
+; Otherwise, you'll get an error response in rax, and you'll probably not know
+; if it was the SEND or the RECV that failed. (TBD: would such information be
+; reliably useful?)
+SYSCALL_SENDRCV	equ	4
+
+; Receive a message
+;
+; rdi: receive-from (0 = receive-from-any)
+;
+; Returns in registers:
+; rax: message code
+; rdi: sending process ID
+; Remaining argument registers: message data
+SYSCALL_RECV	equ	5
+
+; Send a message
+; rax: message code
+; rdi: target process ID
+; Remaining argument registers: message data
+; Returns:
+; rax: error code or 0
+SYSCALL_SEND	equ	6
+
+; Send a message without waiting for response, will fail instead of block if
+; the target process is not in blocking receive.
+SYSCALL_ASEND	equ	7
+
+; Receive a message if there is already some process IN_SEND waiting for us to
+; become IN_RECV, fail immediately otherwise.
+SYSCALL_ARECV	equ	8
+
+; MESSAGE TYPES! AND CODES!
+
+; Placeholder for e.g. no message received by asend/arecv
+MSG_NONE	equ	0
 ; Map a page of this object (or an identified object in this process?)
 ; * flags:
 ;   * request to map or "grant" on page?
@@ -127,8 +193,18 @@ MSG_PFAULT	equ	2
 MSG_USER	equ	16
 MSG_MAX		equ	255
 
+; Message codes are a 1-byte message number with some flags. For now, that's
+; only an error flag (1 or 0) and a response flag that is 0 for requests, 1 for
+; responses to them. What the meaning of request/response actually is, depends
+; on the message type and should be documented there.
+MSG_MASK_CODE		equ 0xff
+MSG_BIT_ERROR		equ 8
+MSG_BIT_RESPONSE	equ 9
+MSG_FLAG_ERROR		equ (1 << MSG_BIT_ERROR)
+MSG_FLAG_RESPONSE	equ (1 << MSG_BIT_RESPONSE)
+
 %define msg_code(msg, error, respflag) \
-	(msg | (error << 8) | (respflag << 9))
+	(msg | (error << MSG_BIT_ERROR) | (respflag << MSG_BIT_RESPONSE))
 %define msg_resperr(msg) msg_code(msg, 1, 1)
 %define msg_sendcode(msg) msg_code(msg, 0, 0)
 
@@ -208,6 +284,10 @@ bits 32
 ; start32 jumps to start64
 bits 64
 default rel
+;;
+; The main 64-bit entry point. At this point, we have set up a page table that
+; identity-maps 0x8000 and 0x9000 and maps all physical memory at kernel_base.
+;;
 start64:
 	; Start by jumping into the kernel memory area at -1GB. Since that's a
 	; 64-bit address, we must do it in long mode...
@@ -1550,6 +1630,8 @@ syscall_entry:
 	je	.syscall_yield
 	cmp	eax, SYSCALL_NEWPROC
 	je	.syscall_newproc
+	cmp	eax, SYSCALL_SENDRCV
+	je	.syscall_sendrcv
 	push	r11
 lodstr	rdi, 'Invalid syscall %p!', 10
 	mov	rsi, rax
@@ -1685,8 +1767,65 @@ lodstr	rdi, 'newproc %p at %p', 10
 
 	mov	rax, r12
 
-	; TODO Restore callee-save registers from process struct, clear
-	; caller-save registers to avoid leaking kernel details.
+	; TODO Restore callee-save registers from process struct.
+
+	mov	r11, [rbp + gseg.process]
+	mov	r11, [r11 + proc.rflags]
+	jmp	.sysret
+
+.syscall_sendrcv:
+	zero	ecx
+	mov	rcx, [gs:rcx+gseg.self]
+
+	; TODO Which registers are used for messages?
+
+	; - Load current process pointer into rax
+	mov	rax, [rcx + gseg.process]
+	save_regs rbp,rbx,r12,r13,r14,r15
+	mov	[rax + proc.rflags], r11
+
+	mov	rbp, rcx ; gseg
+	mov	rbx, rax ; process
+
+	; 1. Set IN_SEND and IN_RECV for this process
+
+	; Sending half:
+	; ( TODO for multiprocessing: lock recipient process struct. And sender?)
+	; 1. Check if the recipient can receive a message immediately
+	;
+	; --- If it can (it's IN_RECV):
+	; 2. Copy register contents from current process to recipient
+	; 3. Reset recipient's IN_RECV and sender's IN_SEND flags
+	; 4. Put recipient on runqueue (it'll "receive" its message by vestige
+	; of its registers just having been modified by us)
+	; 5. Check if it's on the waiter-queue for the sender - we'll have to
+	; remove it.
+	;
+	; --- If it can't:
+	; 2. Add it to waiting-for list on target process. This process remains
+	; out of the run-queue until target starts receiving. We have to yield
+	; and find another process to run.
+	; 3. We probably need some state to say where we're sending to.
+	; 4. Return and yield
+
+	; If we sent successfully, we can continue to receive.
+
+	; Receiving half:
+	; 1. Check waiter queue, find the process we're receiving from, or any
+	; process that's in IN_SEND and sending to us.
+	; 2. If we found a process:
+	; 2.1. Copy its registers into this process
+	; 2.2. Reset its IN_SEND flag, and our IN_RECV flag
+	; 2.3. Add it back to the runqueue
+	; 3. No process found:
+	; 3.1. Set this process' receive-is-waiting-for-process field
+	; 2.2. If we have a specific process to wait for, put us on its waiter
+	; queue. If we are receive-from-any, we just sit and wait for something
+	; to wake us.
+	; 3.3. Keep IN_RECV set
+
+	; TODO It's fairly likely we'll need to yield here, should probably
+	; plan for that...
 
 	mov	r11, [rbp + gseg.process]
 	mov	r11, [r11 + proc.rflags]
