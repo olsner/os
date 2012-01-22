@@ -510,17 +510,20 @@ test_alloc:
 	inc	rbx
 	mov	[rax],rbp
 	mov	rbp,rax
-	;mov	rdi,rbx
-	;call	print_hex
 	jmp	.loop
 
 .done:
+lodstr	rdi,	'%x frames allocated', 10
+	mov	rsi, rbx
+	call	printf
+
+.free_loop:
 	mov	rdi,rbp
 	test	rdi,rdi
 	jz	launch_user
 	mov	rbp,[rdi]
 	call	free_frame
-	jmp	.done
+	jmp	.free_loop
 
 launch_user:
 	call	allocate_frame
