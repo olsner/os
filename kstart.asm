@@ -249,7 +249,6 @@ struc pages, 0x8000
 .low_pt		respage
 .page_tables_end:
 
-.apic		respage
 .kernel_stack	respage
 .kernel_stack_end:
 
@@ -364,7 +363,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 
 %assign rbpoffset 0x380
 
-	mov	rbp,phys_vaddr(pages.apic)+rbpoffset
+	mov	rbp,kernel_base-0x1000+rbpoffset
 	mov	ax,1010b
 	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
 
