@@ -1956,11 +1956,11 @@ user_entry_3:
 	jnz	.loop
 
 .end:
-	lea	rdi,[rel .test_message]
+lodstr	rdi,	'Hello World from puts', 10
 	call	puts
 
-	lea	rdi,[rel .test_format]
-	lea	rsi,[rel .test_arg1]
+lodstr	rdi,	'printf %% "%s" %c',10,0
+lodstr	rsi,	'Hello World',0
 	mov	edx,'C'
 	call	printf
 
@@ -1969,13 +1969,6 @@ user_entry_3:
 	loop	$
 
 	jmp	.start
-
-.test_message:
-	db	'Hello World from puts',10,0
-.test_format:
-	db	'printf %% "%s" %c',10,0
-.test_arg1:
-	db	'Hello World',0
 
 puts:
 	; callee-save: rbp, rbx, r12-r15
