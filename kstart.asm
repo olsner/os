@@ -1615,16 +1615,14 @@ syscall_entry:
 	; instead)
 	mov	rsp, phys_vaddr(kernel_stack_end)
 	push	rcx
-	cmp	eax, SYSCALL_WRITE
-	je	.syscall_write
-	cmp	eax, SYSCALL_GETTIME
-	je	.syscall_gettime
 	cmp	eax, SYSCALL_YIELD
 	je	.syscall_yield
 	cmp	eax, SYSCALL_NEWPROC
 	je	.syscall_newproc
 	cmp	eax, SYSCALL_SENDRCV
 	je	.syscall_sendrcv
+	jmp	.generic_syscall
+.invalid_syscall:
 	push	r11
 lodstr	rdi, 'Invalid syscall %x!', 10
 	mov	rsi, rax
@@ -1632,15 +1630,16 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	pop	r11
 	jmp	.sysret
 
-	; Syscall #0: write byte to screen
-.syscall_write:
+.generic_syscall:
+	cmp	rax, N_SYSCALLS
+	jae	.invalid_syscall
+
 	push	r11
-	movzx	edi, dil
-	or	di, 0xf00
-	call	kputchar
+	mov	eax, dword [text_vpaddr(.table) + 4 * rax]
+	add	rax, text_vpaddr(syscall_entry)
+	call	rax
 	pop	r11
-	zero	eax
-	jmp	short .sysret
+	jmp	.sysret
 
 .sysret:
 	pop	rcx
@@ -1658,10 +1657,6 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	cli
 	hlt
 	mov	al,0xff
-
-.syscall_gettime:
-	movzx	rax,byte [gs:rax+gseg.curtime-1] ; ax=1 when we get here
-	jmp	.sysret
 
 .syscall_yield:
 	zero	edi
@@ -1824,6 +1819,27 @@ lodstr	rdi, 'newproc %p at %p', 10
 	mov	r11, [rbp + gseg.process]
 	mov	r11, [r11 + proc.rflags]
 	jmp	.sysret
+
+%macro sc 1
+	dd	syscall_ %+ %1 - syscall_entry
+%endmacro
+.table
+	sc write
+	sc gettime
+.end_table
+N_SYSCALLS	equ (.end_table - .table) / 4
+
+syscall_write:
+	movzx	edi, dil
+	or	di, 0xf00
+	call	kputchar
+	zero	eax
+	ret
+
+syscall_gettime:
+	; rax = SYSCALL_GETTIME when we get here
+	movzx	eax,byte [gs:rax + gseg.curtime - SYSCALL_GETTIME]
+	ret
 
 section usermode
 
