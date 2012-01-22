@@ -71,6 +71,7 @@ __SECT__
 %define log_switch_to 0
 %define log_switch_next 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
+%define log_timer_interrupt 0
 %define log_page_fault 1
 %define log_mappings 0
 
@@ -683,18 +684,18 @@ runqueue_append:
 
 switch_next:
 	mov	rbp, rdi
-	mov	r12, rax
-	mov	r13, rdx
 
 .gseg_rbp:
 %if log_switch_next
+	mov	r12, rax
+	mov	r13, rdx
 lodstr	rdi, 'switch_next', 10
 	call	puts
 	call	print_procstate
-%endif
-
 	mov	rax, r12
 	mov	rdx, r13
+%endif
+
 	; Now NEXT (switching to) is in rax, and OLD (switching from) is in rdx
 	; runqueue_last points to LAST
 	; runqueue currently points to NEXT
@@ -1337,7 +1338,7 @@ timer_handler:
 
 	xor	edi, edi
 	mov	rdi, [gs:rdi + gseg.self]
-	inc	dword [rdi+gseg.curtime]
+	inc	dword [rdi + gseg.curtime]
 	mov	eax, dword [rel -0x1000 + APIC_REG_APICTCC]
 	mov	dword [rdi+gseg.tick], eax
 	mov	dword [rel -0x1000 + APIC_REG_APICTIC], APIC_TICKS
@@ -1348,9 +1349,14 @@ timer_handler:
 	pop	qword [rax+proc.rdi]
 	pop	qword [rax+proc.rax]
 	call	save_from_iret
-	mov	rdx, rax
-	mov	rax, [rdi+gseg.runqueue]
-	jmp	switch_next
+	mov	rbp, rdi
+%if log_timer_interrupt
+lodstr	rdi, 'Timer interrupt', 10
+	call	printf
+%endif
+	mov	rax, [rbp + gseg.runqueue]
+	mov	rdx, [rbp + gseg.process]
+	jmp	switch_next.gseg_rbp
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	push	rbp
