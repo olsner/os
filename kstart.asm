@@ -1632,7 +1632,7 @@ syscall_entry:
 	cmp	eax, SYSCALL_SENDRCV
 	je	.syscall_sendrcv
 	push	r11
-lodstr	rdi, 'Invalid syscall %p!', 10
+lodstr	rdi, 'Invalid syscall %x!', 10
 	mov	rsi, rax
 	call	printf
 	pop	r11
@@ -1640,9 +1640,12 @@ lodstr	rdi, 'Invalid syscall %p!', 10
 
 	; Syscall #0: write byte to screen
 .syscall_write:
+	push	r11
 	movzx	edi, dil
 	or	di, 0xf00
 	call	kputchar
+	pop	r11
+	zero	eax
 	jmp	short .sysret
 
 .sysret:
