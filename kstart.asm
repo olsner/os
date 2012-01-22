@@ -525,52 +525,20 @@ lodstr	rdi,	'%x frames allocated', 10
 	call	free_frame
 	jmp	.free_loop
 
-launch_user:
-	call	allocate_frame
-	o64 fxsave [rax]
-	mov	[rel globals.initial_fpstate], rax
-
-	; Make the first use of fpu/multimedia instructions cause an exception
-	mov	rax,cr0
-	bts	rax,CR0_TS_BIT
-	mov	cr0,rax
-
-	;mov	edi, user_entry_2
-	;mov	esi, user_stack_end
-	;call	new_proc
-	;mov	rdi, rax
-	;call	runqueue_append
-
-	;mov	edi, user_entry_3
-	;mov	esi, user_stack_end
-	;call	new_proc
-	;mov	rdi, rax
-	;call	runqueue_append
-
-user_stack_end	equ	0x13000
-
-	mov	edi, user_entry
+; Set up a new process with some "sane" defaults for testing, and add it to the
+; run queue.
+;
+; rdi: user_entry
+new_user_proc:
 	mov	esi, user_stack_end
 	call	new_proc
-	; save in non-clobbered register
-	mov	rbx, rax
+	push	rbx
+	mov	rbx, rax ; save away new process in callee-save register
 	mov	rdi, rax
 	call	runqueue_append
 
-	call	allocate_frame
-	mov	rbp, rax
-	call	allocate_frame
-	mov	[rax + region.paddr], rbp
-	mov	word [rax + region.size], 0x1000
-
-	mov	rdi, [rbx + proc.aspace]
-	mov	rsi, rax
-	mov	rdx, 0x1234000
-	mov	rcx, 0x1000
-	call	map_region
-
 	; Replicate the hard-coded read-only region for 0x8000 and 0x9000
-	call	allocate_frame ; allocate region, not whole page :)
+	call	allocate_frame ; TODO allocate region, not whole page :)
 	mov	edx, 0x8000
 	mov	ecx, 0x2000
 	mov	[rax + region.paddr], edx
@@ -582,20 +550,38 @@ user_stack_end	equ	0x13000
 
 	mov	rdi, [rbx + proc.aspace]
 	zero	esi
-	; User stack
+	; Map the user stack as an allocate-on-use ("anon") page
 	mov	rdx, user_stack_end - 0x1000
 	mov	rcx, 0x1000
 	call	map_region
 	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
 
-	;lea	rdi, [.test_kprintf]
-	;mov	rsi, rdi
-	;call	printf
+	mov	rax, rbx
+	pop	rbx
+	ret
+
+launch_user:
+	call	allocate_frame
+	o64 fxsave [rax]
+	mov	[rel globals.initial_fpstate], rax
+
+	; Make the first use of fpu/multimedia instructions cause an exception
+	mov	rax,cr0
+	bts	rax,CR0_TS_BIT
+	mov	cr0,rax
+
+user_stack_end	equ	0x13000
+
+	mov	edi, user_entry
+	call	new_user_proc
+	mov	rbx, rax ; Save for later
+	mov	edi, user_entry_2
+	call	new_user_proc
+	mov	edi, user_entry_3
+	call	new_user_proc
 
 	mov	rax, rbx
 	jmp	switch_to
-;.test_kprintf:
-;	db	10, 'Hello, this is the kernel speaking: %p', 10, 0
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15
