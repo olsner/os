@@ -1851,10 +1851,6 @@ lodstr	rdi, 'new received %p', 10
 
 
 user_entry:
-
-	;mov	rdx, 0x1234123
-	;mov	[rdx], edx
-
 	mov	edi, user_entry_new
 	mov	rsi, rsp
 	mov	eax, SYSCALL_NEWPROC
@@ -1865,8 +1861,6 @@ user_entry:
 lodstr	rdi, 'newproc: %p', 10
 	mov	rsi, rax
 	call	printf
-
-	;mov	dword [rbx], 0
 
 .recv_from_new:
 	mov	rsi, rbx
@@ -1882,6 +1876,7 @@ lodstr	rdi, 'old received %p', 10
 	syscall
 	jmp	.recv_from_new
 
+user_entry_old:
 	xor	eax,eax
 
 	mov	edi,'U'
