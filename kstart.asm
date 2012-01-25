@@ -770,51 +770,40 @@ lodstr	rdi,	'    Runqueue_last: %p', 10, 0
 ; All registers other than rax will be ignored, trampled, and replaced with the
 ; new stuff from the switched-to process
 switch_to:
-	cli	; I don't dare running this thing with interrupts enabled.
-	clts	; We'll set it again below, if appropriate
-
-	mov	rbx, rax
 %if log_switch_to
+	mov	rbx, rax
 lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	mov	rsi, rax
 	mov	rdx, [rsi + proc.cr3]
 	mov	rcx, [rsi + proc.rip]
 	call	printf
 	call	print_procstate
+	mov	rax, rbx
 %endif
 
 	; Update pointer to current process
-	mov	[rbp+gseg.process], rbx
+	mov	[rbp + gseg.process], rax
 
 	; If switching back before anything else uses the FPU, don't set TS
-	cmp	rbx, [rbp+gseg.fpu_process]
+	cmp	rax, [rbp + gseg.fpu_process]
 	je	.no_set_ts
-	mov	rax, cr0
-	bts	rax, CR0_TS_BIT
-	mov	cr0, rax
+	mov	rbx, cr0
+	bts	ebx, CR0_TS_BIT
+	jc	.no_set_ts
+	mov	cr0, rbx
 .no_set_ts:
 
 	; Make sure we don't invalidate the TLB if we don't have to.
-	mov	rcx, [rbx + proc.cr3]
-	mov	rax, cr3
-	cmp	rax, rcx
+	mov	rcx, [rax + proc.cr3]
+	mov	rbx, cr3
+	cmp	rbx, rcx
 	je	.no_set_cr3
 	mov	cr3, rcx
 .no_set_cr3:
 
-	mov	rax, [rbx+proc.flags]
-	bt	rax, PROC_KERNEL
-	jnc	.user_exit
-
-	; Exit to kernel thread
-	; If we don't need to switch rsp this should be easier - restore all
-	; regs, rflags, push new rip and do a near return
-	push	data64_seg
-	push	qword [rbx+proc.rsp]
-	push	qword [rbx+proc.rflags]
-	push	code64_seg
-	jmp	.restore_and_iretq
-
+	mov	rbx, [rax + proc.flags]
+	bt	rbx, PROC_KERNEL
+	jc	.kernel_exit
 
 .user_exit:
 	; If we stop disabling interrupts above, this will be wildly unsafe.
@@ -822,21 +811,21 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	; restore flags and go to user mode. The risk is if we switch "from
 	; kernel" while having the user GS loaded!
 	swapgs
-	bt	rax, PROC_FASTRET
-	jc	.fast_ret
+	bt	rbx, PROC_FASTRET
+	jc	fastret
 
-	bt	qword [rbx+proc.rflags], RFLAGS_IF_BIT
+	bt	qword [rax + proc.rflags], RFLAGS_IF_BIT
 	jnc	.ret_no_intrs
 
 	; Push stuff for iretq
 	push	user_ds
-	push	qword [rbx+proc.rsp]
-	push	qword [rbx+proc.rflags]
+	push	qword [rax + proc.rsp]
+	push	qword [rax + proc.rflags]
 	push	user_cs
 .restore_and_iretq:
-	push	qword [rbx+proc.rip]
+	push	qword [rax + proc.rip]
 	; rax is first, but we'll take it last...
-	lea	rsi, [rbx+proc.rax+8]
+	lea	rsi, [rax + proc.rax + 8]
 
 %macro lodregs 1-*
 	%rep %0
@@ -866,21 +855,43 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	mov	rsi, [rsi-proc.endregs+proc.rsi]
 	iretq
 
-	; For a slightly slower "fast" return, also restore callee-save regs.
-	; IPC:s will have a specific calling convention (which probably only defines r11 and rcx)
-.fast_ret:
+.kernel_exit:
+	; Exit to kernel thread
+	; If we don't need to switch rsp this should be easier - restore all
+	; regs, rflags, push new rip and do a near return
+	push	data64_seg
+	push	qword [rbx+proc.rsp]
+	push	qword [rbx+proc.rflags]
+	push	code64_seg
+	jmp	.restore_and_iretq
+
+.ret_no_intrs:
+	cli
+	hlt
+
+; Return to process in 'rax' using fastret.
+; Note: This must be the same process as was last running, otherwise it'll have
+; the wrong address space.
+; The return value should be stored in [rax + proc.rax]. All other registers are
+; overwritten before returning.
+; syscall-clobbered registered are cleared unless you use the .no_clear entry-
+; point.
+; If you do not know that rax is the current process, you must use switch_to
+; instead. But that should be cheap for the fastret case.
+fastret:
 %macro load_regs 1-*
-	%rep %0
-	%ifidni %1,rax
+%rep %0
+%ifidni %1,rax
 	%error rax is in use by this macro
-	%else
+%else
 	mov	%1,[rax+proc. %+ %1]
-	%endif
+%endif
 	%rotate 1
-	%endrep
+%endrep
 %endmacro
 
-	mov	rax, rbx
+	clear_clobbered_syscall
+.no_clear:
 	load_regs rbp,rbx,r12,r13,r14,r15
 .fast_fastret:
 	mov	rsp, [rax+proc.rsp]
@@ -888,10 +899,6 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	mov	r11, [rax+proc.rflags]
 	mov	rax, [rax+proc.rax]
 	o64 sysret
-
-.ret_no_intrs:
-	cli
-	hlt
 
 ; End switch
 
