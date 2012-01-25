@@ -134,8 +134,8 @@ SYSCALL_NEWPROC	equ	3
 ; receive-from-any RECV.
 ;
 ; Takes:
-; rax: message code
-; rdi: send-to (and receive-from) process handle.
+; rdi: message code
+; rsi: send-to (and receive-from) process handle.
 ; <message parameters>
 ;
 ; (See also SYSCALL_SEND)
