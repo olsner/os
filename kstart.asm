@@ -18,7 +18,7 @@ CR4_OSFXSR	equ	0x200
 CR4_OSXMMEXCPT	equ	0x400
 
 %macro zero 1
-	xor %1,%1
+	xor	%1, %1
 %endmacro
 
 %macro restruc 1-2 1
@@ -26,6 +26,13 @@ CR4_OSXMMEXCPT	equ	0x400
 %endmacro
 %macro respage 0-1 1
 	resb (4096*%1)
+%endmacro
+
+%define TODO TODO_ __LINE__
+%macro TODO_ 1
+	cli
+	hlt
+	mov	ax, %1
 %endmacro
 
 ; callee-save: rbp, rbx, r12-r15
@@ -1608,21 +1615,6 @@ syscall_entry:
 	; instead)
 	mov	rsp, phys_vaddr(kernel_stack_end)
 	push	rcx
-	cmp	eax, SYSCALL_YIELD
-	je	.syscall_yield
-	cmp	eax, SYSCALL_NEWPROC
-	je	.syscall_newproc
-	cmp	eax, SYSCALL_SENDRCV
-	je	.syscall_sendrcv
-	jmp	.generic_syscall
-
-.invalid_syscall:
-lodstr	rdi, 'Invalid syscall %x!', 10
-	mov	rsi, rax
-	call	printf
-	jmp	.sysret_restore_r11
-
-.generic_syscall:
 	; Save all callee-save registers into process, including the things
 	; we'd like to clobber, e.g. rbp = gseg
 	push	rax
@@ -1640,118 +1632,76 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 %endrep
 %endmacro
 	save_regs rbx,r12,r13,r14,r15
+	mov	rbx, [rbp + gseg.user_rsp]
+	mov	[rax + proc.rsp], rbx
 	mov	[rax + proc.rflags], r11
-	pop	rax ; We don't need to save rax in the process, it's clobbered.
+	pop	rbx ; We don't need to save rax in the process, it's clobbered.
+	pop	qword [rax + proc.rip]
 
-	cmp	rax, N_SYSCALLS
+	cmp	rbx, N_SYSCALLS
 	jae	.invalid_syscall
-	mov	eax, dword [text_vpaddr(.table) + 4 * rax]
+	mov	eax, dword [text_vpaddr(.table) + 4 * rbx]
 	add	rax, text_vpaddr(syscall_entry)
 	call	rax
 
-.sysret_restore_r11:
+.ret_from_generic:
 	mov	r11, [rbp + gseg.process]
-	mov	r11, [r11 + proc.rflags]
-	;jmp	.sysret_restore_rbp
-	; fallthrough! (uncomment jump when changing...)
-.sysret_restore_rbp:
-	mov	rbp, [rbp + gseg.process]
-	mov	rbp, [rbp + proc.rbp]
-.sysret:
-	pop	rcx
-.sysret_rcx_set:
-	;mov	rsp, [gs:gseg.user_process]
-	;add	rsp, proc.rsp
-	;pop	rsp
-	mov	rsp, [gs:gseg.user_rsp]
-.sysret_rsp_restored:
-	bt	r11, RFLAGS_IF_BIT
-	jnc	.no_intr
-	; Be paranoid and evil - explicitly clear everything that we could have
-	; ever clobbered.
-	clear_clobbered_syscall
-
+	mov	[r11 + proc.rax], rax
+	mov	rax, r11
 	swapgs
-	o64 sysret
-.no_intr:
-	cli
-	hlt
-	mov	al,0xff
+	jmp	fastret
 
-.syscall_yield:
-	push	rbp
+.invalid_syscall:
+lodstr	rdi, 'Invalid syscall %x!', 10
+	mov	rsi, rbx
+	call	printf
+	jmp	.ret_from_generic
+
+%macro sc 1
+	dd	syscall_ %+ %1 - syscall_entry
+%endmacro
+.table
+	sc write
+	sc gettime
+	sc yield
+	sc newproc
+	sc sendrcv
+.end_table
+N_SYSCALLS	equ (.end_table - .table) / 4
+
+syscall_write:
+	movzx	edi, dil
+	or	di, 0xf00
+	call	kputchar
 	zero	eax
-	mov	rbp, [gs:rax + gseg.self]
+	ret
 
-	; - Load current process pointer into rax
+syscall_gettime:
+	movzx	eax, byte [rbp + gseg.curtime]
+	ret
+
+syscall_yield:
 	mov	rax, [rbp + gseg.process]
-
-	; - Save enough state for a future FASTRET to simulate the right kind of
-	; return:
-	;   - Move saved callee-save registers from stack to PCB
-	save_regs rbx,r12,r13,r14,r15
-	pop	qword [rax + proc.rbx]
-
-	; callee-save stuff is now saved and we can happily clobber!
-	; Except we can't! :) The .no_yield path (empty runqueue, errors) will
-	; sysret directly and requires that we didn't break anything.
-
 	; Set the fast return flag to return quickly after the yield
-	bts	qword [rax+proc.flags], PROC_FASTRET
+	bts	qword [rax + proc.flags], PROC_FASTRET
 
-	; Return value: always 0 for yield
-	zero	edx
-	mov	[rax + proc.rax], rdx
-
-	; The rcx we pushed in the prologue
-	pop	qword [rax+proc.rip]
-	mov	[rax+proc.rflags], r11
-
-	; Get the stack pointer, save it for when we return.
-	; TODO We should store it directly in the right place in the prologue.
-	mov	rdx, [rbp + gseg.user_rsp]
-	mov	[rax+proc.rsp], rdx
-
-	; - Load next-process pointer, bail out back to normal return if equal
+	; Load next-process pointer
 	mov	rdx, [rbp + gseg.runqueue]
+	xchg	rax, rdx
 	; Ran out of runnable processes?
-	test	rdx, rdx
-	jz	.no_yield
+	test	rax, rax
+	jnz	switch_next
+	ret
 
-	xchg	rax,rdx
-
-	; switch_next takes switch-to in rax, switch-from in rdx
-	jmp	switch_next
-
-.no_yield:
-	mov	rcx, [rax+proc.rip]
-	zero	eax
-	jmp	.sysret_rcx_set
-
-.syscall_newproc:
-	; Note: can use generic_syscall
-	push	rbp
-	zero	ecx
-	mov	rbp, [gs:rcx + gseg.self]
-
-	; - Load current process pointer into rax
-	mov	rax, [rbp + gseg.process]
-	save_regs rbx,r12,r13,r14,r15
-	pop	qword [rax + proc.rbp]
-	mov	[rax + proc.rflags], r11
-	; See TODO above - the user rsp should be stored directly in the
-	; proces struct.
-	mov	rdx, [rbp + gseg.user_rsp]
-	mov	[rax + proc.rsp], rdx
-	; Save away the current process pointer in a callee-save reg
-	mov	r12, rax
-
+syscall_newproc:
 	; TODO: Validate some stuff
 	; rdi: entry point
 	; rsi: stack pointer of new process
 	call	new_proc
 	mov	rdi,rax
 	mov	rbx,rax ; Save new process id
+	call	runqueue_append
+
 	; FIXME How should we decide which address space to use for the new
 	; process?
 	;lea	rax, [phys_vaddr(aspace_test)]
@@ -1759,10 +1709,10 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	;mov	rsi, [rbp + proc.aspace]
 	;call	add_process_to_aspace
 	;call	rdi, rbx
-	call	runqueue_append
 
-	mov	rdi,[r12 + proc.aspace]
-	mov	rsi,rbx ; New process that should be mapped
+	mov	r12, [rbp + gseg.process]
+	mov	rdi, [r12 + proc.aspace]
+	mov	rsi, rbx ; New process that should be mapped
 	call	map_handle
 	; r13: handle to new process
 	mov	r13, rax
@@ -1773,33 +1723,27 @@ lodstr	rdi, 'newproc %p at %p', 10
 	call	printf
 
 	mov	rax, r13
+	ret
 
-	; TODO Restore callee-save registers from process struct.
+syscall_sendrcv:
+	; rdi: message code, rsi: target process, remaining: message params
+	save_regs rdi,rsi,rdx,r8,r9,r10
 
-	mov	r11, [rbp + gseg.process]
-	mov	r11, [r11 + proc.rflags]
-	jmp	.sysret
-
-.syscall_sendrcv:
-	zero	ecx
-	mov	rcx, [gs:rcx + gseg.self]
-
-	; TODO Which registers are used for messages?
-
-	; - Load current process pointer into rax
-	mov	rax, [rcx + gseg.process]
-	save_regs rbp,rbx,r12,r13,r14,r15
-	mov	[rax + proc.rflags], r11
-
-	mov	rbp, rcx ; gseg
-	mov	rbx, rax ; process
+	mov	rdi, rsi ; target process
+	TODO; call	lookup_handle
+	mov	rsi, rax ; looked-up target process
+	; TODO Check that the handle was correct and actually a process
+	mov	r10, rsi
 
 	; 1. Set IN_SEND and IN_RECV for this process
+	or	[rax + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
 
 	; Sending half:
 	; ( TODO for multiprocessing: lock recipient process struct. And sender?)
 	; 1. Check if the recipient can receive a message immediately
-	;
+	test	[rsi + proc.flags], byte PROC_IN_RECV
+	jz	.block_on_send
+
 	; --- If it can (it's IN_RECV):
 	; 2. Copy register contents from current process to recipient
 	; 3. Reset recipient's IN_RECV and sender's IN_SEND flags
@@ -1807,13 +1751,21 @@ lodstr	rdi, 'newproc %p at %p', 10
 	; of its registers just having been modified by us)
 	; 5. Check if it's on the waiter-queue for the sender - we'll have to
 	; remove it.
-	;
+
+	and	[rsi + proc.flags], byte ~PROC_IN_RECV
+	mov	rdi, rsi ; target process
+	mov	rsi, [rbp + gseg.process] ; us
+	TODO ;call	copy_message_to_process
+
+.block_on_send:
 	; --- If it can't:
 	; 2. Add it to waiting-for list on target process. This process remains
 	; out of the run-queue until target starts receiving. We have to yield
 	; and find another process to run.
 	; 3. We probably need some state to say where we're sending to.
 	; 4. Return and yield
+
+	TODO
 
 	; If we sent successfully, we can continue to receive.
 
@@ -1834,28 +1786,6 @@ lodstr	rdi, 'newproc %p at %p', 10
 	; TODO It's fairly likely we'll need to yield here, should probably
 	; plan for that...
 
-	mov	r11, [rbp + gseg.process]
-	mov	r11, [r11 + proc.rflags]
-	jmp	.sysret
-
-%macro sc 1
-	dd	syscall_ %+ %1 - syscall_entry
-%endmacro
-.table
-	sc write
-	sc gettime
-.end_table
-N_SYSCALLS	equ (.end_table - .table) / 4
-
-syscall_write:
-	movzx	edi, dil
-	or	di, 0xf00
-	call	kputchar
-	zero	eax
-	ret
-
-syscall_gettime:
-	movzx	eax, byte [rbp + gseg.curtime]
 	ret
 
 section usermode
