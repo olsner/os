@@ -1364,6 +1364,10 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 	test	rax,rax
 	; No previous process has unsaved fpu state, just load this process' state
 	jz	.no_save_state
+	; We are already the FPU process, but we might have been switched away
+	; from.
+	cmp	rax, [rbp + gseg.process]
+	je	.no_restore_state
 
 	; Save FPU state in process rax
 	o64 fxsave [rax+proc.fxsave]
@@ -1374,6 +1378,7 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 	; FPU state now owned by current process
 	mov	[rbp+gseg.fpu_process], rax
 
+.no_restore_state:
 	pop	rax
 	pop	rbp
 	swapgs
