@@ -425,8 +425,9 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	wrmsr
 
 	; after this, ebx should be address to video memory and rdi points to
-	; the gs-segment data block
+	; the gs-segment data block. So does rbp.
 	mov	rdi, rsi
+	mov	rbp, rdi
 	zero	eax
 	mov	ecx, 4096/4
 	rep	stosd
@@ -460,7 +461,7 @@ init_frames:
 	mov	r9d, 0x100000
 	zero	r10
 
-	mov	rbp, phys_vaddr(0xb8020)
+	mov	r11, phys_vaddr(0xb8020)
 	lea	rsi, [memory_map.size]
 	lodsd
 	mov	ebx, eax
@@ -477,7 +478,7 @@ init_frames:
 	; TODO ranges with value 3 (E820_ACPI_RECLAIM) are reusable once we're done with the ACPI data in them
 	jne	.loop
 	add	ax,0x0f00 | '0'
-	mov	word [rbp], ax
+	mov	word [r11], ax
 	cmp	rdi, r9
 	cmovb	rdi, r9
 
@@ -502,14 +503,14 @@ init_frames:
 
 test_alloc:
 	zero	ebx
-	zero	ebp
+	zero	r12
 .loop:
 	call	allocate_frame
 	test	rax,rax
 	jz	.done
 	inc	rbx
-	mov	[rax],rbp
-	mov	rbp,rax
+	mov	[rax], r12
+	mov	r12, rax
 	jmp	.loop
 
 .done:
@@ -518,10 +519,10 @@ lodstr	rdi,	'%x frames allocated', 10
 	call	printf
 
 .free_loop:
-	mov	rdi,rbp
-	test	rdi,rdi
+	mov	rdi, r12
+	test	rdi, rdi
 	jz	launch_user
-	mov	rbp,[rdi]
+	mov	r12, [rdi]
 	call	free_frame
 	jmp	.free_loop
 
@@ -654,26 +655,17 @@ new_proc:
 
 ; rdi: process to add to runqueue
 runqueue_append:
-	push	rbp
-	zero	ecx
-	mov	rbp, [gs:rcx + gseg.self]
-
 	mov	rcx, [rbp + gseg.runqueue_last]
 	mov	[rbp + gseg.runqueue_last], rdi
 	test	rcx,rcx
 	jz	.runqueue_empty
 	mov	[rcx + proc.next], rdi
-	pop	rbp
 	ret
 .runqueue_empty:
 	mov	[rbp + gseg.runqueue], rdi
-	pop	rbp
 	ret
 
 switch_next:
-	mov	rbp, rdi
-
-.gseg_rbp:
 %if log_switch_next
 	mov	r12, rax
 	mov	r13, rdx
@@ -774,14 +766,12 @@ lodstr	rdi,	'    Runqueue_last: %p', 10, 0
 %endif ;need_print_procstate
 
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
+; Requires gseg-pointer in rbp
 ; All registers other than rax will be ignored, trampled, and replaced with the
 ; new stuff from the switched-to process
 switch_to:
 	cli	; I don't dare running this thing with interrupts enabled.
 	clts	; We'll set it again below, if appropriate
-
-	zero	edi
-	mov	rbp, [gs:rdi + gseg.self]
 
 	mov	rbx, rax
 %if log_switch_to
@@ -838,7 +828,6 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	bt	qword [rbx+proc.rflags], RFLAGS_IF_BIT
 	jnc	.ret_no_intrs
 
-; push cs before this
 	; Push stuff for iretq
 	push	user_ds
 	push	qword [rbx+proc.rsp]
@@ -910,17 +899,13 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 ; mapping area. Subtract kernel_base (eugh, wrong name) to get the actual
 ; physical address.
 allocate_frame:
-	zero	edi
-	mov	rdi, [gs:rdi]
-; Use when the gseg is already stored in rdi
-.have_gseg:
-	mov	rax, [rdi+gseg.free_frame]
+	mov	rax, [rbp + gseg.free_frame]
 	test	rax, rax
 	; If local stack is out of frames, steal from global stack
 	jz	.steal_global_frames
 
 	mov	rsi, [rax]
-	mov	[rdi+gseg.free_frame], rsi
+	mov	[rbp + gseg.free_frame], rsi
 	zero	esi
 	mov	[rax], rsi
 	ret
@@ -936,7 +921,7 @@ allocate_frame:
 	jz	.skip_steal2
 	; If we can, steal two pages :)
 	mov	rsi, [rcx]
-	mov	[rdi+gseg.free_frame], rcx
+	mov	[rbp + gseg.free_frame], rcx
 	mov	rcx, rsi
 .skip_steal2:
 	mov	[globals.free_frame], rcx
@@ -957,7 +942,7 @@ allocate_frame:
 	; Clear the task-switched flag while we reuse some registers
 	mov	rdx, cr0
 	clts
-	movdqu	[rdi+gseg.temp_xmm0], xmm0
+	movdqu	[rbp + gseg.temp_xmm0], xmm0
 	xorps	xmm0, xmm0
 .loop:
 %assign i -128
@@ -967,7 +952,7 @@ allocate_frame:
 %endrep
 	add	rsi, 16*16
 	loop	.loop
-	movdqu	xmm0, [rdi+gseg.temp_xmm0]
+	movdqu	xmm0, [rbp + gseg.temp_xmm0]
 	; Reset TS to whatever it was before
 	mov	cr0, rdx
 
@@ -1272,7 +1257,7 @@ handler_n %+ i:
 %endrep
 
 ; rax is already saved, and now points to the process base
-; rdi is already saved (points to the gseg, but not used by this function)
+; rbp is already saved (points to the gseg, but not used by this function)
 ; rsp, rip, rflags are on the stack in "iretq format"
 ; returns with ret; call with call
 save_from_iret:
@@ -1302,10 +1287,11 @@ save_from_iret:
 	push	r9
 	push	r8
 	;.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
-	sub	rsp,8 ; rdi is already saved
+	push	rdi
 	push	rsi
-	push	rbp
-	sub	rsp,8 ; rsp is already saved ... should rsp be stored outside the gpr file?
+	; rsp and rbp are already saved
+	; ... should rsp be stored outside the gpr file though?
+	sub	rsp,16
 	push	rbx
 	push	rdx
 	; rcx is already saved
@@ -1316,7 +1302,7 @@ save_from_iret:
 
 timer_handler:
 	push	rax
-	push	rdi
+	push	rbp
 	; FIXME If we got here by interrupting kernel code, don't swapgs
 	; But currently, all kernel code is cli, so we can only get here as the
 	; result of a fault...
@@ -1324,27 +1310,26 @@ timer_handler:
 
 	mov	word [rel 0xb8002], 0x0700|'T'
 
-	xor	edi, edi
-	mov	rdi, [gs:rdi + gseg.self]
-	inc	dword [rdi + gseg.curtime]
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
+	inc	dword [rbp + gseg.curtime]
 	mov	eax, dword [rel -0x1000 + APIC_REG_APICTCC]
-	mov	dword [rdi+gseg.tick], eax
+	mov	dword [rbp + gseg.tick], eax
 	mov	dword [rel -0x1000 + APIC_REG_APICTIC], APIC_TICKS
 	mov	dword [rel -0x1000 + APIC_REG_EOI], 0
 
-	mov	rax,[rdi+gseg.process]
-	; The rax and rdi we saved above, store them in process
-	pop	qword [rax+proc.rdi]
-	pop	qword [rax+proc.rax]
+	mov	rax, [rbp + gseg.process]
+	; The rax and rbp we saved above, store them in process
+	pop	qword [rax + proc.rbp]
+	pop	qword [rax + proc.rax]
 	call	save_from_iret
-	mov	rbp, rdi
 %if log_timer_interrupt
 lodstr	rdi, 'Timer interrupt', 10
 	call	printf
 %endif
 	mov	rax, [rbp + gseg.runqueue]
 	mov	rdx, [rbp + gseg.process]
-	jmp	switch_next.gseg_rbp
+	jmp	switch_next
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	push	rbp
@@ -1392,14 +1377,14 @@ handler_PF:
 	jz	.kernel_fault
 
 	push	rax
-	push	rdi
+	push	rbp
 	swapgs
 
-	xor	edi, edi
-	mov	rdi, [gs:rdi + gseg.self]
-	mov	rax, [rdi + gseg.process]
-	; The rax and rdi we saved above, store them in process
-	pop	qword [rax + proc.rdi]
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
+	mov	rax, [rbp + gseg.process]
+	; The rax and rbp we saved above, store them in process
+	pop	qword [rax + proc.rbp]
 	pop	qword [rax + proc.rax]
 	; Copy page-fault code further up the stack
 	pop	qword [rsp - 24]
@@ -1424,8 +1409,6 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%x proc=%p', 10
 	call printf
 %endif
 
-	xor	edi, edi
-	mov	rbp, [gs:rdi + gseg.self]
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
 	mov	rdi, [rdi + aspace.mappings]
@@ -1574,9 +1557,7 @@ lodstr	r12, 'Mapping something without a region', 10
 	; TODO Handle failures by killing the process.
 
 .ret:
-	xor	edi, edi
-	mov	rdi, [gs:rdi + gseg.self]
-	mov	rax, [rdi + gseg.process]
+	mov	rax, [rbp + gseg.process]
 	jmp	switch_to
 
 .no_mappings:
@@ -1622,29 +1603,56 @@ syscall_entry:
 	cmp	eax, SYSCALL_SENDRCV
 	je	.syscall_sendrcv
 	jmp	.generic_syscall
+
 .invalid_syscall:
-	push	r11
 lodstr	rdi, 'Invalid syscall %x!', 10
 	mov	rsi, rax
 	call	printf
-	pop	r11
-	jmp	.sysret
+	jmp	.sysret_restore_r11
 
 .generic_syscall:
+	; Save all callee-save registers into process, including the things
+	; we'd like to clobber, e.g. rbp = gseg
+	push	rax
+	push	rbp
+
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
+	mov	rax, [rbp + gseg.process]
+	pop	qword [rax + proc.rbp]
+
+%macro save_regs 1-*
+%rep %0
+	mov qword [rax+proc.%1], %1
+	%rotate 1
+%endrep
+%endmacro
+	save_regs rbx,r12,r13,r14,r15
+	mov	[rax + proc.rflags], r11
+	pop	rax ; We don't need to save rax in the process, it's clobbered.
+
 	cmp	rax, N_SYSCALLS
 	jae	.invalid_syscall
-
-	push	r11
 	mov	eax, dword [text_vpaddr(.table) + 4 * rax]
 	add	rax, text_vpaddr(syscall_entry)
 	call	rax
-	pop	r11
-	jmp	.sysret
 
+.sysret_restore_r11:
+	mov	r11, [rbp + gseg.process]
+	mov	r11, [r11 + proc.rflags]
+	;jmp	.sysret_restore_rbp
+	; fallthrough! (uncomment jump when changing...)
+.sysret_restore_rbp:
+	mov	rbp, [rbp + gseg.process]
+	mov	rbp, [rbp + proc.rbp]
 .sysret:
 	pop	rcx
 .sysret_rcx_set:
+	;mov	rsp, [gs:gseg.user_process]
+	;add	rsp, proc.rsp
+	;pop	rsp
 	mov	rsp, [gs:gseg.user_rsp]
+.sysret_rsp_restored:
 	bt	r11, RFLAGS_IF_BIT
 	jnc	.no_intr
 	; Be paranoid and evil - explicitly clear everything that we could have
@@ -1659,22 +1667,18 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	mov	al,0xff
 
 .syscall_yield:
-	zero	edi
-	mov	rdi, [gs:rdi + gseg.self]
+	push	rbp
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
 
 	; - Load current process pointer into rax
-	mov	rax,[rdi+gseg.process]
+	mov	rax, [rbp + gseg.process]
 
 	; - Save enough state for a future FASTRET to simulate the right kind of
 	; return:
 	;   - Move saved callee-save registers from stack to PCB
-%macro save_regs 1-*
-%rep %0
-	mov qword [rax+proc.%1], %1
-	%rotate 1
-%endrep
-%endmacro
-	save_regs rbp,rbx,r12,r13,r14,r15
+	save_regs rbx,r12,r13,r14,r15
+	pop	qword [rax + proc.rbx]
 
 	; callee-save stuff is now saved and we can happily clobber!
 	; Except we can't! :) The .no_yield path (empty runqueue, errors) will
@@ -1685,7 +1689,7 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 
 	; Return value: always 0 for yield
 	zero	edx
-	mov	[rax+proc.rax], rdx
+	mov	[rax + proc.rax], rdx
 
 	; The rcx we pushed in the prologue
 	pop	qword [rax+proc.rip]
@@ -1693,13 +1697,13 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 
 	; Get the stack pointer, save it for when we return.
 	; TODO We should store it directly in the right place in the prologue.
-	mov	rdx, [rdi+gseg.user_rsp]
+	mov	rdx, [rbp + gseg.user_rsp]
 	mov	[rax+proc.rsp], rdx
 
 	; - Load next-process pointer, bail out back to normal return if equal
-	mov	rdx, [rdi+gseg.runqueue]
+	mov	rdx, [rbp + gseg.runqueue]
 	; Ran out of runnable processes?
-	test	rdx,rdx
+	test	rdx, rdx
 	jz	.no_yield
 
 	xchg	rax,rdx
@@ -1713,19 +1717,22 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	jmp	.sysret_rcx_set
 
 .syscall_newproc:
+	; Note: can use generic_syscall
+	push	rbp
 	zero	ecx
-	mov	rcx, [gs:rcx + gseg.self]
+	mov	rbp, [gs:rcx + gseg.self]
 
 	; - Load current process pointer into rax
-	mov	rax, [rcx + gseg.process]
-	save_regs rbp,rbx,r12,r13,r14,r15
+	mov	rax, [rbp + gseg.process]
+	save_regs rbx,r12,r13,r14,r15
+	pop	qword [rax + proc.rbp]
 	mov	[rax + proc.rflags], r11
 	; See TODO above - the user rsp should be stored directly in the
 	; proces struct.
-	mov	rdx, [rcx+gseg.user_rsp]
-	mov	[rax+proc.rsp], rdx
+	mov	rdx, [rbp + gseg.user_rsp]
+	mov	[rax + proc.rsp], rdx
 	; Save away the current process pointer in a callee-save reg
-	mov	rbp, rax
+	mov	r12, rax
 
 	; TODO: Validate some stuff
 	; rdi: entry point
@@ -1742,19 +1749,18 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	;call	rdi, rbx
 	call	runqueue_append
 
-	mov	rdi,[rbp + proc.aspace]
-	mov	rsi,rbx ; Handle of new process that should be mapped
+	mov	rdi,[r12 + proc.aspace]
+	mov	rsi,rbx ; New process that should be mapped
 	call	map_handle
-	mov	r12, rax
+	; r13: handle to new process
+	mov	r13, rax
 
 lodstr	rdi, 'newproc %p at %p', 10
 	mov	rsi, rbx
 	mov	rcx, rax
 	call	printf
-	zero	eax
-	mov	rbp, [gs:rax + gseg.self]
 
-	mov	rax, r12
+	mov	rax, r13
 
 	; TODO Restore callee-save registers from process struct.
 
@@ -1837,8 +1843,7 @@ syscall_write:
 	ret
 
 syscall_gettime:
-	; rax = SYSCALL_GETTIME when we get here
-	movzx	eax,byte [gs:rax + gseg.curtime - SYSCALL_GETTIME]
+	movzx	eax, byte [rbp + gseg.curtime]
 	ret
 
 section usermode
@@ -1958,7 +1963,7 @@ user_entry_3:
 .start:
 	mov	ebx, 7
 .loop
-	lea	edi,['a'+ebx]
+	lea	edi,['a'+rbx]
 	xor	eax,eax
 	syscall
 
@@ -1983,20 +1988,20 @@ lodstr	rsi,	'Hello World',0
 
 puts:
 	; callee-save: rbp, rbx, r12-r15
-	push	rbp
-	mov	rbp,rdi
+	mov	rsi,rdi
 
 .loop:
-	mov	dil,[rbp]
+	lodsb
+	mov	edi,eax
 	test	dil,dil
 	jz	.ret
-	inc	rbp
 
+	push	rsi
 	call	putchar
+	pop	rsi
 	jmp	.loop
 
 .ret:
-	pop	rbp
 	clear_clobbered
 	ret
 
@@ -2015,11 +2020,8 @@ putchar:
 	and	di, 0xff
 	or	di, 0x1f00
 
+; Note: Takes gseg in rbp
 kputchar:
-	push	rbp
-	zero	eax
-	mov	rbp, [gs:rax + gseg.self]
-.have_rbp:
 	mov	eax, edi
 	mov	rdi, [rbp + gseg.vga_pos]
 	out	0xe9, byte al
@@ -2029,12 +2031,11 @@ kputchar:
 	stosw
 
 .finish_write:
-	cmp	rdi, [rbp+gseg.vga_end]
+	cmp	rdi, [rbp + gseg.vga_end]
 	jge	.scroll_line
-	mov	[rbp+gseg.vga_pos], rdi
+	mov	[rbp + gseg.vga_pos], rdi
 .ret:
 	clear_clobbered
-	pop	rbp
 	ret
 
 .scroll_line:
@@ -2175,9 +2176,9 @@ printf:
 .print:
 	mov	r15b, 0
 	mov	dil, byte [r14 + rdi]
-	mov	bpl, cl
+	push	rcx
 	call	putchar
-	mov	cl, bpl
+	pop	rcx
 .next_digit:
 	test	cl, cl
 	jnz	.loop
