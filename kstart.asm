@@ -29,10 +29,13 @@ CR4_OSXMMEXCPT	equ	0x400
 %endmacro
 
 %define TODO TODO_ __LINE__
-%macro TODO_ 1
+%macro TODO_ 1-2 'TODO'
+lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
+	mov	rsi, %1
+	call	printf
+
 	cli
 	hlt
-	mov	ax, %1
 %endmacro
 
 ; callee-save: rbp, rbx, r12-r15
@@ -1126,25 +1129,20 @@ map_add_region equ .add
 
 ; rdi: the address space being mapped into
 ; rsi: the kernel object being mapped
-; (rdx: flags etc. We have up to 11 bits available in the page table depending
-; on the minimum alignment of kernel objects. 1 bit is required to set the
-; 'present' bit (LSB) to 0, each bit of alignment above 1 is available. For
-; 16-byte alignment that means a whopping 3 bits!)
 ; For starters, all handles point to processes and have no flags.
 map_handle:
 	test	rsi, 0xf
 	jnz	.unaligned_kernel_object
 
-	push	rdi
 	push	rsi
 
 	; Calculate the virtual address for the handle
-	pop	rdi
 	mov	rdx, [rdi + aspace.handles_bottom]
 	sub	rdx, 0x1000
 	mov	[rdi + aspace.handles_bottom], rdx
 
-	zero	rsi
+	; rdi: address space
+	zero	rsi ; rsi: region (== 0, we'll set it later)
 	zero	ecx ; size is 0
 	push	rdx ; vaddr of handle, also return value
 	call	map_region
@@ -1152,7 +1150,7 @@ map_handle:
 	; pop the kernel object pointer (the rsi we pushed above).
 	; MAPFLAG_HANDLE indicates the region pointer is not a region but a
 	; kernel object.
-	pop	qword [rax + mapping.region]
+	pop	qword [rax + mapping.kobj]
 	mov	byte [rax + mapping.flags + 2], MAPFLAG_HANDLE >> 16
 	mov	rax, rdx
 	ret
@@ -1729,19 +1727,26 @@ syscall_sendrcv:
 	; rdi: message code, rsi: target process, remaining: message params
 	save_regs rdi,rsi,rdx,r8,r9,r10
 
-	mov	rdi, rsi ; target process
-	TODO; call	lookup_handle
-	mov	rsi, rax ; looked-up target process
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
+	; rsi = target process
+	mov	r12, rsi
+	call	lookup_handle
+	mov	r13, rax
+lodstr	rdi,	'lookup_handle on %p: %p', 10
+	mov	rsi, r12
+	mov	rdx, rax ; looked-up target process
+	call	printf
 	; TODO Check that the handle was correct and actually a process
-	mov	r10, rsi
 
 	; 1. Set IN_SEND and IN_RECV for this process
-	or	[rax + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
+	mov	r12, [rbp + gseg.process]
+	or	[r12 + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
 
 	; Sending half:
 	; ( TODO for multiprocessing: lock recipient process struct. And sender?)
 	; 1. Check if the recipient can receive a message immediately
-	test	[rsi + proc.flags], byte PROC_IN_RECV
+	test	[r13 + proc.flags], byte PROC_IN_RECV
 	jz	.block_on_send
 
 	; --- If it can (it's IN_RECV):
@@ -1752,30 +1757,28 @@ syscall_sendrcv:
 	; 5. Check if it's on the waiter-queue for the sender - we'll have to
 	; remove it.
 
-	and	[rsi + proc.flags], byte ~PROC_IN_RECV
-	mov	rdi, rsi ; target process
+	mov	rdi, r13 ; target process
 	mov	rsi, [rbp + gseg.process] ; us
-	TODO ;call	copy_message_to_process
+	call	transfer_message
 
-.block_on_send:
-	; --- If it can't:
-	; 2. Add it to waiting-for list on target process. This process remains
-	; out of the run-queue until target starts receiving. We have to yield
-	; and find another process to run.
-	; 3. We probably need some state to say where we're sending to.
-	; 4. Return and yield
-
-	TODO
-
-	; If we sent successfully, we can continue to receive.
+	; Now that we've sent successfully, we can continue to receive.
 
 	; Receiving half:
 	; 1. Check waiter queue, find the process we're receiving from, or any
 	; process that's in IN_SEND and sending to us.
 	; 2. If we found a process:
-	; 2.1. Copy its registers into this process
-	; 2.2. Reset its IN_SEND flag, and our IN_RECV flag
-	; 2.3. Add it back to the runqueue
+	; 2.1. Remove it from waiter queue, it's no longer waiting.
+	; 2.2. Do transfer_message to it
+	
+	; NOTE: We must handle processes with both IN_SEND and IN_RECV set,
+	; such processes must proceed to their respective IN_RECV state when
+	; we've received from them. Consider an arbitrarily long chain of
+	; waiting processes all waiting for one of them to be able to Send and
+	; move to Recv.
+
+	TODO
+	ret
+
 	; 3. No process found:
 	; 3.1. Set this process' receive-is-waiting-for-process field
 	; 2.2. If we have a specific process to wait for, put us on its waiter
@@ -1783,9 +1786,84 @@ syscall_sendrcv:
 	; to wake us.
 	; 3.3. Keep IN_RECV set
 
-	; TODO It's fairly likely we'll need to yield here, should probably
-	; plan for that...
+.block_on_send:
+	; --- The recipient can't receive the message right now (not IN_RECV)
+	; 2. Add it to waiting-for list on target process. This process remains
+	; out of the run-queue until target starts receiving. We have to yield
+	; and find another process to run.
+	; Match this up with the "Check waiter queue" above (that code must
+	; find us if we do what this code does)
+	; 3. We probably need some state to say where we're sending to.
+	; 4. Return and yield
 
+	TODO
+	; Then, yield
+	;jmp switch_next
+
+; rdi: address space
+; rsi: handle to look up
+%define log_lookup_handle 0
+lookup_handle:
+	mov	rdi, [rdi + aspace.mappings + dlist.head]
+.loop:
+%if log_lookup_handle
+	push	rdi
+	push	rsi
+	mov	rsi, [rdi + mapping.vaddr - mapping.as_node]
+	mov	rdx, [rdi + mapping.kobj - mapping.as_node]
+lodstr	rdi, 'lookup_handle: vaddr=%p kobj=%p', 10
+	call	printf
+	pop	rsi
+	pop	rdi
+%endif
+
+	test	rdi, rdi
+	jz	.not_found
+	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
+	cmp	rax, rsi
+	je	.found
+	mov	rdi, [rdi + dlist_node.next]
+	jmp	.loop
+
+.found:
+	mov	rax, [rdi + mapping.kobj - mapping.as_node]
+	test	byte [rdi + mapping.flags - mapping.as_node + 2], MAPFLAG_HANDLE >> 16
+	jz	.not_found
+	ret
+
+.not_found:
+lodstr	rdi, 'lookup_handle: not found.', 10
+	call	printf
+	zero	eax
+	ret
+
+; rdi: target process
+; rsi: source process
+transfer_message:
+%macro copy_regs 0-*
+%rep %0
+	mov	rax, [rsi + proc. %+ %1]
+	mov	[rdi + proc. %+ %1], rax
+	%rotate 1
+%endrep
+%endmacro
+	; If message-parameter registers were ordered in the file, we could
+	; do a rep movsq here.
+	copy_regs rdx, rdi, r8, r9, r10
+
+	; Add target to runqueue now that it's gotten its response
+	and	[rdi + proc.flags], byte ~PROC_IN_RECV
+	push	rsi
+	push	rdi
+	call	runqueue_append
+lodstr	rdi, 'Copied message from %p to %p', 10
+	pop	rcx
+	pop	rsi
+	push	rsi
+	call	printf
+
+	pop	rsi
+	and	[rsi + proc.flags], byte ~PROC_IN_SEND
 	ret
 
 section usermode
