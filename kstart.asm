@@ -310,11 +310,11 @@ start64:
 	lidt	[idtr]
 	lgdt	[gdtr]
 
-	mov	al,data64_seg
-	mov	ah,0
+	mov	ax,data64_seg
 	mov	ds,ax
 	mov	ss,ax
-	; TODO Should we reset fs and gs too?
+	mov	fs,ax
+	mov	gs,ax
 
 	lea	rdi,[rel section.bss.vstart]
 	lea	rcx,[rel section.bss.end]
