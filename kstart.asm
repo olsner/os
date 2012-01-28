@@ -229,6 +229,8 @@ handle_top equ 0x7fff_ffff_f000 ; For now, we waste one whole page per handle (I
 struc	gseg
 	; Pointer to self
 	.self	resq	1
+	; Kernel stack pointer for syscalls and interrupts
+	.rsp	resq	1
 	.vga_base	resq 1
 	.vga_pos	resq 1
 	.vga_end	resq 1
@@ -236,7 +238,6 @@ struc	gseg
 	.curtime	resd 1
 	.tick		resd 1
 
-	.user_rsp	resq 1
 	.process	resq 1
 	.runqueue	resq 1
 	.runqueue_last	resq 1
@@ -319,18 +320,18 @@ start64:
 	lea	rdi,[rel section.bss.vstart]
 	lea	rcx,[rel section.bss.end]
 	sub	rcx,rdi
-	shr	rcx,3
+	shr	ecx,2
 	zero	eax
-	rep	stosq
+	rep stosd
 
 	mov	rdi,phys_vaddr(0xb8004)
 	lea	rsi,[rel message]
-	movsq
-	movsq
+	mov	cl, 4
+	rep movsd
 
+	mov	rsp, phys_vaddr(kernel_stack_end)
 	mov	ax,tss64_seg
 	ltr	ax
-	mov	rsp, phys_vaddr(kernel_stack_end)
 
 	mov	ecx, MSR_APIC_BASE
 	rdmsr
@@ -445,6 +446,8 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	mov	rax, rsi
 	mov	rdi, rsi
 	stosq ; gs:0 - selfpointer
+	mov	rax, rsp
+	stosq
 	mov	rax,phys_vaddr(0xb8000)
 	;mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
@@ -1608,10 +1611,7 @@ syscall_entry:
 	mov	word [rel 0xb8002], 0xf00|'S'
 
 	swapgs
-	mov	[gs:gseg.user_rsp], rsp
-	; Hardcoded kernel stack (FIXME put in gseg for a per-cpu kernel stack
-	; instead)
-	mov	rsp, phys_vaddr(kernel_stack_end)
+	xchg	rsp, [gs:gseg.rsp]
 	push	rcx
 	; Save all callee-save registers into process, including the things
 	; we'd like to clobber, e.g. rbp = gseg
@@ -1630,8 +1630,10 @@ syscall_entry:
 %endrep
 %endmacro
 	save_regs rbx,r12,r13,r14,r15
-	mov	rbx, [rbp + gseg.user_rsp]
+	mov	rbx, [rbp + gseg.rsp]
 	mov	[rax + proc.rsp], rbx
+	lea	rbx, [rsp + 16]
+	mov	[rbp + gseg.rsp], rbx
 	mov	[rax + proc.rflags], r11
 	pop	rbx ; We don't need to save rax in the process, it's clobbered.
 	pop	qword [rax + proc.rip]
@@ -2238,7 +2240,8 @@ globals:
 section .text
 tss:
 	dd 0 ; Reserved
-	dq phys_vaddr(kernel_stack_end) ; Interrupt stack when interrupting non-kernel code and moving to CPL 0
+	; Interrupt stack when interrupting non-kernel code and moving to CPL 0
+	dq phys_vaddr(kernel_stack_end)
 	dq 0
 	dq 0
 	times 0x66-28 db 0
