@@ -80,12 +80,14 @@ __SECT__
 
 %define log_switch_to 0
 %define log_switch_next 0
+%define log_runqueue 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
 %define log_timer_interrupt 0
 %define log_page_fault 1
 %define log_mappings 0
+%define log_lookup_handle 0
 
-%assign need_print_procstate (log_switch_to | log_switch_next)
+%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue)
 
 RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
@@ -209,6 +211,7 @@ MSG_MAX		equ	255
 ; only an error flag (1 or 0) and a response flag that is 0 for requests, 1 for
 ; responses to them. What the meaning of request/response actually is, depends
 ; on the message type and should be documented there.
+; TODO Find some nice way to put syscall numbers in this code too.
 MSG_MASK_CODE		equ 0xff
 MSG_BIT_ERROR		equ 8
 MSG_BIT_RESPONSE	equ 9
@@ -218,7 +221,8 @@ MSG_FLAG_RESPONSE	equ (1 << MSG_BIT_RESPONSE)
 %define msg_code(msg, error, respflag) \
 	(msg | (error << MSG_BIT_ERROR) | (respflag << MSG_BIT_RESPONSE))
 %define msg_resperr(msg) msg_code(msg, 1, 1)
-%define msg_sendcode(msg) msg_code(msg, 0, 0)
+%define msg_resp(msg) msg_code(msg, 0, 1)
+%define msg_req(msg) msg_code(msg, 0, 0)
 
 
 
@@ -562,6 +566,8 @@ new_user_proc:
 	call	map_region
 	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_X
 
+user_stack_end	equ	0x13000
+
 	mov	rdi, [rbx + proc.aspace]
 	zero	esi
 	; Map the user stack as an allocate-on-use ("anon") page
@@ -584,18 +590,15 @@ launch_user:
 	bts	rax,CR0_TS_BIT
 	mov	cr0,rax
 
-user_stack_end	equ	0x13000
-
 	mov	edi, user_entry
 	call	new_user_proc
 	mov	rbx, rax ; Save for later
 	mov	edi, user_entry_2
-	call	new_user_proc
+;call	new_user_proc
 	mov	edi, user_entry_3
-	call	new_user_proc
+;call	new_user_proc
 
-	mov	rax, rbx
-	jmp	switch_to
+	call	switch_next
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15
@@ -668,15 +671,51 @@ new_proc:
 
 ; rdi: process to add to runqueue
 runqueue_append:
+%if log_runqueue
+	push	rdi
+	mov	rsi, rdi
+lodstr	rdi, 'runqueue_append %p', 10
+	call	printf
+	pop	rdi
+%endif
+	bts	dword [rdi + proc.flags], PROC_ON_RUNQUEUE_BIT
+	jc	.ret
 	mov	rcx, [rbp + gseg.runqueue_last]
 	mov	[rbp + gseg.runqueue_last], rdi
 	test	rcx,rcx
 	jz	.runqueue_empty
 	mov	[rcx + proc.next], rdi
+%if log_runqueue
+	jmp	.ret
+%endif
 	ret
 .runqueue_empty:
 	mov	[rbp + gseg.runqueue], rdi
+.ret:
+%if log_runqueue
+	call	print_procstate
+%endif
 	ret
+
+runqueue_pop:
+	mov	rax, [rbp + gseg.runqueue]
+	test	rax, rax
+	jz	.ret
+	mov	rdi, [rax + proc.next]
+	mov	[rbp + gseg.runqueue], rdi
+	test	rdi, rdi
+
+	jnz	.not_last_queued
+	mov	[rbp + gseg.runqueue_last], rdi
+.not_last_queued:
+	btr	dword [rax + proc.flags], PROC_ON_RUNQUEUE_BIT
+.ret:
+	ret
+
+idle:
+lodstr	rdi, 'idle', 10
+	call	printf
+	hlt
 
 switch_next:
 %if log_switch_next
@@ -689,56 +728,9 @@ lodstr	rdi, 'switch_next', 10
 	mov	rdx, r13
 %endif
 
-	; Now NEXT (switching to) is in rax, and OLD (switching from) is in rdx
-	; runqueue_last points to LAST
-	; runqueue currently points to NEXT
-
-	; After switch:
-	; rax -> NEXT
-	; [rdx -> OLD]
-	; runqueue -> NEXT->next or OLD if NEXT->next = NULL
-	; runqueue_last -> OLD
-	; LAST->next -> OLD, or NULL if LAST == NEXT
-	; OLD->next -> NULL
-	; NEXT->next -> NULL
-
-	; - Put old process at end of run-queue
-	mov	rcx, [rbp+gseg.runqueue_last]
-	mov	[rbp+gseg.runqueue_last], rdx ; runqueue_last = OLD
-
-	; rcx = last, rax = next, rdx = old/current/new last
-	; note: we've already checked that the runqueue is not empty, so we
-	; must have a last-pointer too.
-	zero	esi
-
-	; LAST->next = (LAST == NEXT ? NULL : OLD)
-	mov	rbx,rdx
-	cmp	rcx,rax ; if LAST == NEXT, we want to store NULL instead of OLD
-	cmove	rbx,rsi
-	mov	[rcx+proc.next], rbx
-
-	; runqueue = (NEXT->next ? NEXT->next : OLD)
-	; - Unqueue next-process
-	mov	rcx, [rax+proc.next]
-	test	rcx,rcx
-	cmovz	rcx,rdx
-	mov	[rbp+gseg.runqueue], rcx
-
-	; - Load next-process pointer into rax
-	zero	ecx
-	; OLD->next = NEXT->next = NULL (OLD because it's the tail of the list, NEXT because it's now unlinked)
-	mov	[rax+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
-	mov	[rdx+proc.next],rcx ; Clear next-pointer since we're not linked anymore.
-
-%if log_switch_next
-	mov	rbx, rax
-lodstr	rdi, 'switch_next to %p', 10
-	mov	rsi, rax
-	call	printf
-	call	print_procstate
-	mov	rax, rbx
-%endif
-
+	call	runqueue_pop
+	test	rax, rax
+	jz	idle
 	jmp	switch_to
 
 %ifdef need_print_procstate
@@ -794,6 +786,11 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	mov	rax, rbx
 %endif
 
+	bt	dword [rax + proc.flags], PROC_ON_RUNQUEUE_BIT
+	jnc	.not_blocked
+	TODO
+.not_blocked:
+
 	; Update pointer to current process
 	mov	[rbp + gseg.process], rax
 
@@ -815,7 +812,7 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 .no_set_cr3:
 
 	mov	rbx, [rax + proc.flags]
-	bt	rbx, PROC_KERNEL
+	bt	rbx, PROC_KERNEL_BIT
 	jc	.kernel_exit
 
 .user_exit:
@@ -824,7 +821,7 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	; restore flags and go to user mode. The risk is if we switch "from
 	; kernel" while having the user GS loaded!
 	swapgs
-	bt	rbx, PROC_FASTRET
+	bt	rbx, PROC_FASTRET_BIT
 	jc	fastret
 
 	bt	qword [rax + proc.rflags], RFLAGS_IF_BIT
@@ -869,6 +866,7 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 	iretq
 
 .kernel_exit:
+	hlt
 	; Exit to kernel thread
 	; If we don't need to switch rsp this should be easier - restore all
 	; regs, rflags, push new rip and do a near return
@@ -1113,7 +1111,6 @@ map_region:
 	mov	rsi, r10 ; Region
 
 .add:
-map_add_region equ .add
 	mov	[rdi + mapping.region], rsi
 	mov	rax, rdi
 
@@ -1129,6 +1126,7 @@ map_add_region equ .add
 
 .oom:
 	ret
+map_add_region equ .add
 
 ; rdi: the address space being mapped into
 ; rsi: the kernel object being mapped
@@ -1163,6 +1161,59 @@ lodstr	rdi,	'Unaligned kobj %p', 10
 	call	printf
 	cli
 	hlt
+
+; rdi: address space
+; rsi: handle to look up
+lookup_handle:
+%if log_lookup_handle
+	push	rsi
+%endif
+	mov	rdi, [rdi + aspace.mappings + dlist.head]
+.loop:
+%if log_lookup_handle
+	push	rdi
+	push	rsi
+	mov	rsi, [rdi + mapping.vaddr - mapping.as_node]
+	mov	rdx, [rdi + mapping.kobj - mapping.as_node]
+lodstr	rdi, 'lookup_handle: vaddr=%p kobj=%p', 10
+	call	printf
+	pop	rsi
+	pop	rdi
+%endif
+
+	test	rdi, rdi
+	jz	.not_found
+	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
+	cmp	rax, rsi
+	je	.found
+	mov	rdi, [rdi + dlist_node.next]
+	jmp	.loop
+
+.found:
+	mov	rax, [rdi + mapping.kobj - mapping.as_node]
+	test	byte [rdi + mapping.flags - mapping.as_node + 2], MAPFLAG_HANDLE >> 16
+	jz	.not_found
+
+%if log_lookup_handle
+lodstr	rdi,	'lookup_handle on %p: %p', 10
+	pop	rsi
+	mov	rdx, rax ; looked-up target process
+	push	rax
+	call	printf
+	pop	rax
+%endif
+
+	ret
+
+.not_found:
+%if log_lookup_handle
+lodstr	rdi, 'lookup_handle %p: not found.', 10
+	pop	rsi ; handle to look up
+	call	printf
+%endif
+	zero	eax
+	ret
+
 
 ; rdi: address space to add mapping to
 ; rsi: physical address of page to add, plus relevant flags as they will appear
@@ -1342,8 +1393,8 @@ timer_handler:
 lodstr	rdi, 'Timer interrupt', 10
 	call	printf
 %endif
-	mov	rax, [rbp + gseg.runqueue]
-	mov	rdx, [rbp + gseg.process]
+	mov	rdi, [rbp + gseg.process]
+	call	runqueue_append
 	jmp	switch_next
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
@@ -1666,44 +1717,37 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	sc yield
 	sc newproc
 	sc sendrcv
+	sc recv
+	sc send
 .end_table
 N_SYSCALLS	equ (.end_table - .table) / 4
 
 syscall_write:
 	movzx	edi, dil
 	or	di, 0xf00
-	call	kputchar
-	zero	eax
-	ret
+	jmp	kputchar
 
 syscall_gettime:
 	movzx	eax, byte [rbp + gseg.curtime]
 	ret
 
 syscall_yield:
-	mov	rax, [rbp + gseg.process]
+	mov	rdi, [rbp + gseg.process]
 	; Set the fast return flag to return quickly after the yield
-	bts	qword [rax + proc.flags], PROC_FASTRET
-
-	; Load next-process pointer
-	mov	rdx, [rbp + gseg.runqueue]
-	xchg	rax, rdx
-	; Ran out of runnable processes?
-	test	rax, rax
-	jnz	switch_next
-	ret
+	bts	qword [rdi + proc.flags], PROC_FASTRET
+	call	runqueue_append
+	jmp	switch_next
 
 syscall_newproc:
 	; TODO: Validate some stuff
 	; rdi: entry point
-	; rsi: stack pointer of new process
-	call	new_proc
+	call	new_user_proc
 	mov	rdi,rax
 	mov	rbx,rax ; Save new process id
 	call	runqueue_append
 
 	; FIXME How should we decide which address space to use for the new
-	; process?
+	; process? For now we use new_user_proc, which will set up defaults.
 	;lea	rax, [phys_vaddr(aspace_test)]
 	;mov	[rbx + proc.aspace], rax
 	;mov	rsi, [rbp + proc.aspace]
@@ -1717,6 +1761,12 @@ syscall_newproc:
 	; r13: handle to new process
 	mov	r13, rax
 
+	mov	rdi, [rbx + proc.aspace]
+	mov	rsi, [rbp + gseg.process]
+	call	map_handle
+	; New process' first argument: creator pid
+	mov	[rbx + proc.rdi], rax
+
 lodstr	rdi, 'newproc %p at %p', 10
 	mov	rsi, rbx
 	mov	rcx, rax
@@ -1725,68 +1775,88 @@ lodstr	rdi, 'newproc %p at %p', 10
 	mov	rax, r13
 	ret
 
-syscall_sendrcv:
-	; rdi: message code, rsi: target process, remaining: message params
+syscall_send:
+	mov	rax, [rbp + gseg.process]
 	save_regs rdi,rsi,rdx,r8,r9,r10
+
+	mov	rdi, [rax + proc.aspace]
+	; rsi = target process in user address space
+	call	lookup_handle
+	; rax = target proc object
+
+	mov	rsi, [rbp + gseg.process]
+	or	[rsi + proc.flags], byte PROC_IN_SEND
+	mov	[rsi + proc.waiting_for], rax
+
+	mov	rdi, rax ; target
+	jmp	send_or_block
+
+syscall_recv:
+	save_regs rsi
+
+	test	rsi, rsi
+	jz	.no_source_given
 
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
+	call	lookup_handle
+	mov	rsi, rax
+
+.no_source_given:
+	; rsi = source process (?)
+	mov	rdi, [rbp + gseg.process]
+	mov	[rdi + proc.waiting_for], rsi
+	or	[rsi + proc.flags], byte PROC_IN_RECV
+	jmp	recv_or_block
+
+syscall_sendrcv:
+	mov	rax, [rbp + gseg.process]
+	; rdi: message code, rsi: target process, remaining: message params
+	save_regs rdi,rsi,rdx,r8,r9,r10
+
+	mov	rdi, [rax + proc.aspace]
 	; rsi = target process
 	mov	r12, rsi
 	call	lookup_handle
 	mov	r13, rax
-lodstr	rdi,	'lookup_handle on %p: %p', 10
-	mov	rsi, r12
-	mov	rdx, rax ; looked-up target process
-	call	printf
 	; TODO Check that the handle was correct and actually a process
 
 	; 1. Set IN_SEND and IN_RECV for this process
-	mov	r12, [rbp + gseg.process]
-	or	[r12 + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
+	mov	rsi, [rbp + gseg.process]
+	or	[rsi + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
+
+	mov	rdi, r13
+	call	send_or_block
+
+	; Now that we've sent successfully, we can continue to receive.
+
+	mov	rdi, [rbp + gseg.process] ; us
+	jmp	recv_or_block
+
+; Note: never returns if it blocks
+; rdi: recipient
+; rsi: source (the process that will block if it can't send)
+send_or_block:
+	mov	[rsi + proc.waiting_for], rdi
 
 	; Sending half:
 	; ( TODO for multiprocessing: lock recipient process struct. And sender?)
 	; 1. Check if the recipient can receive a message immediately
-	test	[r13 + proc.flags], byte PROC_IN_RECV
-	jz	.block_on_send
+	mov	edx, [rdi + proc.flags]
+	and	edx, PROC_IN_RECV | PROC_IN_SEND
+	; If it's both IN_SEND and IN_RECV, that means we should treat it as
+	; IN_SEND first (i.e. block)
+	cmp	edx, byte PROC_IN_RECV
+	jne	.block_on_send
 
-	; --- If it can (it's IN_RECV):
+	; --- If it can (it's IN_RECV and not IN_SEND):
 	; 2. Copy register contents from current process to recipient
 	; 3. Reset recipient's IN_RECV and sender's IN_SEND flags
 	; 4. Put recipient on runqueue (it'll "receive" its message by vestige
 	; of its registers just having been modified by us)
 	; 5. Check if it's on the waiter-queue for the sender - we'll have to
 	; remove it.
-
-	mov	rdi, r13 ; target process
-	mov	rsi, [rbp + gseg.process] ; us
-	call	transfer_message
-
-	; Now that we've sent successfully, we can continue to receive.
-
-	; Receiving half:
-	; 1. Check waiter queue, find the process we're receiving from, or any
-	; process that's in IN_SEND and sending to us.
-	; 2. If we found a process:
-	; 2.1. Remove it from waiter queue, it's no longer waiting.
-	; 2.2. Do transfer_message to it
-	
-	; NOTE: We must handle processes with both IN_SEND and IN_RECV set,
-	; such processes must proceed to their respective IN_RECV state when
-	; we've received from them. Consider an arbitrarily long chain of
-	; waiting processes all waiting for one of them to be able to Send and
-	; move to Recv.
-
-	TODO
-	ret
-
-	; 3. No process found:
-	; 3.1. Set this process' receive-is-waiting-for-process field
-	; 2.2. If we have a specific process to wait for, put us on its waiter
-	; queue. If we are receive-from-any, we just sit and wait for something
-	; to wake us.
-	; 3.3. Keep IN_RECV set
+	jmp	transfer_message
 
 .block_on_send:
 	; --- The recipient can't receive the message right now (not IN_RECV)
@@ -1798,49 +1868,24 @@ lodstr	rdi,	'lookup_handle on %p: %p', 10
 	; 3. We probably need some state to say where we're sending to.
 	; 4. Return and yield
 
-	TODO
-	; Then, yield
-	;jmp switch_next
+	; r13: target process
+	; rbp + gseg.process: current/source process
 
-; rdi: address space
-; rsi: handle to look up
-%define log_lookup_handle 0
-lookup_handle:
-	mov	rdi, [rdi + aspace.mappings + dlist.head]
-.loop:
-%if log_lookup_handle
-	push	rdi
-	push	rsi
-	mov	rsi, [rdi + mapping.vaddr - mapping.as_node]
-	mov	rdx, [rdi + mapping.kobj - mapping.as_node]
-lodstr	rdi, 'lookup_handle: vaddr=%p kobj=%p', 10
+	mov	rsi, [rbp + gseg.process]
+	mov	rax, [rdi + proc.waiters]
+	mov	[rdi + proc.waiters], rsi
+	mov	[rsi + proc.next], rax
+
+	mov	rdx, rdi
+lodstr	rdi,	'blocking %p on send to %p', 10
 	call	printf
-	pop	rsi
-	pop	rdi
-%endif
 
-	test	rdi, rdi
-	jz	.not_found
-	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
-	cmp	rax, rsi
-	je	.found
-	mov	rdi, [rdi + dlist_node.next]
-	jmp	.loop
-
-.found:
-	mov	rax, [rdi + mapping.kobj - mapping.as_node]
-	test	byte [rdi + mapping.flags - mapping.as_node + 2], MAPFLAG_HANDLE >> 16
-	jz	.not_found
-	ret
-
-.not_found:
-lodstr	rdi, 'lookup_handle: not found.', 10
-	call	printf
-	zero	eax
-	ret
+	jmp	switch_next
 
 ; rdi: target process
 ; rsi: source process
+; Might not return! Only returns if the sender (source) became unblocked by
+; finishing the message. (Then it is also added to the run queue.)
 transfer_message:
 %macro copy_regs 0-*
 %rep %0
@@ -1850,8 +1895,10 @@ transfer_message:
 %endrep
 %endmacro
 	; If message-parameter registers were ordered in the file, we could
-	; do a rep movsq here.
-	copy_regs rdx, rdi, r8, r9, r10
+	; do a rep movsd here.
+	; rsi is not copied - that was just the sender's process handle to the
+	; recipient process.
+	copy_regs rdi, rdx, r8, r9, r10
 
 	; Add target to runqueue now that it's gotten its response
 	and	[rdi + proc.flags], byte ~PROC_IN_RECV
@@ -1859,18 +1906,112 @@ transfer_message:
 	push	rdi
 	call	runqueue_append
 lodstr	rdi, 'Copied message from %p to %p', 10
-	pop	rcx
+	pop	rdx
 	pop	rsi
 	push	rsi
 	call	printf
 
-	pop	rsi
-	and	[rsi + proc.flags], byte ~PROC_IN_SEND
+	; Note switched registers: rdi is the source process (which is now
+	; ready to receive, and potentially already has something to receive.)
+	pop	rdi
+	and	[rdi + proc.flags], byte ~PROC_IN_SEND
+
+	; NOTE: We must handle processes with both IN_SEND and IN_RECV set,
+	; such processes must proceed to their respective IN_RECV state when
+	; we've received from them. Consider an arbitrarily long chain of
+	; waiting processes all waiting for one of them to be able to Send and
+	; move to Recv.
+	; We do this by letting both transfer_message and proc_finish_recv
+	; tail-call each other as long as they're in a chain of sendrcv'ers.
+
+	test	[rdi + proc.flags], byte PROC_IN_RECV
+	jnz	recv_or_block
+
+	; Finishing the send unblocked the sender too, add it to the run queue
+	; and keep going
+	call	runqueue_append
 	ret
+
+; Find a sender that's waiting to send something to this process. If one
+; exists, transfer the message.
+;
+; Receiving half:
+; 1. Check waiter queue, find the process we're receiving from, or any
+; process that's in IN_SEND and sending to us.
+; 2. If we found a process:
+; 2.1. Remove it from waiter queue, it's no longer waiting.
+; 2.2. Do transfer_message to it
+;
+; rdi: process that might have become able to receive
+recv_or_block:
+	lea	rsi, [rdi + proc.waiters]
+.loop:
+	cmp	qword [rsi], 0
+	jz	.no_senders
+	mov	rax, [rsi]
+	test	[rax + proc.flags], byte PROC_IN_SEND
+	jnz	.found
+
+	lea	rsi, [rax + proc.next]
+	jmp	.loop
+
+.found:
+	; We have found a waiter
+	mov	rdx, rax
+	; Unlink the sending process from waiter list
+	mov	rax, [rax + proc.next]
+	mov	[rsi], rax
+	zero	eax
+	mov	[rdx + proc.next], rax
+	mov	rsi, rdx
+	; Then transfer a message from that process (which will unblock
+	; something).
+	jmp	transfer_message
+
+.no_senders:
+	; No process found:
+	; - Keep IN_RECV set
+	; - If we have a specific process to wait for, put us on its waiter
+	;   queue.
+	mov	rsi, [rdi + proc.waiting_for]
+	cmp	rsi, 0
+	jz	.wait_for_any
+	; Link ourselves into the waiting list
+	mov	rax, [rsi + proc.waiters]
+	mov	[rsi + proc.waiters], rdi
+	mov	[rdi + proc.next], rax
+
+.wait_for_any:
+	; - If we are receive-from-any, we just sit and wait for something to
+	;   wake us.
+
+	mov	rsi, rdi
+lodstr	rdi, '%p blocked on receive', 10
+	call	printf
+
+	; Looks like couldn't do anything more right now, so just do something
+	; else for a while.
+	jmp	switch_next
 
 section usermode
 
+user_entry_new2:
+	push	rdi
+	mov	rsi, rdi
+	mov	eax, SYSCALL_RECV
+	syscall
+.loop:
+	mov	edi, msg_req(MSG_USER)
+	mov	rsi, [rsp]
+	mov	eax, SYSCALL_SENDRCV
+	syscall
+	inc	r10
+	jmp	.loop
+
 user_entry_new:
+	; Creator pid (not parent, parents don't really exist here...)
+	push	rdi
+
 	; TODO Define the initial program state for a process.
 	; - parent pid
 	; - function parameters in registers?
@@ -1879,19 +2020,31 @@ user_entry_new:
 lodstr	rdi, 'user_entry_new', 10
 	call	printf
 
+.loop:
+	mov	rsi, [rsp]
 	mov	eax, SYSCALL_RECV
 	syscall
 
 	mov	rsi, rdi
-lodstr	rdi, 'new received %p', 10
+	mov	rcx, r10
+	push	rdx
+	push	r8
+	push	r9
+	push	r10
+lodstr	rdi, 'new received %p %x %x %x %x', 10
 	call printf
 
-	mov	edi, msg_resperr(MSG_USER)
+	pop	r10
+	pop	r9
+	pop	r8
+	pop	rdx
+	mov	edi, msg_resp(MSG_USER)
+	mov	rsi, [rsp]
 	mov	eax, SYSCALL_SEND
+	inc	edx
 	syscall
 
-	jmp	user_entry_new
-
+	jmp	.loop
 
 user_entry:
 	mov	edi, user_entry_new
@@ -1905,18 +2058,30 @@ lodstr	rdi, 'newproc: %p', 10
 	mov	rsi, rax
 	call	printf
 
+	mov	rdx, 1
+	mov	r10, 2
+	mov	r8, 3
+	mov	r9, 4
+
 .recv_from_new:
 	mov	rsi, rbx
 	mov	eax, SYSCALL_SENDRCV
-	mov	edi, msg_sendcode(MSG_USER)
+	mov	edi, msg_req(MSG_USER)
 	syscall
 
+	push	rdx
+	push	r8
+	push	r9
+	push	r10
 	mov	rsi, rdi
-lodstr	rdi, 'old received %p', 10
+	mov	rcx, r10
+lodstr	rdi, 'old received %p %x %x %x %x', 10
 	call	printf
+	pop	r10
+	pop	r9
+	pop	r8
+	pop	rdx
 
-	mov	eax, SYSCALL_YIELD
-	syscall
 	jmp	.recv_from_new
 
 user_entry_old:
@@ -2091,7 +2256,7 @@ kputchar:
 printf:
 	; al: number of vector arguments (won't be used...)
 	; rdi: format string
-	; rsi,rdx,rcx,r8,r9: consequtive arguments
+	; rsi,rdx,rcx,r8,r9: consecutive arguments
 
 	; reorder the stack a bit so that we have all our parameters in a row
 	mov	[rsp-32],rsi
@@ -2219,8 +2384,16 @@ printf:
 
 section .data
 
+%macro vga_string 1-*
+	%assign color %1
+	%rotate 1
+%rep (%0 - 1)
+	db %1, color
+	%rotate 1
+%endrep
+%endmacro
 message:
-	dq 0x0747074e074f074c, 0x07450744074f074d
+	vga_string 7,'L','O','N','G','M','O','D','E'
 digits:
 	db '0123456789abcdef'
 null_str:
