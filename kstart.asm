@@ -734,19 +734,50 @@ lodstr	rdi, 'switch_next', 10
 	jmp	switch_to
 
 %ifdef need_print_procstate
+print_proc:
+	; rdi = format
+	; rsi = process
+	zero	edx
+	test	rsi, rsi
+	jz	.no_proc
+	mov	rdx, [rsi + proc.flags]
+	push	rsi
+	call	printf
+	mov	rsi, [rsp]
+	cmp	qword [rsi + proc.waiters], 0
+	jz	.no_waiters
+lodstr	rdi,	'Waiters:', 10
+	call	printf
+	pop	rsi
+	mov	rsi, [rsi + proc.waiters]
+.waiter_loop:
+	push	rsi
+lodstr	rdi,	' - %p (%x)', 10
+	mov	rdx, [rsi + proc.flags]
+	call	printf
+	pop	rsi
+	mov	rsi, [rsi + proc.next]
+	test	rsi, rsi
+	jnz	.waiter_loop
+	ret
+.no_waiters:
+	pop	rsi
+.no_proc:
+	ret
+
 ; requires rbp = gseg self-pointer
 print_procstate:
 	push	rbx
-lodstr	rdi,	'    Current process: %p', 10
+lodstr	rdi,	'    Current process: %p (%x)', 10
 	mov	rsi, [rbp+gseg.process]
-	call	printf
+	call	print_proc
 lodstr	rdi,	'    Run queue:', 10, 0
 	call	puts
 	mov	rbx, [rbp+gseg.runqueue]
 .loop:
-lodstr	rdi,	'        - %p', 10, 0
+lodstr	rdi,	'        - %p (%x)', 10, 0
 	mov	rsi, rbx
-	call	printf
+	call	print_proc
 	test	rbx, rbx
 	jz	.end_of_q
 	mov	rax, [rbx+proc.next]
@@ -1868,9 +1899,11 @@ send_or_block:
 	; 3. We probably need some state to say where we're sending to.
 	; 4. Return and yield
 
-	; r13: target process
+	; rdi: target process
 	; rbp + gseg.process: current/source process
 
+	; FIXME This makes loops if we're already waiting for this process.
+	; alt. we aren't removing waiters properly
 	mov	rsi, [rbp + gseg.process]
 	mov	rax, [rdi + proc.waiters]
 	mov	[rdi + proc.waiters], rsi
@@ -1915,6 +1948,9 @@ lodstr	rdi, 'Copied message from %p to %p', 10
 	; ready to receive, and potentially already has something to receive.)
 	pop	rdi
 	and	[rdi + proc.flags], byte ~PROC_IN_SEND
+
+	; FIXME If the sending process was blocked before, we need to unlink it
+	; from our waiters list here.
 
 	; NOTE: We must handle processes with both IN_SEND and IN_RECV set,
 	; such processes must proceed to their respective IN_RECV state when
@@ -1986,7 +2022,8 @@ recv_or_block:
 	;   wake us.
 
 	mov	rsi, rdi
-lodstr	rdi, '%p blocked on receive', 10
+lodstr	rdi, '%p blocked on receive from %p', 10
+	mov	rdx, [rsi + proc.waiting_for]
 	call	printf
 
 	; Looks like couldn't do anything more right now, so just do something
