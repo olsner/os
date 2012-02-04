@@ -26,9 +26,9 @@ struc	proc, -0x80
 	; Pointer to the process we're waiting for (if any). See flags below.
 	.waiting_for resq 1
 	; Pointer to the first process waiting on this process.
-	.waiters resq 1
+	.waiters restruc dlist
 	; If/when in a list, points to next process in list
-	.next	resq 1
+	.node	restruc dlist_node
 	.cr3	resq 1
 	.aspace	resq 1
 
