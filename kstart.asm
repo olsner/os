@@ -1242,6 +1242,9 @@ dlist_pop:
 dlist_remove:
 	mov	rcx, [rsi + dlist_node.prev]
 	mov	rax, [rsi + dlist_node.next]
+	zero	edx
+	mov	[rsi + dlist_node.prev], rdx
+	mov	[rsi + dlist_node.next], rdx
 	test	rcx, rcx
 	jz	.no_prev
 	mov	[rcx + dlist_node.next], rax
