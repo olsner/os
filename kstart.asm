@@ -686,9 +686,22 @@ new_proc:
 add_to_waiters:
 	push	rdi
 	push	rsi
+%if log_waiters
+	mov	rdx, [rsi + proc.flags]
+	mov	r8, [rdi + proc.flags]
+	mov	rcx, rdi
+lodstr	rdi, 'Blocking %p (%x) on %p (%x)', 10
+	call	printf
+lodstr rdi, 'Blocked %p (%x)', 10
+	mov	rsi, [rsp]
+	call	print_proc
+lodstr rdi, 'Waiting for %p (%x)', 10
+	mov	rsi, [rsp+8]
+	call	print_proc
 
-	cmp	rsi, rdi
-	je	.wait_for_self
+	mov	rsi, [rsp]
+	mov	rdi, [rsp + 8]
+%endif
 
 	cmp	[rsi + proc.waiting_for], rdi
 	je	.already_waiting
@@ -717,16 +730,28 @@ lodstr	rdi,	'Waiting for %p (%x)', 10
 
 	ret
 
-.wait_for_self:
-	PANIC
 .deadlock:
 	PANIC
 
 ; rdi: process that was being waited for
 ; rsi: process that might need waking up
 stop_waiting:
-	cmp	[rsi + proc.waiting_for], rdi
 	push	rsi
+%if log_waiters
+	push	rdi
+	mov	rcx, rdi
+lodstr	rdi, 'Unblocking %p (%x) from %p (%x)', 10
+	mov	rdx, [rsi + proc.flags]
+	mov	r8, [rcx + proc.flags]
+	call	printf
+lodstr rdi, 'Unblocked %p (%x)', 10
+	mov	rsi, [rsp + 8]
+	call	print_proc
+	pop	rdi
+	mov	rsi, [rsp]
+%endif log_waiters
+
+	cmp	[rsi + proc.waiting_for], rdi
 	jne	.not_waiting
 
 	mov	qword [rsi + proc.waiting_for], 0
@@ -736,7 +761,7 @@ stop_waiting:
 
 .not_waiting:
 %if log_waiters
-lodstr	rdi,	'Unblocked process %p ...', 10
+lodstr	rdi,	'Unblocked process %p (%x)', 10
 	mov	rsi, [rsp]
 	call	print_proc
 lodstr	rdi,	'<end>', 10
@@ -1181,7 +1206,6 @@ dlist_append:
 	test	r8, r8
 	mov	[rdi + dlist.tail], rsi
 	jz	.empty
-	; rsi.next = old head
 	mov	[rsi + dlist_node.prev], r8
 	mov	[r8 + dlist_node.next], rsi
 	ret
@@ -1552,11 +1576,18 @@ timer_handler:
 	pop	qword [rax + proc.rax]
 	call	save_from_iret
 %if log_timer_interrupt
-lodstr	rdi, 'Timer interrupt', 10
-	call	printf
+lodstr	rdi, 'Timer interrupt in %p (%x)', 10
+	mov	rsi, [rbp + gseg.process]
+	call	print_proc
 %endif
 	mov	rdi, [rbp + gseg.process]
 	call	runqueue_append
+%if log_timer_interrupt > 1
+lodstr	rdi, 'Next proc %p (%x)', 10
+	mov	rsi, [rbp + gseg.runqueue + dlist.head]
+	sub	rsi, proc.node
+	call	print_proc
+%endif
 	jmp	switch_next
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
