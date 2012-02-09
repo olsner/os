@@ -2543,10 +2543,8 @@ printf:
 	shr	rdi, cl
 	and	edi, 0xf
 	jnz	.print
-	; There should be a bug when printing zero values using %x, but I
-	; haven't seen it yet
-	; test	cl, cl
-	; jz	.print
+	test	cl, cl
+	jz	.print
 	test	r15b, r15b
 	jnz	.next_digit
 .print:
