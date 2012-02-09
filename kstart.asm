@@ -1520,7 +1520,7 @@ save_from_iret:
 	mov	[rax+proc.rcx], rcx
 	mov	rcx, rsp
 
-	add	rsp,8 ; return address
+	add	rsp,8 ; return address from 'call save_from_iret'
 	pop	qword [rax+proc.rip]
 	add	rsp,8 ; CS
 	pop	qword [rax+proc.rflags]
@@ -1528,7 +1528,7 @@ save_from_iret:
 	add	rsp,8 ; SS
 
 	; Reset fastret flag so that iretq is used next time
-	btr	qword [rax+proc.flags], PROC_FASTRET
+	btr	qword [rax+proc.flags], PROC_FASTRET_BIT
 
 	; Now save GPR:s in process. rsp can be clobbered (we'll restore it),
 	; and rcx is already saved.
@@ -1932,7 +1932,7 @@ syscall_gettime:
 syscall_yield:
 	mov	rdi, [rbp + gseg.process]
 	; Set the fast return flag to return quickly after the yield
-	bts	qword [rdi + proc.flags], PROC_FASTRET
+	bts	qword [rdi + proc.flags], PROC_FASTRET_BIT
 	call	runqueue_append
 	jmp	switch_next
 
@@ -2103,12 +2103,12 @@ lodstr	rdi, 'Copied message from %p to %p', 10
 	; The recipient is guaranteed to be unblocked by this, make it stop
 	; waiting.
 	mov	rdi, [rsp] ; source process, the one we were waiting for
+	and	[rdi + proc.flags], byte ~PROC_IN_SEND
 	mov	rsi, [rsp + 8] ; recipient, the one being unblocked
 	call	stop_waiting
 
 	; rdi: sending process, it's no longer sending
 	pop	rdi
-	and	[rdi + proc.flags], byte ~PROC_IN_SEND
 	pop	rsi
 
 	; If the previously-sending process is now receiving (was in sendrcv),
