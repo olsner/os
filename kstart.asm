@@ -16,6 +16,8 @@
 %define log_waiters 0
 %define log_messages 0
 
+%define debug_tcalls 0
+
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue)
 
 CR0_PE		equ	0x00000001
@@ -60,6 +62,25 @@ lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
 
 	cli
 	hlt
+%endmacro
+
+%macro tcall 1
+%if debug_tcalls
+	call	%1
+	ret
+%else
+	jmp	%1
+%endif
+%endmacro
+
+%macro tc 2
+%if debug_tcalls
+	j%-1	%%skip
+	tcall	%2
+%%skip:
+%else
+	j%+1	%2
+%endif
 %endmacro
 
 ; callee-save: rbp, rbx, r12-r15
@@ -763,17 +784,19 @@ lodstr rdi, 'Unblocked %p (%x)', 10
 	call	dlist_remove
 
 .not_waiting:
+%if log_waiters
 	mov	rdi, [rsp]
 	call	runqueue_append
-%if log_waiters
 lodstr	rdi,	'Unblocked process %p (%x)', 10
 	mov	rsi, [rsp]
 	call	print_proc
 lodstr	rdi,	'<end>', 10
 	call	puts
-%endif
-	pop	rdi
 	ret
+%else
+	pop	rdi
+	tcall	runqueue_append
+%endif
 
 ; rdi: process to add to runqueue
 runqueue_append:
@@ -832,7 +855,7 @@ lodstr	rdi, 'switch_next', 10
 	call	runqueue_pop
 	test	rax, rax
 	jz	idle
-	jmp	switch_to
+	tcall	switch_to
 
 %ifdef need_print_procstate
 print_proc:
@@ -2015,8 +2038,7 @@ syscall_send:
 	or	[rsi + proc.flags], byte PROC_IN_SEND
 
 	mov	rdi, rax ; target
-	call	send_or_block
-	ret
+	tcall	send_or_block
 
 syscall_recv:
 	save_regs rsi
@@ -2034,8 +2056,7 @@ syscall_recv:
 	mov	rdi, [rbp + gseg.process]
 	or	[rdi + proc.flags], byte PROC_IN_RECV
 
-	call	recv_from
-	ret
+	tcall	recv_from
 
 syscall_sendrcv:
 	mov	rax, [rbp + gseg.process]
@@ -2054,8 +2075,7 @@ syscall_sendrcv:
 	or	[rsi + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
 
 	mov	rdi, r13
-	call	send_or_block
-	ret
+	tcall	send_or_block
 
 ; Returns unless it blocks.
 ; rdi: recipient
@@ -2082,8 +2102,7 @@ send_or_block:
 	; of its registers just having been modified by us)
 	; 5. Check if it's on the waiter-queue for the sender - we'll have to
 	; remove it.
-	call	transfer_message
-	ret
+	tcall	transfer_message
 
 .not_in_send:
 	PANIC
@@ -2114,9 +2133,9 @@ lodstr	rdi,	'%p (%x) blocked on send to %p (%x)', 10
 	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
 	; If the running bit was set on the process we just blocked, we must
 	; context switch
-	jc	switch_next
+	tc c,	switch_next
 	; Otherwise, just tailcall add_to_waiters, return to caller.
-	jmp	add_to_waiters
+	tcall	add_to_waiters
 
 ; rdi: target process
 ; rsi: source process
@@ -2161,16 +2180,11 @@ lodstr	rdi, 'Copied message from %p to %p', 10
 	; continue with its receiving phase. Otherwise unblock it.
 	and	[rdi + proc.flags], byte ~PROC_IN_SEND
 	test	[rdi + proc.flags], byte PROC_IN_RECV
-	jnz	.recv_from
+	tc nz, recv_from
 	test	[rdi + proc.flags], byte PROC_RUNNING
-	jnz	.ret
 	; rdi should stop waiting for rsi now, swap the registers
 	xchg	rsi, rdi
-	call	stop_waiting
-	ret
-.recv_from:
-	call	recv_from
-.ret:
+	tc z,	stop_waiting
 	ret
 
 ; rdi: process that might have become able to receive
@@ -2178,7 +2192,7 @@ lodstr	rdi, 'Copied message from %p to %p', 10
 ; If this does not block, it will return to the caller.
 recv_from:
 	test	[rsi + proc.flags], byte PROC_IN_SEND
-	jnz	transfer_message
+	tc nz,	transfer_message
 
 %if log_messages
 	push	rdi
@@ -2193,10 +2207,10 @@ lodstr	rdi, '%p blocked on receive from %p', 10
 	xchg	rsi, rdi
 %endif
 	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
-	jnc	add_to_waiters
+	tc nc,	add_to_waiters
 	; Looks like we couldn't do anything more right now, so just do
 	; something else for a while.
-	call	switch_next
+	tcall	switch_next
 
 %if 0
 ; Find a sender that's waiting to send something to this process. If one
