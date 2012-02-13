@@ -61,3 +61,5 @@ defbit	PROC_IN_SEND,	3
 ; Jump to CPL 0 instead of CPL 3. In reality unused. May be required for
 ; device drivers? Untested!
 defbit	PROC_KERNEL,	4
+; Is the currently running process
+defbit	PROC_RUNNING,	5

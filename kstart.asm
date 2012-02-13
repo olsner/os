@@ -45,7 +45,7 @@ CR4_OSXMMEXCPT	equ	0x400
 %define TODO TODO_ __LINE__
 %macro TODO_ 1-2 'TODO'
 lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
-	mov	rsi, %1
+	mov	esi, %1
 	call	printf
 
 	cli
@@ -55,7 +55,7 @@ lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
 %define PANIC PANIC_ __LINE__
 %macro PANIC_ 1-2 'PANIC'
 lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
-	mov	rsi, %1
+	mov	esi, %1
 	call	printf
 
 	cli
@@ -703,8 +703,14 @@ lodstr rdi, 'Waiting for %p (%x)', 10
 	mov	rdi, [rsp + 8]
 %endif
 
+	test	[rsi + proc.flags], byte PROC_ON_RUNQUEUE
+	jnz	.on_runqueue
 	cmp	[rsi + proc.waiting_for], rdi
 	je	.already_waiting
+	; rsi will become waiting for rdi, check that rdi was not already
+	; waiting for rsi (that implies a deadlock)
+	cmp	[rdi + proc.waiting_for], rsi
+	je	.deadlock
 
 	mov	[rsi + proc.waiting_for], rdi
 	add	rdi, proc.waiters
@@ -721,16 +727,13 @@ lodstr	rdi,	'Waiting for %p (%x)', 10
 	call	print_proc
 %endif
 
-	; rsi will become waiting for rdi, check that rdi was not already
-	; waiting for rsi (that implies a deadlock)
 	pop	rsi
 	pop	rdi
-	cmp	rsi, [rdi + proc.waiting_for]
-	je	.deadlock
-
 	ret
 
 .deadlock:
+	PANIC
+.on_runqueue:
 	PANIC
 
 ; rdi: process that was being waited for
@@ -749,7 +752,7 @@ lodstr rdi, 'Unblocked %p (%x)', 10
 	call	print_proc
 	pop	rdi
 	mov	rsi, [rsp]
-%endif log_waiters
+%endif
 
 	cmp	[rsi + proc.waiting_for], rdi
 	jne	.not_waiting
@@ -760,6 +763,8 @@ lodstr rdi, 'Unblocked %p (%x)', 10
 	call	dlist_remove
 
 .not_waiting:
+	mov	rdi, [rsp]
+	call	runqueue_append
 %if log_waiters
 lodstr	rdi,	'Unblocked process %p (%x)', 10
 	mov	rsi, [rsp]
@@ -768,7 +773,7 @@ lodstr	rdi,	'<end>', 10
 	call	puts
 %endif
 	pop	rdi
-	jmp	runqueue_append
+	ret
 
 ; rdi: process to add to runqueue
 runqueue_append:
@@ -779,6 +784,10 @@ lodstr	rdi, 'runqueue_append %p', 10
 	call	printf
 	pop	rdi
 %endif
+	test	[rdi + proc.flags], byte PROC_RUNNING
+	jnz	.already_running
+	test	dword [rdi + proc.flags], PROC_IN_SEND | PROC_IN_RECV
+	jne	.queueing_blocked
 	bts	dword [rdi + proc.flags], PROC_ON_RUNQUEUE_BIT
 	jc	.ret ; already on runqueue
 	lea	rsi, [rdi + proc.node]
@@ -789,6 +798,10 @@ lodstr	rdi, 'runqueue_append %p', 10
 	call	print_procstate
 %endif
 	ret
+.queueing_blocked:
+	PANIC
+.already_running:
+	PANIC
 
 runqueue_pop:
 	lea	rdi, [rbp + gseg.runqueue]
@@ -909,12 +922,16 @@ lodstr	rdi,	'    Runqueue_last: %p', 10, 0
 switch_to:
 %if log_switch_to
 	mov	rbx, rax
-lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
+lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 	mov	rsi, rax
-	mov	rdx, [rsi + proc.cr3]
-	mov	rcx, [rsi + proc.rip]
+	mov	rdx, [rsi + proc.flags]
+	mov	rcx, [rsi + proc.cr3]
+	mov	r8, [rsi + proc.rip]
+	mov	r9, [rbp + gseg.process]
 	call	printf
+%if log_switch_to > 1
 	call	print_procstate
+%endif
 	mov	rax, rbx
 %endif
 
@@ -924,7 +941,15 @@ lodstr	rdi, 'Switching to %p (cr3=%x, rip=%x).', 10
 .not_blocked:
 
 	; Update pointer to current process
+	mov	rbx, [rbp + gseg.process]
+	test	rbx, rbx
+	jz	.no_prev_proc
+	; Require that previous/current process is already null? We should not
+	; surprise-switch until we've e.g. saved all registers...
+	and	[rbx + proc.flags], byte ~PROC_RUNNING
+.no_prev_proc:
 	mov	[rbp + gseg.process], rax
+	or	[rax + proc.flags], byte PROC_RUNNING
 
 	; If switching back before anything else uses the FPU, don't set TS
 	cmp	rax, [rbp + gseg.fpu_process]
@@ -1528,7 +1553,9 @@ save_from_iret:
 	add	rsp,8 ; SS
 
 	; Reset fastret flag so that iretq is used next time
-	btr	qword [rax+proc.flags], PROC_FASTRET_BIT
+	; FIXME Fastret should never be set except between a safe switch-out and
+	; the next context switch (i.e. fastret should reset the flag, not us)
+	and	[rax+proc.flags], byte ~(PROC_FASTRET | PROC_RUNNING)
 
 	; Now save GPR:s in process. rsp can be clobbered (we'll restore it),
 	; and rcx is already saved.
@@ -1584,6 +1611,7 @@ lodstr	rdi, 'Timer interrupt in %p (%x)', 10
 	call	print_proc
 %endif
 	mov	rdi, [rbp + gseg.process]
+	mov	qword [rbp + gseg.process], 0 ; some kind of temporary code
 	call	runqueue_append
 %if log_timer_interrupt > 1
 lodstr	rdi, 'Next proc %p (%x)', 10
@@ -1932,7 +1960,8 @@ syscall_gettime:
 syscall_yield:
 	mov	rdi, [rbp + gseg.process]
 	; Set the fast return flag to return quickly after the yield
-	bts	qword [rdi + proc.flags], PROC_FASTRET_BIT
+	or	[rdi + proc.flags], byte PROC_FASTRET
+	and	[rdi + proc.flags], byte ~PROC_RUNNING
 	call	runqueue_append
 	jmp	switch_next
 
@@ -1986,7 +2015,8 @@ syscall_send:
 	or	[rsi + proc.flags], byte PROC_IN_SEND
 
 	mov	rdi, rax ; target
-	jmp	send_or_block
+	call	send_or_block
+	ret
 
 syscall_recv:
 	save_regs rsi
@@ -2004,7 +2034,8 @@ syscall_recv:
 	mov	rdi, [rbp + gseg.process]
 	or	[rdi + proc.flags], byte PROC_IN_RECV
 
-	jmp	recv_from
+	call	recv_from
+	ret
 
 syscall_sendrcv:
 	mov	rax, [rbp + gseg.process]
@@ -2023,12 +2054,17 @@ syscall_sendrcv:
 	or	[rsi + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
 
 	mov	rdi, r13
-	jmp	send_or_block
+	call	send_or_block
+	ret
 
-; Note: never returns if it blocks
+; Returns unless it blocks.
 ; rdi: recipient
 ; rsi: source (the process that will block if it can't send)
+; rsi must be IN_SEND or IN_SEND|IN_RECV
+; rdi may be in any state.
 send_or_block:
+	test	[rsi + proc.flags], byte PROC_IN_SEND
+	jz	.not_in_send
 	; Sending half:
 	; ( TODO for multiprocessing: lock recipient process struct. And sender?)
 	; 1. Check if the recipient can receive a message immediately
@@ -2046,7 +2082,11 @@ send_or_block:
 	; of its registers just having been modified by us)
 	; 5. Check if it's on the waiter-queue for the sender - we'll have to
 	; remove it.
-	jmp	transfer_message
+	call	transfer_message
+	ret
+
+.not_in_send:
+	PANIC
 
 .block_on_send:
 	; --- The recipient can't receive the message right now (not IN_RECV)
@@ -2060,23 +2100,27 @@ send_or_block:
 	; rbp + gseg.process: current/source process
 
 %if log_messages
-	mov	rsi, [rbp + gseg.process]
 	mov	rdx, [rsi + proc.flags]
 	mov	rcx, rdi
 	mov	r8, [rcx + proc.flags]
 
+	push	rsi
 	push	rdi
 lodstr	rdi,	'%p (%x) blocked on send to %p (%x)', 10
 	call	printf
 	pop	rdi
+	pop	rsi
 %endif
-	mov	rsi, [rbp + gseg.process]
-	call	add_to_waiters
-
-	jmp	switch_next
+	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
+	; If the running bit was set on the process we just blocked, we must
+	; context switch
+	jc	switch_next
+	; Otherwise, just tailcall add_to_waiters, return to caller.
+	jmp	add_to_waiters
 
 ; rdi: target process
 ; rsi: source process
+; Note: we return from transfer_message if not blocked
 transfer_message:
 %macro copy_regs 0-*
 %rep %0
@@ -2100,12 +2144,14 @@ lodstr	rdi, 'Copied message from %p to %p', 10
 	call	printf
 %endif
 
+	mov	rdi, [rsp] ; source process, the one we were waiting for
 	; The recipient is guaranteed to be unblocked by this, make it stop
 	; waiting.
-	mov	rdi, [rsp] ; source process, the one we were waiting for
-	and	[rdi + proc.flags], byte ~PROC_IN_SEND
 	mov	rsi, [rsp + 8] ; recipient, the one being unblocked
+	test	[rsi + proc.flags], byte PROC_RUNNING
+	jnz	.not_blocked
 	call	stop_waiting
+.not_blocked:
 
 	; rdi: sending process, it's no longer sending
 	pop	rdi
@@ -2113,24 +2159,23 @@ lodstr	rdi, 'Copied message from %p to %p', 10
 
 	; If the previously-sending process is now receiving (was in sendrcv),
 	; continue with its receiving phase. Otherwise unblock it.
+	and	[rdi + proc.flags], byte ~PROC_IN_SEND
 	test	[rdi + proc.flags], byte PROC_IN_RECV
-	jnz	recv_from
+	jnz	.recv_from
+	test	[rdi + proc.flags], byte PROC_RUNNING
+	jnz	.ret
 	; rdi should stop waiting for rsi now, swap the registers
 	xchg	rsi, rdi
-	jmp	stop_waiting
+	call	stop_waiting
+	ret
+.recv_from:
+	call	recv_from
+.ret:
+	ret
 
-; Find a sender that's waiting to send something to this process. If one
-; exists, transfer the message.
-;
-; Receiving half:
-; 1. Check waiter queue, find the process we're receiving from, or any
-; process that's in IN_SEND and sending to us.
-; 2. If we found a process:
-; 2.1. Remove it from waiter queue, it's no longer waiting.
-; 2.2. Do transfer_message to it
-;
 ; rdi: process that might have become able to receive
 ; rsi: process it wants to receive from
+; If this does not block, it will return to the caller.
 recv_from:
 	test	[rsi + proc.flags], byte PROC_IN_SEND
 	jnz	transfer_message
@@ -2147,12 +2192,23 @@ lodstr	rdi, '%p blocked on receive from %p', 10
 %else
 	xchg	rsi, rdi
 %endif
-	call	add_to_waiters
-
+	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
+	jnc	add_to_waiters
 	; Looks like we couldn't do anything more right now, so just do
 	; something else for a while.
-	jmp	switch_next
+	call	switch_next
 
+%if 0
+; Find a sender that's waiting to send something to this process. If one
+; exists, transfer the message.
+;
+; Receiving half:
+; 1. Check waiter queue, find the process we're receiving from, or any
+; process that's in IN_SEND and sending to us.
+; 2. If we found a process:
+; 2.1. Remove it from waiter queue, it's no longer waiting.
+; 2.2. Do transfer_message to it
+;
 recv_from_any:
 	; [rsp] = recipient, [rsp+8] = sender, if any
 	mov	rax, [rdi + proc.waiters]
@@ -2181,6 +2237,7 @@ lodstr	rdi,	'No senders found to %p', 10
 	call	printf
 
 	jmp	switch_next
+%endif
 
 section usermode
 
