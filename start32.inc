@@ -70,13 +70,13 @@ start32:
 	xor	eax,eax
 	mov	ecx,0x0400
 	rep stosd
-	sub	edi,0x1000-8*8
+	sub	edi,0x1000-(pages.kernel / 0x1000) * 8
 	; Map page 0x8000 and 0x9000 to the same physical address
 	; 0x5 means user-accessible (4) plus present (1)
-	mov	eax, 0x8005
+	mov	eax, pages.kernel | 5
 	stosd
 	add	edi, 4
-	mov	eax, 0x9005
+	mov	eax, (pages.kernel + 0x1000) | 5
 	stosd
 
 	; Page mapping for kernel space (top 4TB part)

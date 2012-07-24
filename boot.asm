@@ -1,6 +1,9 @@
 ; vim:ts=8:sts=8:sw=8:filetype=nasm:
 ; This is the program stored in the boot sector, that
-; loads the kernel bootstrap (kernelstrap.asm)
+; loads the kernel bootstrap (kstart.asm)
+
+; Defines the load address that kstart.asm expects.
+%include "pages.inc"
 
 bits 16
 org 0x0000
@@ -56,7 +59,7 @@ start:
 
 ; Go through the romfs on partition one on the disk
 ; We want the file called "kstart.b"
-	mov	ax,0x800 ; Just after our boot sector
+	mov	ax,pages.kernel / 16
 	mov	es,ax
 	xor	bx,bx	; Offset in output buffer
 	mov	dx,0x0180	; dh = disk head 1, dl = drive 80h/first hd

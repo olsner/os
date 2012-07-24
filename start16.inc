@@ -51,8 +51,8 @@ start16:
 	mov	cr0,eax
 
 	; I think the offsets here are because it's DS-relative and DS is 0x800
-	lidt	[idtr - 0x8000]
-	lgdt	[gdtr - 0x8000]
+	lidt	[idtr - pages.kernel]
+	lgdt	[gdtr - pages.kernel]
 
 	mov	ax,data_seg
 	mov	ds,ax

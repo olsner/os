@@ -40,9 +40,6 @@ CR4_OSXMMEXCPT	equ	0x400
 %macro restruc 1-2 1
 	resb (%1 %+ _size) * %2
 %endmacro
-%macro respage 0-1 1
-	resb (4096*%1)
-%endmacro
 
 %define TODO TODO_ __LINE__
 %macro TODO_ 1-2 'TODO'
@@ -122,6 +119,7 @@ __SECT__
 %include "proc.inc"
 %include "segments.inc"
 %include "string.inc"
+%include "pages.inc"
 
 RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
@@ -288,34 +286,14 @@ struc	gseg
 	.temp_xmm0	resq 2
 endstruc
 
-struc pages, 0x8000
-.kernel		respage 2
-.memory_map	respage
-
-.page_tables:
-.pml4		respage
-.low_pdp	respage
-.low_pd		respage
-.low_pt		respage
-.page_tables_end:
-
-.kernel_stack	respage
-.kernel_stack_end:
-
-.kernel_pdp	respage
-.gseg_cpu0	respage
-endstruc
-
-kernel_stack_end equ pages.kernel_stack_end
-
-section .text vstart=0x8000
+section .text vstart=pages.kernel
 section .data vfollows=.text follows=.text align=4
 section usermode vfollows=.data follows=.data align=1
-section bss nobits align=8
+section bss nobits align=8 vfollows=usermode
 section memory_map nobits vstart=pages.memory_map
 
 ; get the physical address of a symbol in the .text section
-%define text_paddr(sym) (section..text.vstart + sym - start16)
+%define text_paddr(sym) (section..text.vstart + sym - text_vstart_dummy)
 ; get the virtual (kernel) address for a symbol in the .text section
 %define text_vpaddr(sym) phys_vaddr(text_paddr(sym))
 ; translate a physical address to a virtual address in the 'core'
@@ -327,12 +305,10 @@ section memory_map nobits vstart=pages.memory_map
 ; Note: Must all be in the same section, otherwise trouble with complicated
 ; expressions that rely on bitwise arithmetic on symbol relocations
 section .text
-bits 16
+text_vstart_dummy:
+
 %include "start16.inc"
-; start16 jumps to start32
-bits 32
 %include "start32.inc"
-; start32 jumps to start64
 bits 64
 default rel
 ;;
@@ -592,7 +568,7 @@ new_user_proc:
 
 	; Replicate the hard-coded read-only region for 0x8000 and 0x9000
 	call	allocate_frame ; TODO allocate region, not whole page :)
-	mov	edx, 0x8000
+	mov	edx, pages.kernel
 	mov	ecx, 0x2000
 	mov	[rax + region.paddr], edx
 	mov	[rax + region.size], ecx
