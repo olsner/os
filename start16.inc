@@ -10,10 +10,6 @@ start16:
 	int	10h
 
 	cli
-	mov	al,0xff
-	out	0xa1, al
-	;mov	al,0xfb
-	out	0x21, al
 
 	; Safe area to put random crap like the e820 address map.
 	mov	ax,pages.memory_map / 16

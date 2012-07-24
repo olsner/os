@@ -9,7 +9,7 @@
 %define log_switch_next 0
 %define log_runqueue 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
-%define log_timer_interrupt 1
+%define log_timer_interrupt 0
 %define log_page_fault 1
 %define log_mappings 0
 %define log_lookup_handle 0
@@ -119,6 +119,7 @@ __SECT__
 %include "proc.inc"
 %include "segments.inc"
 %include "string.inc"
+%include "mboot.inc"
 %include "pages.inc"
 
 RFLAGS_IF_BIT	equ	9
@@ -309,6 +310,18 @@ text_vstart_dummy:
 
 %include "start16.inc"
 %include "start32.inc"
+
+align 4
+mboot_header:
+mboot MBOOT_FLAG_LOADINFO | MBOOT_FLAG_NEED_MEMMAP
+mboot_load \
+	text_paddr(mboot_header), \
+	section..text.vstart, \
+	section.usermode.end, \
+	section.memory_map.end, \
+	text_paddr(start32_mboot)
+endmboot
+
 bits 64
 default rel
 ;;
@@ -2739,7 +2752,7 @@ idtr:
 section memory_map
 memory_map:
 .size	resd	1
-.data:
+.data:	resd	1023
 
 section bss
 align 8

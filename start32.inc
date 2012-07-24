@@ -1,6 +1,62 @@
 ; vim:ts=8:sts=8:sw=8:filetype=nasm:
 bits 32
+start32_mboot:
+	; The multiboot loader will have set cs and ds to sensible segments,
+	; but we have no guarantees that the IDT and GDT tables still exist
+	; or what they contain.
+	; Trick: use o16 to read a 24-bit offset instead of a 32-bit one
+	; The high byte is 0xc0 because the 32-bit offset at idtr is in fact
+	; just the lower 32-bit part of a 64-bit offset 0xffffffffc000XXXX.
+	o16 lidt	[idtr]
+	o16 lgdt	[gdtr]
+
+	cmp	eax, 0x2BADB002
+	jne	start32
+
+	test	byte [ebx + mbootinfo.flags], MBI_FLAG_MMAP
+	jz	$ ; Infinite loop fail! :)
+
+	mov	ecx, [ebx + mbootinfo.mmap_length]
+	mov	esi, [ebx + mbootinfo.mmap_addr]
+	add	ecx, esi ; ecx == end of map
+	mov	edi, memory_map.data
+
+	xor	eax, eax
+.loop:
+	cmp	ecx, esi
+	jb	.done
+
+	; ebp := pointer to next entry
+	lodsd
+	mov	ebp, esi
+	add	ebp, eax
+
+	; Copy 16 bytes (base_addr + length)
+	%rep 4
+	movsd
+	%endrep
+	; Read and test memory type
+	lodsd
+	cmp	eax, E820_MEM
+	je	.use
+	; Unusable memory, set type to 0 before we copy it
+	xor	eax, eax
+.use:
+	stosd
+	mov	esi, ebp
+	jmp	.loop
+
+.done:
+	sub	edi, memory_map.data
+	mov	[memory_map.size], edi
+
 start32:
+	; Disable PIC. start16.inc does this, but multiboot does *not*
+	; guarantee anything about the PIC state.
+	mov	al,0xff
+	out	0xa1, al
+	out	0x21, al
+
 	mov	ebx, 0xb8000
 	mov	edi, ebx
 
