@@ -204,6 +204,8 @@ SYSCALL_RECV	equ	5
 ; rax: error code or 0
 SYSCALL_SEND	equ	6
 
+SYSCALL_HALT	equ	7
+
 ; Send a message without waiting for response, will fail instead of block if
 ; the target process is not in blocking receive.
 SYSCALL_ASEND	equ	7
@@ -1968,6 +1970,7 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	sc sendrcv
 	sc recv
 	sc send
+	sc halt
 .end_table
 N_SYSCALLS	equ (.end_table - .table) / 4
 
@@ -2024,6 +2027,12 @@ lodstr	rdi, 'newproc %p at %p', 10
 
 	mov	rax, r13
 	ret
+
+syscall_halt:
+	lodstr	rdi, '<<HALT>>'
+	call	printf
+	cli
+	hlt
 
 syscall_send:
 	mov	rax, [rbp + gseg.process]
