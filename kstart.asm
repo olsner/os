@@ -338,12 +338,6 @@ start64:
 	lidt	[idtr]
 	lgdt	[gdtr]
 
-	mov	ax,data64_seg
-	mov	ds,ax
-	mov	ss,ax
-	mov	fs,ax
-	mov	gs,ax
-
 	lea	rdi,[rel section.bss.vstart]
 	lea	rcx,[rel section.bss.end]
 	sub	rcx,rdi
@@ -2755,7 +2749,6 @@ memory_map:
 .data:	resd	1023
 
 section bss
-align 8
 section.bss.end:
 
 section memory_map
