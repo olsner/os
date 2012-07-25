@@ -308,7 +308,6 @@ section memory_map nobits vstart=pages.memory_map
 section .text
 text_vstart_dummy:
 
-%include "start16.inc"
 %include "start32.inc"
 
 align 4
@@ -503,6 +502,7 @@ init_frames:
 	zero	r10
 
 	mov	r11, phys_vaddr(0xb8020)
+	; TODO We should read this in multiboot format instead
 	lea	rsi, [memory_map.size]
 	lodsd
 	mov	ebx, eax

@@ -1,10 +1,7 @@
-/boot
-/bootfs.img
-/disk.dat
+/grub.iso
 /cpuid
 /rflags
 /retbench
-/genromfs-0.5.2
 
 *.lst
 *.map

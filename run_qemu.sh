@@ -1,2 +1,2 @@
-make disk.dat &&
-kvm -m 32M "$@" disk.dat
+make grub.iso &&
+kvm -m 32M "$@" -cdrom grub.iso

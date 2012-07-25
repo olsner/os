@@ -16,6 +16,7 @@ start32_mboot:
 	test	byte [ebx + mbootinfo.flags], MBI_FLAG_MMAP
 	jz	$ ; Infinite loop fail! :)
 
+	; TODO Instead of copying all the data, we should just copy the pointer.
 	mov	ecx, [ebx + mbootinfo.mmap_length]
 	mov	esi, [ebx + mbootinfo.mmap_addr]
 	add	ecx, esi ; ecx == end of map

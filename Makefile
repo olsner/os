@@ -1,9 +1,10 @@
 # Makefile for Shaaman. Copyright by Simon Brenner, 2002
 
-.PHONY: shaman all clean install commit
+.PHONY: all clean install commit
 
 BXIMAGE=/opt/bochs/bin/bximage
 DD=dd 2>/dev/null
+CP=cp
 
 SYSTEM := $(shell uname -s)
 
@@ -13,6 +14,7 @@ ifeq ($(VERBOSE),YES)
 HUSH_ASM=
 HUSH_CC=
 HUSH_CXX=
+CP=cp -v
 else
 HUSH_ASM=@echo ' [ASM]\t'$@;
 HUSH_CC=@echo ' [CC]\t'$@;
@@ -26,16 +28,17 @@ else
 BUILD_OBJ ?= elf64
 endif
 
-ASMFILES := kstart.asm boot.asm
+ASMFILES := kstart.asm
 DEPFILES := $(ASMFILES:.asm=.dep)
+ASMOUTS  := $(patsubst %.asm, grub/%.b, $(ASMFILES)) \
+			$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
+			$(DEPFILES)
 
-all: shaman cpuid rflags
-
-shaman: disk.dat
+all: cpuid rflags grub.iso
 
 clean:
-	rm -f bootfs.img disk.dat
-	rm -f boot/boot.b boot/kstart.b boot.lst kstart.lst
+	rm -f grub.iso
+	rm -f $(ASMOUTS)
 	rm -f cpuid rflags
 	rm -f $(DEPFILES)
 
@@ -47,19 +50,14 @@ clean:
 
 -include $(DEPFILES)
 
-boot/%.b: %.asm
+grub/%.b: %.asm
 	@mkdir -p $(@D)
 	@$(YASM) -e -M $< -o $@ >$*.dep
 	$(HUSH_ASM) $(YASM) -f bin $< -o $@ -L nasm -l $*.lst
 	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
 
-bootfs.img: boot/kstart.b
-	genromfs -f bootfs.img -d boot -a 512 -x boot.b
+GRUB_MODULES = --modules="boot multiboot"
 
-disk.dat: partitions.dat boot/boot.b bootfs.img
-	@echo Creating disk image from $^
-	@$(DD) if=/dev/zero of=$@ bs=10321920 count=1
-	@$(DD) if=partitions.dat of=$@ conv=notrunc bs=1 skip=438 seek=438 count=72
-	@$(DD) if=boot/boot.b of=$@ conv=notrunc bs=1 count=438
-	@$(DD) if=boot/boot.b of=$@ conv=notrunc bs=1 skip=510 seek=510 count=2
-	@$(DD) if=bootfs.img of=$@ conv=notrunc bs=512 seek=63
+grub.iso: grub/kstart.b grub/boot/grub/grub.cfg
+	@echo Creating grub boot image $@ from $^
+	grub-mkrescue --diet $(GRUB_MODULES) -o $@ grub/ >/dev/null
