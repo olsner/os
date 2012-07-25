@@ -51,11 +51,44 @@ start32_mboot:
 	mov	[memory_map.size], edi
 
 start32:
-	; Disable PIC. start16.inc does this, but multiboot does *not*
-	; guarantee anything about the PIC state.
+
+PIC1_CMD	equ	0x20
+PIC1_DATA	equ	0x21
+PIC2_CMD	equ	0xa0
+PIC2_DATA	equ	0xa1
+
+ICW1_ICW4	equ	0x01
+ICW1_INIT	equ	0x10
+
+ICW3_MASTER	equ	4
+ICW3_SLAVE	equ	2
+
+ICW4_8086	equ	0x01
+
+	; Remap PICs to 0x80..0x8f. We do this despite the fact we're going to
+	; disable them just afterwards, since spurious interrupts may still
+	; happen (and in any case, we want to be able to tell exceptions from
+	; IRQs).
+	mov	al, ICW1_INIT | ICW1_ICW4
+	out	PIC1_CMD, al
+	out	PIC2_CMD, al
+	mov	al, 0x80
+	out	PIC1_DATA, al
+	mov	al, 0x88
+	out	PIC2_DATA, al
+	mov	al, ICW3_MASTER
+	out	PIC1_DATA, al
+	mov	al, ICW3_SLAVE
+	out	PIC2_DATA, al
+
+	mov	al, ICW4_8086
+	out	PIC1_DATA, al
+	out	PIC2_DATA, al
+
+	; Disable PICs. Multiboot doesn't guarantee anything about their state.
 	mov	al,0xff
-	out	0xa1, al
-	out	0x21, al
+	out	PIC1_DATA, al
+	out	PIC2_DATA, al
 
 	mov	ebx, 0xb8000
 	mov	edi, ebx
