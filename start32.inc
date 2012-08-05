@@ -4,10 +4,10 @@ start32_mboot:
 	; The multiboot loader will have set cs and ds to sensible segments,
 	; but we have no guarantees that the IDT and GDT tables still exist
 	; or what they contain.
+	; We don't need IDT until we enable interrupts (after long mode)
 	; Trick: use o16 to read a 24-bit offset instead of a 32-bit one
 	; The high byte is 0xc0 because the 32-bit offset at idtr is in fact
 	; just the lower 32-bit part of a 64-bit offset 0xffffffffc000XXXX.
-	o16 lidt	[idtr]
 	o16 lgdt	[gdtr]
 
 	cmp	eax, 0x2BADB002
