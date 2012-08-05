@@ -347,14 +347,67 @@ start64:
 	mov	ax,tss64_seg
 	ltr	ax
 
-	mov	ecx, MSR_APIC_BASE
-	rdmsr
-	; Clear high part of base address
-	xor	edx,edx
-	; Set base address, enable APIC (0x800), and set boot-strap CPU
-	mov	eax, APIC_PBASE | 0x800 | 0x100
-	wrmsr
+init_frames:
+	; pointer to last page linked, will be stored later on in garbage-frame list
 
+	; r8: kernel_base
+	; r9d: first page to actually use, reserving:
+	; 0..0x8000 for null pointers and waste,
+	; 0x8000..0x13000 for kernel crap,
+	; 0x13000..0x100000 because it contains fiddly legacy stuff
+	mov	r8, phys_vaddr(0)
+	mov	r9d, 0x100000
+	zero	r10
+
+	mov	r11, phys_vaddr(0xb8020)
+
+	mov	esi, [mbi_pointer]
+	add	rsi, r8
+	;mov	rsi, phys_vaddr(pages.memory_map)
+	mov	ebx, [rsi + mbootinfo.mmap_length]
+	mov	esi, [rsi + mbootinfo.mmap_addr]
+	add	rsi, r8
+	add	rbx, rsi
+	; The range of memory map info is now in rsi..rbx
+.loop:
+	cmp	rbx, rsi
+	jb	.done
+	lodsd ; size of entry
+	lea	r12, [rsi + rax] ; pointer to next entry
+	lodsq
+	mov	rdi, rax ; start of range
+	lodsq
+	mov	rdx, rax ; length of range
+	lodsd
+	mov	rsi, r12 ; update rsi
+	cmp	eax, E820_MEM
+	; TODO ranges with value 3 (E820_ACPI_RECLAIM) are reusable once we're done with the ACPI data in them
+	jne	.loop
+	add	ax,0x0f00 | '0'
+	mov	word [r11], ax
+	cmp	rdi, r9
+	cmovb	rdi, r9
+
+	; rdi..rdx is a range of pages we should link into the garbage-page list
+
+	; Add the offset to the mapping of physical memory.
+	add	rdx, r8
+	add	rdi, r8
+
+.inner:
+	cmp	rdi, rdx
+	jge	.loop
+
+	mov	[rdi], rcx
+	mov	rcx, rdi
+	inc	r10
+
+	add	rdi, 4096
+	jmp	.inner
+.done:
+	mov	[globals.garbage_frame], rcx
+
+cleanup_pages:
 	; Clear out the page tables we're going to reuse
 	zero	eax
 	lea	rdi, [pages.low_pd]
@@ -370,6 +423,15 @@ start64:
 	; address.
 	mov	[pages.low_pt + 0xff8], dword APIC_PBASE | 0x13
 	invlpg	[rel -0x1000]
+
+apic_setup:
+	mov	ecx, MSR_APIC_BASE
+	rdmsr
+	; Clear high part of base address
+	xor	edx,edx
+	; Set base address, enable APIC (0x800), and set boot-strap CPU
+	mov	eax, APIC_PBASE | 0x800 | 0x100
+	wrmsr
 
 APIC_REG_TPR		equ	0x80
 APIC_REG_EOI		equ	0xb0
@@ -474,60 +536,6 @@ E820_MEM	equ 1
 E820_RESERVED	equ 2
 E820_ACPI_RCL	equ 3
 ; There is also 4, which is some ACPI thingy that we shouldn't touch
-
-init_frames:
-	; pointer to last page linked, will be stored later on in garbage-frame list
-	zero	ecx
-
-	; r8: kernel_base
-	; r9d: first page to actually use, reserving:
-	; 0..0x8000 for null pointers and waste,
-	; 0x8000..0x13000 for kernel crap,
-	; 0x13000..0x100000 because it contains fiddly legacy stuff
-	mov	r8, phys_vaddr(0)
-	mov	r9d, 0x100000
-	zero	r10
-
-	mov	r11, phys_vaddr(0xb8020)
-	; TODO We should read this in multiboot format instead
-	lea	rsi, [memory_map.size]
-	lodsd
-	mov	ebx, eax
-	add	rbx, rsi ; rbx is now end-of-buffer
-.loop:
-	cmp	rbx, rsi
-	jb	.done
-	lodsq
-	mov	rdi, rax ; start of range
-	lodsq
-	mov	rdx, rax ; length of range
-	lodsd
-	cmp	eax, E820_MEM
-	; TODO ranges with value 3 (E820_ACPI_RECLAIM) are reusable once we're done with the ACPI data in them
-	jne	.loop
-	add	ax,0x0f00 | '0'
-	mov	word [r11], ax
-	cmp	rdi, r9
-	cmovb	rdi, r9
-
-	; rdi..rdx is a range of pages we should link into the garbage-page list
-
-	; Add the offset to the mapping of physical memory.
-	add	rdx, r8
-	add	rdi, r8
-
-.inner:
-	cmp	rdi, rdx
-	jge	.loop
-
-	mov	[rdi], rcx
-	mov	rcx, rdi
-	inc	r10
-
-	add	rdi, 4096
-	jmp	.inner
-.done:
-	mov	[globals.garbage_frame], rcx
 
 test_alloc:
 	zero	ebx
@@ -2737,11 +2745,10 @@ idtr:
 	dq	text_vpaddr(idt)
 
 section memory_map
-memory_map:
-.size	resd	1
-.data:	resd	1023
+memory_map: respage	1
 
 section bss
+mbi_pointer resd 1
 section.bss.end:
 
 section memory_map

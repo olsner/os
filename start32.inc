@@ -11,45 +11,23 @@ start32_mboot:
 	o16 lgdt	[gdtr]
 
 	cmp	eax, 0x2BADB002
-	jne	start32
+	; TODO Put some error message on the screen at least
+	jne	$
 
 	test	byte [ebx + mbootinfo.flags], MBI_FLAG_MMAP
 	jz	$ ; Infinite loop fail! :)
 
-	; TODO Instead of copying all the data, we should just copy the pointer.
-	mov	ecx, [ebx + mbootinfo.mmap_length]
+	mov	esi, ebx
+	mov	edi, memory_map
+	mov	ecx, mbootinfo_size / 4
+	rep movsd
+	; Copied mboot info block, let's copy the memory mappings too
 	mov	esi, [ebx + mbootinfo.mmap_addr]
-	add	ecx, esi ; ecx == end of map
-	mov	edi, memory_map.data
+	mov	[edi - mbootinfo_size + mbootinfo.mmap_addr], edi
+	mov	ecx, [ebx + mbootinfo.mmap_length]
+	rep movsb
 
-	xor	eax, eax
-.loop:
-	cmp	ecx, esi
-	jb	.done
-
-	; ebp := pointer to next entry
-	lodsd
-	mov	ebp, esi
-	add	ebp, eax
-
-	; Copy 16 bytes (base_addr + length)
-	%rep 4
-	movsd
-	%endrep
-	; Read and test memory type
-	lodsd
-	cmp	eax, E820_MEM
-	je	.use
-	; Unusable memory, set type to 0 before we copy it
-	xor	eax, eax
-.use:
-	stosd
-	mov	esi, ebp
-	jmp	.loop
-
-.done:
-	sub	edi, memory_map.data
-	mov	[memory_map.size], edi
+	mov	byte [mbi_pointer + 1], memory_map >> 8
 
 start32:
 
