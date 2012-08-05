@@ -338,16 +338,9 @@ start64:
 	lidt	[idtr]
 	lgdt	[gdtr]
 
-	lea	rdi,[rel section.bss.vstart]
-	lea	rcx,[rel section.bss.end]
-	sub	rcx,rdi
-	shr	ecx,2
-	zero	eax
-	rep stosd
-
 	mov	rdi,phys_vaddr(0xb8004)
 	lea	rsi,[rel message]
-	mov	cl, 4
+	mov	ecx, 4
 	rep movsd
 
 	mov	rsp, phys_vaddr(kernel_stack_end)
