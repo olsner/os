@@ -18,29 +18,89 @@ start32_mboot:
 	test	byte [ebx + mbootinfo.flags], MBI_FLAG_MMAP
 	jz	$ ; Infinite loop fail! :)
 
+find_start_of_memory:
+	; Start of memory. Starts at 1MB, gets poked for any multiboot data we
+	; see stored above 1MB. Note: assumes everything is stored *starting*
+	; at 1MB, will break down if grub e.g. loads the modules at the *end*
+	; of ram instead...
+	mov	ebp, free_mem_start
+
+	; Some notes:
+	; kvm seems to put the modules and multiboot info directly after the
+	; end of the bss data. Our pages struct (outside BSS) normally
+	; prevents that from working.
+	;
+	; grub seems to load modules as early as possible after 0x100000.
+	; If the kernel is in low memory, the multiboot info is in low memory
+	; but the modules are still at 1MB.
+	; If the kernel is loaded above 1MB, the multiboot info may still be
+	; below 1MB.
+
+find_mod_ends:
+	mov	esi, [ebx + mbootinfo.mods_addr]
+	mov	ecx, [ebx + mbootinfo.mods_count]
+.mods_loop:
+	jecxz	.mods_loop_out
+
+	mov	eax, [esi + mboot_mod.end]
+	cmp	eax, ebp
+	jb	.below
+	mov	ebp, eax
+.below:
+	add	esi, mboot_mod_size
+	loop	.mods_loop
+.mods_loop_out:
+
+	; Align start-of-memory to page boundary (just to keep out of the
+	; modules)
+	add	ebp, 0xfff
+	and	bp, 0xf000
+
+copy_multiboot_info:
+	mov	[mbi_pointer], ebp
+
 	mov	esi, ebx
-	mov	edi, memory_map
+	mov	edi, ebp
 	mov	ecx, mbootinfo_size / 4
 	rep movsd
-	; Copied mboot info block, let's copy the memory mappings too
+
+	; Copy the memory mappings
 	mov	esi, [ebx + mbootinfo.mmap_addr]
-	mov	[edi - mbootinfo_size + mbootinfo.mmap_addr], edi
+	mov	[ebp + mbootinfo.mmap_addr], edi
 	mov	ecx, [ebx + mbootinfo.mmap_length]
 	rep movsb
 
+	; If we have modules, copy them too
 	test	byte [ebx + mbootinfo.flags], MBI_FLAG_MODULES
 	jz	.no_modules
 
 	mov	esi, [ebx + mbootinfo.mods_addr]
-	mov	[memory_map + mbootinfo.mods_addr], edi
+	mov	[ebp + mbootinfo.mods_addr], edi
 	mov	ecx, [ebx + mbootinfo.mods_count]
+	jecxz	.no_modules
 	lea	ecx, [ecx * (mboot_mod_size / 4)]
-	rep	movsd
+	rep movsd
 
+	mov	esp, [ebx + mbootinfo.mods_addr]
+	mov	edx, [ebp + mbootinfo.mods_addr]
+	mov	ecx, [ebx + mbootinfo.mods_count]
+.loop:
+	mov	esi, [esp + mboot_mod.string]
+	mov	[edx + mboot_mod.string], edi
+.cp_str:
+	lodsb
+	test	al,al
+	stosb
+	jnz	.cp_str
+	add	esp, mboot_mod_size
+	add	edx, mboot_mod_size
+	loop	.loop
 .no_modules:
 
-	; Assume zero-initialized
-	mov	byte [mbi_pointer + 1], memory_map >> 8
+	; Memory start is just after the copied data
+	add	edi, 0xfff
+	and	di, 0xf000
+	mov	[memory_start], edi
 
 start32:
 

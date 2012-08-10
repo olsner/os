@@ -6,7 +6,6 @@
 
 struc pages, 0xa000
 .kernel		respage 2
-.memory_map	respage
 
 .page_tables:
 .pml4		respage
@@ -23,3 +22,4 @@ struc pages, 0xa000
 endstruc
 
 kernel_stack_end equ pages.kernel_stack_end
+free_mem_start equ 0x100000

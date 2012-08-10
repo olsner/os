@@ -291,7 +291,6 @@ section .text vstart=pages.kernel
 section .data vfollows=.text follows=.text align=4
 section usermode vfollows=.data follows=.data align=1
 section bss nobits align=8 vfollows=usermode
-section memory_map nobits vstart=pages.memory_map
 
 ; get the physical address of a symbol in the .text section
 %define text_paddr(sym) (section..text.vstart + sym - text_vstart_dummy)
@@ -317,7 +316,7 @@ mboot_load \
 	text_paddr(mboot_header), \
 	section..text.vstart, \
 	section.usermode.end, \
-	section.memory_map.end, \
+	section.bss.end, \
 	text_paddr(start32_mboot)
 endmboot
 
@@ -355,8 +354,9 @@ init_frames:
 	; 0..0x8000 for null pointers and waste,
 	; 0x8000..0x13000 for kernel crap,
 	; 0x13000..0x100000 because it contains fiddly legacy stuff
+	; 0x100000..[memory_start] contains multiboot modules and other data
 	mov	r8, phys_vaddr(0)
-	mov	r9d, 0x100000
+	mov	r9d, [memory_start]
 	zero	r10
 
 	mov	r11, phys_vaddr(0xb8020)
@@ -550,8 +550,9 @@ test_alloc:
 	jmp	.loop
 
 .done:
-lodstr	rdi,	'%x frames allocated', 10
+lodstr	rdi,	'%x frames allocated (memory_start %x)', 10
 	mov	rsi, rbx
+	mov	edx, [memory_start]
 	call	printf
 
 test_free:
@@ -566,27 +567,39 @@ test_free:
 
 list_mbi_modules:
 	mov	rbx, phys_vaddr(0)
+	mov	r12d, [mbi_pointer]
+	add	r12, rbx
 
 lodstr	rdi,	'%x modules loaded, table at %p', 10
-	mov	esi, [memory_map + mbootinfo.mods_count]
-	mov	edx, [memory_map + mbootinfo.mods_addr]
+	mov	esi, [r12 + mbootinfo.mods_count]
+	mov	edx, [r12 + mbootinfo.mods_addr]
 	add	rdx, rbx
 	call	printf
 
-	mov	ecx, [memory_map + mbootinfo.mods_count]
-	mov	esi, [memory_map + mbootinfo.mods_addr]
+	mov	ecx, [r12 + mbootinfo.mods_count]
+	mov	esi, [r12 + mbootinfo.mods_addr]
 	add	rsi, rbx
 
 	jrcxz	.done
 .loop:
 	push	rsi
 	push	rcx
-lodstr	rdi,	'Module at %p size %x:', 10, '%s', 10
+lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
 	mov	edx, [rsi + mboot_mod.end]
+	mov	r8d, [rsi + mboot_mod.string]
 	mov	esi, [rsi + mboot_mod.start]
+	; edx = length
 	sub	edx, esi
-	lea	rcx, [rbx + rsi]
-	mov	rsi, rcx
+	; rbx = kernel_base, r8 = string, rsi = start
+	lea	rcx, [rbx + r8]
+	lea	r8, [rbx + rsi]
+	mov	byte [r8 + rdx], 0
+	; r8 = start, rcx = string
+	mov	rsi, r8
+	; rsi = start
+	; rdx = mod_length
+	; rcx = string
+	; r8 = start
 	call	printf
 	pop	rcx
 	pop	rsi
@@ -2686,17 +2699,6 @@ digits:
 null_str:
 	db '(null)', 0
 
-section bss
-globals:
-; Pointer to first free page frame..
-.free_frame	resq 1
-; free frames that are tainted and need to be zeroed before use
-.garbage_frame	resq 1
-; Pointer to initial FPU state, used to fxrstor before a process' first use of
-; media/fpu instructions. Points to a whole page but only 512 bytes is actually
-; required.
-.initial_fpstate	resq 1
-
 section .text
 tss:
 	dd 0 ; Reserved
@@ -2780,15 +2782,21 @@ idtr:
 	dw	idt_end-idt-1
 	dq	text_vpaddr(idt)
 
-section memory_map
-memory_map: respage	1
-
 section bss
-mbi_pointer resd 1
-section.bss.end:
+globals:
+; Pointer to first free page frame..
+.free_frame	resq 1
+; free frames that are tainted and need to be zeroed before use
+.garbage_frame	resq 1
+; Pointer to initial FPU state, used to fxrstor before a process' first use of
+; media/fpu instructions. Points to a whole page but only 512 bytes is actually
+; required.
+.initial_fpstate	resq 1
 
-section memory_map
-section.memory_map.end:
+mbi_pointer resd 1
+memory_start resd 1
+
+section.bss.end:
 
 section .data
 section.data.end:
