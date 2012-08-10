@@ -60,6 +60,16 @@ assert header_pos >= 32
 %define MBI_FLAG_MODULES (1 << 3)
 %define MBI_FLAG_MMAP (1 << 6)
 
+; Data of .vbe member of mboot info
+struc mboot_vbe
+.control_info	resd 1
+.mode_info	resd 1
+.mode		resw 1
+.iface_seg	resw 1
+.iface_off	resw 1
+.iface_len	resw 1
+endstruc
+
 struc mbootinfo
 .flags resd 1
 ; if flags[0]:
@@ -86,6 +96,15 @@ struc mbootinfo
 
 .config_table	resd 1
 
-; etc :)
-resd 8
+.boot_loader	resd 1
+.apm_table	resd 1
+
+.vbe		resb mboot_vbe_size
+endstruc
+
+struc mboot_mod
+.start		resd 1
+.end		resd 1
+.string		resd 1
+		resd 1 ; reserved
 endstruc

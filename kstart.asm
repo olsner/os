@@ -554,13 +554,69 @@ lodstr	rdi,	'%x frames allocated', 10
 	mov	rsi, rbx
 	call	printf
 
-.free_loop:
+test_free:
 	mov	rdi, r12
 	test	rdi, rdi
-	jz	launch_user
+	jz	.done
 	mov	r12, [rdi]
 	call	free_frame
-	jmp	.free_loop
+	jmp	test_free
+
+.done:
+
+list_mbi_modules:
+	mov	rbx, phys_vaddr(0)
+
+lodstr	rdi,	'%x modules loaded, table at %p', 10
+	mov	esi, [memory_map + mbootinfo.mods_count]
+	mov	edx, [memory_map + mbootinfo.mods_addr]
+	add	rdx, rbx
+	call	printf
+
+	mov	ecx, [memory_map + mbootinfo.mods_count]
+	mov	esi, [memory_map + mbootinfo.mods_addr]
+	add	rsi, rbx
+
+	jrcxz	.done
+.loop:
+	push	rsi
+	push	rcx
+lodstr	rdi,	'Module at %p size %x:', 10, '%s', 10
+	mov	edx, [rsi + mboot_mod.end]
+	mov	esi, [rsi + mboot_mod.start]
+	sub	edx, esi
+	lea	rcx, [rbx + rsi]
+	mov	rsi, rcx
+	call	printf
+	pop	rcx
+	pop	rsi
+	add	rsi, mboot_mod_size
+	loop	.loop
+.done:
+
+lodstr	rdi,	'done.'
+	call	printf
+	hlt
+
+launch_user:
+	call	allocate_frame
+	o64 fxsave [rax]
+	mov	[rel globals.initial_fpstate], rax
+
+	; Make the first use of fpu/multimedia instructions cause an exception
+	mov	rax,cr0
+	bts	rax,CR0_TS_BIT
+	mov	cr0,rax
+
+	mov	edi, user_entry
+	call	new_user_proc
+	mov	rbx, rax ; Save for later
+	mov	edi, user_entry_2
+;call	new_user_proc
+	mov	edi, user_entry_3
+;call	new_user_proc
+
+	call	switch_next
 
 ; Set up a new process with some "sane" defaults for testing, and add it to the
 ; run queue.
@@ -598,26 +654,6 @@ user_stack_end	equ	0x13000
 	mov	rax, rbx
 	pop	rbx
 	ret
-
-launch_user:
-	call	allocate_frame
-	o64 fxsave [rax]
-	mov	[rel globals.initial_fpstate], rax
-
-	; Make the first use of fpu/multimedia instructions cause an exception
-	mov	rax,cr0
-	bts	rax,CR0_TS_BIT
-	mov	cr0,rax
-
-	mov	edi, user_entry
-	call	new_user_proc
-	mov	rbx, rax ; Save for later
-	mov	edi, user_entry_2
-;call	new_user_proc
-	mov	edi, user_entry_3
-;call	new_user_proc
-
-	call	switch_next
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15

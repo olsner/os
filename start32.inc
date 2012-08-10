@@ -1,4 +1,5 @@
 ; vim:ts=8:sts=8:sw=8:filetype=nasm:
+
 bits 32
 start32_mboot:
 	; The multiboot loader will have set cs and ds to sensible segments,
@@ -27,6 +28,18 @@ start32_mboot:
 	mov	ecx, [ebx + mbootinfo.mmap_length]
 	rep movsb
 
+	test	byte [ebx + mbootinfo.flags], MBI_FLAG_MODULES
+	jz	.no_modules
+
+	mov	esi, [ebx + mbootinfo.mods_addr]
+	mov	[memory_map + mbootinfo.mods_addr], edi
+	mov	ecx, [ebx + mbootinfo.mods_count]
+	lea	ecx, [ecx * (mboot_mod_size / 4)]
+	rep	movsd
+
+.no_modules:
+
+	; Assume zero-initialized
 	mov	byte [mbi_pointer + 1], memory_map >> 8
 
 start32:
