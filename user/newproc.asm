@@ -3,7 +3,7 @@
 [map all newproc.map]
 
 	mov	edi, user_entry_new
-	mov	rsi, end_of_module
+	mov	esi, end_of_module
 	mov	eax, SYSCALL_NEWPROC
 	syscall
 

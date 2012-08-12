@@ -1,3 +1,5 @@
+%include "module.inc"
+
 	xor	eax,eax
 
 	mov	edi,'U'

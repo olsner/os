@@ -28,13 +28,14 @@ else
 BUILD_OBJ ?= elf64
 endif
 
-ASMFILES := kstart.asm user/newproc.asm
-MOD_ASMFILES := newproc.asm
+ASMFILES := kstart.asm user/newproc.asm user/gettime.asm
+MOD_ASMFILES := $(filter user/%.asm, $(ASMFILES))
+MODFILES := $(MOD_ASMFILES:user/%.asm=grub/user_%.mod)
 DEPFILES := $(ASMFILES:.asm=.dep)
 ASMOUTS  := \
 	grub/kstart.b \
-	$(patsubst user/%.asm, grub/user_%.mod, $(filter user/%.asm, $(ASMFILES))) \
-	$(patsubst %.asm, out/%.b, $(ASMFILES)) \
+	$(MODFILES) \
+	$(ASMFILES:%.asm=out/%.b) \
 	$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
 	$(DEPFILES)
 
@@ -68,6 +69,6 @@ grub/user_%.mod: out/user/%.b
 
 GRUB_MODULES = --modules="boot multiboot"
 
-grub.iso: grub/kstart.b grub/boot/grub/grub.cfg grub/user_newproc.mod
+grub.iso: grub/boot/grub/grub.cfg grub/kstart.b $(MODFILES)
 	@echo Creating grub boot image $@ from $^
 	grub-mkrescue --diet $(GRUB_MODULES) -o $@ grub/ >/dev/null
