@@ -22,6 +22,8 @@ printf:
 
 	push	r12
 	push	r13
+	push	r14
+	push	r15
 	push	rbx
 
 .nextchar:
@@ -122,6 +124,8 @@ printf:
 
 .done:
 	pop	rbx
+	pop	r15
+	pop	r14
 	pop	r13
 	pop	r12
 	clear_clobbered
