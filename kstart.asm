@@ -318,6 +318,11 @@ endmboot
 
 bits 64
 default rel
+
+%define printf kprintf
+%define puts kputs
+%define putchar kputchar
+
 ;;
 ; The main 64-bit entry point. At this point, we have set up a page table that
 ; identity-maps 0x8000 and 0x9000 and maps all physical memory at kernel_base.
@@ -2004,9 +2009,60 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 N_SYSCALLS	equ (.end_table - .table) / 4
 
 syscall_write:
+	; user write: 0x0f00 | char (white on black)
 	movzx	edi, dil
-	or	di, 0xf00
-	jmp	kputchar
+	or	di, 0x0f00
+	jmp	kputchar.user
+
+kputchar:
+	; kernel write: 0x1f00 | char (white on blue)
+	movzx	edi, dil
+	or	di, 0x1f00
+.user:
+	mov	eax, edi
+	mov	rdi, [rbp + gseg.vga_pos]
+	out	0xe9, byte al
+	cmp	al,10
+	je	.newline
+
+	stosw
+
+.finish_write:
+	cmp	rdi, [rbp + gseg.vga_end]
+	jge	.scroll_line
+	mov	[rbp + gseg.vga_pos], rdi
+.ret:
+	clear_clobbered
+	ret
+
+.scroll_line:
+	mov	rsi, [rbp + gseg.vga_base]
+	mov	rdi, rsi
+	add	rsi, 160
+	mov	ecx, 80*24*2/8
+	rep	movsq
+	mov	[rbp + gseg.vga_pos], rdi
+	zero	eax
+	mov	ecx, 160 / 8
+	rep	movsq
+	jmp	.ret
+
+.newline:
+	mov	esi, eax
+	mov	rax, rdi
+	sub	rax, [rbp + gseg.vga_base] ; Result fits in 16 bits.
+	cwd ; ax -> dx:ax
+	mov	ecx,160
+	div	cx
+	; dx now has the remainder
+	sub	cx,dx
+	shr	cx,1
+	mov	eax,esi
+	mov	al,0
+	rep	stosw
+
+	jmp	.finish_write
+
 
 syscall_gettime:
 	movzx	eax, byte [rbp + gseg.curtime]
@@ -2291,11 +2347,16 @@ lodstr	rdi,	'No senders found to %p', 10
 	jmp	switch_next
 %endif
 
+%include "printf.asm"
+
 section usermode
+
+%define printf user_printf
+%define puts user_puts
+%define putchar user_putchar
 
 user_entry:
 %include "user/newproc.asm"
-
 user_entry_new2:
 %include "user/recv_sendrcv.asm"
 user_entry_old:
@@ -2306,65 +2367,11 @@ user_entry_3:
 %include "user/test_puts.asm"
 
 ; edi: character to put
-putchar:
-	mov	eax, cs
-	lar	eax, ax
-	test	eax, 3 << 13
-	jz	.kputchar
-
+user_putchar:
 	mov	eax, SYSCALL_WRITE
 	syscall
 	clear_clobbered
 	ret
-.kputchar:
-	and	di, 0xff
-	or	di, 0x1f00
-
-; Note: Takes gseg in rbp
-kputchar:
-	mov	eax, edi
-	mov	rdi, [rbp + gseg.vga_pos]
-	out	0xe9, byte al
-	cmp	al,10
-	je	.newline
-
-	stosw
-
-.finish_write:
-	cmp	rdi, [rbp + gseg.vga_end]
-	jge	.scroll_line
-	mov	[rbp + gseg.vga_pos], rdi
-.ret:
-	clear_clobbered
-	ret
-
-.scroll_line:
-	mov	rsi, [rbp + gseg.vga_base]
-	mov	rdi, rsi
-	add	rsi, 160
-	mov	ecx, 80*24*2/8
-	rep	movsq
-	mov	[rbp + gseg.vga_pos], rdi
-	mov	eax, 0
-	mov	ecx, 160 / 8
-	rep	movsq
-	jmp	.ret
-
-.newline:
-	mov	esi, eax
-	mov	rax, rdi
-	sub	rax, [rbp + gseg.vga_base] ; Result fits in 16 bits.
-	cwd ; ax -> dx:ax
-	mov	ecx,160
-	div	cx
-	; dx now has the remainder
-	sub	cx,dx
-	shr	cx,1
-	mov	eax,esi
-	mov	al,0
-	rep	stosw
-
-	jmp	.finish_write
 
 %include "printf.asm"
 
