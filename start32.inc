@@ -1,4 +1,4 @@
-; vim:ts=8:sts=8:sw=8:filetype=nasm:
+; vim:filetype=nasm:
 
 bits 32
 start32_mboot:

@@ -1,4 +1,4 @@
-; vim:ts=8:sts=8:sw=8:filetype=nasm:
+; vim:filetype=nasm:
 
 MSR_APIC_BASE	equ	0x1b
 MSR_EFER	equ	0xc000_0080

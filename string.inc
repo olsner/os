@@ -1,4 +1,4 @@
-; vim:ts=8:sts=8:sw=8:filetype=nasm:
+; vim:filetype=nasm:
 %assign strcounter 0
 %define strsection .data
 %macro STR 1+

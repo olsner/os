@@ -1,7 +1,3 @@
-; vim:ts=8:sts=8:sw=8:filetype=nasm:
-; This is the real bootstrap of the kernel, and it is this part that is loaded
-; by the boot sector (boot.asm)
-
 [map all kstart.map]
 
 ; Configuration

@@ -1,4 +1,4 @@
-; vim:ts=8:sts=8:sw=8:filetype=nasm:
+; vim:filetype=nasm:
 
 %macro respage 0-1 1
 	resb (4096*%1)

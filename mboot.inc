@@ -1,4 +1,4 @@
-; vim:ts=8:sts=8:sw=8:filetype=nasm:
+; vim:filetype=nasm:
 
 MBOOT_MAGIC	equ	0x1BADB002
 
