@@ -482,7 +482,9 @@ lodstr	rdi,	'Loading module %p..%p', 10
 
 	; rdi = entry point (preserved from in parameter)
 	; rsi = top of stack, we put it just below the start-of-module
-	mov	rsi, r12
+	mov	esi, 0x100000
+	and	edi, 0xfff
+	add	edi, esi
 	call	new_proc
 	mov	rbx, rax ; save away created process in callee-save register
 
@@ -503,9 +505,8 @@ lodstr	rdi,	'Loading module %p..%p', 10
 	; below the module start, where we pointed rsp.
 	mov	rdi, [rbx + proc.aspace]
 	zero	esi
-	mov	rdx, r12
+	mov	edx, (1 << 20) - 0x1000
 	mov	ecx, 0x1000 ; stack size
-	sub	rdx, rcx
 	call	map_region
 	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
 
