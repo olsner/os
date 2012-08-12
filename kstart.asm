@@ -610,7 +610,6 @@ lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
 
 lodstr	rdi,	'done.'
 	call	printf
-	hlt
 
 launch_user:
 	call	allocate_frame
