@@ -623,11 +623,6 @@ launch_user:
 
 	mov	edi, user_entry
 	call	new_user_proc
-	mov	rbx, rax ; Save for later
-;mov	edi, user_entry_2
-;call	new_user_proc
-;mov	edi, user_entry_3
-;call	new_user_proc
 
 	call	switch_next
 
@@ -2356,14 +2351,6 @@ section usermode
 
 user_entry:
 %include "user/newproc.asm"
-user_entry_new2:
-%include "user/recv_sendrcv.asm"
-user_entry_old:
-%include "user/test_gettime.asm"
-user_entry_2:
-%include "user/test_xmm.asm"
-user_entry_3:
-%include "user/test_puts.asm"
 
 ; edi: character to put
 user_putchar:
