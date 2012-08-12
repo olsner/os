@@ -624,9 +624,9 @@ launch_user:
 	mov	edi, user_entry
 	call	new_user_proc
 	mov	rbx, rax ; Save for later
-	mov	edi, user_entry_2
+;mov	edi, user_entry_2
 ;call	new_user_proc
-	mov	edi, user_entry_3
+;mov	edi, user_entry_3
 ;call	new_user_proc
 
 	call	switch_next
@@ -881,7 +881,7 @@ switch_next:
 	mov	r12, rax
 	mov	r13, rdx
 lodstr	rdi, 'switch_next', 10
-	call	puts
+	call	printf
 	call	print_procstate
 	mov	rax, r12
 	mov	rdx, r13
@@ -940,7 +940,7 @@ lodstr	rdi,	'    Current process: %p (%x)', 10
 	mov	rsi, [rbp + gseg.process]
 	call	print_proc
 lodstr	rdi,	'    Run queue:', 10, 0
-	call	puts
+	call	printf
 	mov	rbx, [rbp + gseg.runqueue + dlist.head]
 .loop:
 	test	rbx, rbx
@@ -2297,202 +2297,17 @@ lodstr	rdi,	'No senders found to %p', 10
 
 section usermode
 
-user_entry_new2:
-	push	rdi
-	mov	rsi, rdi
-	mov	eax, SYSCALL_RECV
-	syscall
-.loop:
-	mov	edi, msg_req(MSG_USER)
-	mov	rsi, [rsp]
-	mov	eax, SYSCALL_SENDRCV
-	syscall
-	inc	r10
-	jmp	.loop
-
-user_entry_new:
-	; Creator pid (not parent, parents don't really exist here...)
-	push	rdi
-
-	; TODO Define the initial program state for a process.
-	; - parent pid
-	; - function parameters in registers?
-	; - address space
-
-lodstr	rdi, 'user_entry_new', 10
-	call	printf
-
-.loop:
-	mov	rsi, [rsp]
-	mov	eax, SYSCALL_RECV
-	syscall
-
-	mov	rsi, rdi
-	mov	rcx, r10
-	push	rdx
-	push	r8
-	push	r9
-	push	r10
-lodstr	rdi, 'new received %p %x %x %x %x', 10
-	call printf
-
-	pop	r10
-	pop	r9
-	pop	r8
-	pop	rdx
-	mov	edi, msg_resp(MSG_USER)
-	mov	rsi, [rsp]
-	mov	eax, SYSCALL_SEND
-	inc	edx
-	syscall
-
-	jmp	.loop
-
 user_entry:
-	mov	edi, user_entry_new
-	mov	rsi, rsp
-	mov	eax, SYSCALL_NEWPROC
-	syscall
+%include "user/newproc.asm"
 
-	mov	rbx, rax
-
-lodstr	rdi, 'newproc: %p', 10
-	mov	rsi, rax
-	call	printf
-
-	mov	rdx, 1
-	mov	r10, 2
-	mov	r8, 3
-	mov	r9, 4
-
-.recv_from_new:
-	mov	rsi, rbx
-	mov	eax, SYSCALL_SENDRCV
-	mov	edi, msg_req(MSG_USER)
-	syscall
-
-	push	rdx
-	push	r8
-	push	r9
-	push	r10
-	mov	rsi, rdi
-	mov	rcx, r10
-lodstr	rdi, 'old received %p %x %x %x %x', 10
-	call	printf
-	pop	r10
-	pop	r9
-	pop	r8
-	pop	rdx
-
-	jmp	.recv_from_new
-
+user_entry_new2:
+%include "user/recv_sendrcv.asm"
 user_entry_old:
-	xor	eax,eax
-
-	mov	edi,'U'
-	syscall
-	mov	edi,10
-	syscall
-	mov	edi,'V'
-	syscall
-	mov	edi,10
-	syscall
-
-.loop:
-	xor	eax,eax
-	mov	edi,'|'
-	syscall
-
-	;xor	eax,eax
-	;mov	edi,'Y'
-	;syscall
-	;mov	eax,SYSCALL_YIELD
-	;syscall
-
-	mov	eax,SYSCALL_GETTIME
-	syscall
-	movzx	edi,al
-	xor	eax,eax ; SYSCALL_WRITE
-	syscall
-
-	mov	edi,10
-	syscall
-
-	mov	eax,SYSCALL_GETTIME
-	syscall
-	mov	ebp,eax
-.notchanged:
-	mov	eax,SYSCALL_GETTIME
-	syscall
-	cmp	al,bpl
-	jne	.loop
-
-	jmp	.notchanged
-
+%include "user/test_gettime.asm"
 user_entry_2:
-	mov	ebx, 2
-	movq	xmm1, rbx
-	movq	xmm0, xmm1
-.loop:
-	mov	edi,'2'
-	xor	eax,eax
-	syscall
-
-	paddq	xmm0,xmm1
-
-	; Delay loop
-	mov	ecx, 100000
-	loop	$
-
-	jmp	.loop
-
+%include "user/test_xmm.asm"
 user_entry_3:
-	movq	xmm1, rbx
-	movq	xmm0, xmm1
-.start:
-	mov	ebx, 7
-.loop
-	lea	edi,['a'+rbx]
-	xor	eax,eax
-	syscall
-
-	paddq	xmm0, xmm1
-	dec	ebx
-	jnz	.loop
-
-.end:
-lodstr	rdi,	'Hello World from puts', 10
-	call	puts
-
-lodstr	rdi,	'printf %% "%s" %c',10,0
-lodstr	rsi,	'Hello World',0
-	mov	edx,'C'
-	call	printf
-
-	; Delay loop
-	mov	ecx, 100000
-	loop	$
-
-	jmp	.start
-
-puts:
-	; callee-save: rbp, rbx, r12-r15
-	mov	rsi,rdi
-
-.loop:
-	lodsb
-	mov	edi,eax
-	test	dil,dil
-	jz	.ret
-
-	push	rsi
-	call	putchar
-	pop	rsi
-	jmp	.loop
-
-.ret:
-	clear_clobbered
-	ret
+%include "user/test_puts.asm"
 
 ; edi: character to put
 putchar:
@@ -2555,132 +2370,7 @@ kputchar:
 
 	jmp	.finish_write
 
-printf:
-	; al: number of vector arguments (won't be used...)
-	; rdi: format string
-	; rsi,rdx,rcx,r8,r9: consecutive arguments
-
-	; reorder the stack a bit so that we have all our parameters in a row
-	mov	[rsp-32],rsi
-	mov	rsi,[rsp]
-	mov	[rsp-40],rsi ; rsp-40 is now the return address!
-	mov	[rsp-24],rdx
-	mov	[rsp-16],rcx
-	mov	[rsp-8],r8
-	mov	[rsp],r9
-	sub	rsp,40
-	; rdi: pointer to parameters
-	; rsi: pointer to format string
-	mov	rsi,rdi
-	lea	rdi,[rsp+8]
-
-	push	r12
-	push	r13
-	push	rbx
-
-.nextchar:
-	lodsb
-	test	al,al
-	jz	.done
-	cmp	al,'%'
-	je	.handle_format
-
-.write_al:
-	mov	r12,rdi
-	mov	r13,rsi
-	movzx	edi,al
-	call	putchar
-	mov	rsi,r13
-	mov	rdi,r12
-	jmp	.nextchar
-
-.handle_format:
-	lodsb
-	cmp	al,'c'
-	je	.fmt_c
-	cmp	al,'s'
-	je	.fmt_s
-	cmp	al,'p'
-	je	.fmt_p
-	cmp	al,'x'
-	je	.fmt_x
-	;cmp	al,'%'
-	jmp	.write_al
-
-.fmt_c:
-	mov	rax,[rdi]
-	add	rdi,8
-	jmp	.write_al
-
-.fmt_s:
-	; syscall will clobber rsi and rdi but not r12 and r13
-	lea	r13,[rdi+8]
-	mov	r12,rsi
-
-	lea	rsi, [rel null_str]
-	mov	rdi, [rdi]
-	test	rdi, rdi
-	cmovz	rdi, rsi
-	call	puts
-
-	mov	rsi,r12
-	mov	rdi,r13
-	jmp	.nextchar
-
-.fmt_p:
-	cmp	qword [rdi], 0
-	; Rely on the special-case for null strings to print (null)
-	jz	.fmt_s
-.fmt_x:
-	lea	r13,[rdi+8]
-	mov	r12,rsi
-	mov	rbx, [rdi]
-
-	cmp	al, 'x'
-	setz	r15b
-
-	mov	edi, '0'
-	call	putchar
-	mov	edi, 'x'
-	call	putchar
-
-	mov	cl, 64
-
-	; cl = highest bit of first hex-digit to print (>= 4)
-	; rbx = number to print
-.print_digits:
-	lea	r14, [rel digits]
-.loop:
-	sub	cl, 4
-	mov	rdi, rbx
-	shr	rdi, cl
-	and	edi, 0xf
-	jnz	.print
-	test	cl, cl
-	jz	.print
-	test	r15b, r15b
-	jnz	.next_digit
-.print:
-	mov	r15b, 0
-	mov	dil, byte [r14 + rdi]
-	push	rcx
-	call	putchar
-	pop	rcx
-.next_digit:
-	test	cl, cl
-	jnz	.loop
-
-	mov	rsi,r12
-	mov	rdi,r13
-	jmp	.nextchar
-
-.done:
-	pop	rbx
-	pop	r13
-	pop	r12
-	clear_clobbered
-	add	rsp,48
-	jmp	[rsp-48]
+%include "printf.asm"
 
 section .data
 
