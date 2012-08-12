@@ -28,21 +28,23 @@ else
 BUILD_OBJ ?= elf64
 endif
 
+OUTDIR   := out
+GRUBDIR  := $(OUTDIR)/grub
 ASMFILES := kstart.asm user/newproc.asm user/gettime.asm
 MOD_ASMFILES := $(filter user/%.asm, $(ASMFILES))
-MODFILES := $(MOD_ASMFILES:user/%.asm=grub/user_%.mod)
+MODFILES := $(MOD_ASMFILES:user/%.asm=$(GRUBDIR)/user_%.mod)
 DEPFILES := $(ASMFILES:.asm=.dep)
 ASMOUTS  := \
-	grub/kstart.b \
+	$(GRUBDIR)/kstart.b \
 	$(MODFILES) \
-	$(ASMFILES:%.asm=out/%.b) \
+	$(ASMFILES:%.asm=$(OUTDIR)/%.b) \
 	$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
 	$(DEPFILES)
 
-all: cpuid rflags grub.iso
+all: cpuid rflags $(OUTDIR)/grub.iso
 
 clean:
-	rm -f grub.iso
+	rm -f $(OUTDIR)/grub.iso
 	rm -f cpuid rflags
 	rm -f $(ASMOUTS)
 	rm -f $(DEPFILES)
@@ -55,20 +57,30 @@ clean:
 
 -include $(DEPFILES)
 
-out/%.b: %.asm
+$(OUTDIR)/%.b: %.asm
 	@mkdir -p $(@D)
 	@$(YASM) -i . -e -M $< -o $@ >$*.dep
 	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $*.lst
 	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
 
-grub/%.b: out/%.b
+$(GRUBDIR)/%.b: $(OUTDIR)/%.b
+	@mkdir -p $(@D)
 	@$(CP) $< $@
 
-grub/user_%.mod: out/user/%.b
+$(GRUBDIR)/user_%.mod: $(OUTDIR)/user/%.b
+	@mkdir -p $(@D)
 	@$(CP) $< $@
 
 GRUB_MODULES = --modules="boot multiboot"
 
-grub.iso: grub/boot/grub/grub.cfg grub/kstart.b $(MODFILES)
+GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
+
+$(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
+	@mkdir -p $(@D)
+	bash $< $(MOD_ASMFILES:user/%.asm=%) > $@
+
+# TODO We should change this so that out/grub/ is removed and regenerated each
+# build, and put all other output products outside out/grub/
+$(OUTDIR)/grub.iso: $(GRUB_CFG) $(GRUBDIR)/kstart.b $(MODFILES)
 	@echo Creating grub boot image $@ from $^
-	grub-mkrescue --diet $(GRUB_MODULES) -o $@ grub/ >/dev/null
+	grub-mkrescue --diet $(GRUB_MODULES) -o $@ $(GRUBDIR) >/dev/null
