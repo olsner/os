@@ -1880,7 +1880,11 @@ kputchar:
 .user:
 	mov	eax, edi
 	mov	rdi, [rbp + gseg.vga_pos]
-	out	0xe9, byte al
+	; escape sequences:
+	; blue background: ESC[44m
+	; reset: ESC[0m
+	; (... if we want to bother with colored output in Bochs)
+	out	0xe9, al
 	cmp	al,10
 	je	.newline
 
