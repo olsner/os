@@ -7,6 +7,7 @@
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
 %define log_timer_interrupt 0
 %define log_page_fault 1
+%define log_find_mapping 0
 %define log_mappings 0
 %define log_lookup_handle 0
 %define log_waiters 0
@@ -28,14 +29,6 @@ CR4_PGE		equ	0x080
 CR4_PCE		equ	0x100
 CR4_OSFXSR	equ	0x200
 CR4_OSXMMEXCPT	equ	0x400
-
-%macro zero 1
-	xor	%1, %1
-%endmacro
-
-%macro restruc 1-2 1
-	resb (%1 %+ _size) * %2
-%endmacro
 
 %define TODO TODO_ __LINE__
 %macro TODO_ 1-2 'TODO'
@@ -76,47 +69,15 @@ lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
 %endif
 %endmacro
 
-; callee-save: rbp, rbx, r12-r15
-; caller-save: rax, rcx, rdx, rsi, rdi, r8-r11
-%macro clear_clobbered_syscall 0
-	; rax, rcx, r11 are also in this list, but are used for return, rip and rflags respectively.
-	zero	edx ; If we start returning more than one 64-bit value
-	zero	esi
-	zero	edi
-	zero	r8
-	zero	r9
-	zero	r10
-%endmacro
-%macro clear_clobbered 0
-	clear_clobbered_syscall
-	zero	ecx
-	zero	r11
-%endmacro
-; Most internal functions use a special convention where rdi points to the
-; cpu-specific data segment. (Maybe we should change this to use e.g. rbp.)
-%macro clear_clobbered_keeprdi 0
-	zero	ecx
-	zero	edx ; If we start returning more than one 64-bit value
-	zero	esi
-	zero	r8
-	zero	r9
-	zero	r10
-	zero	r11
-%endmacro
-
-%macro pushsection 1
-[section %1]
-%endmacro
-%macro popsection 0
-__SECT__
-%endmacro
-
+%include "macros.inc"
 %include "msr.inc"
 %include "proc.inc"
 %include "segments.inc"
 %include "string.inc"
 %include "mboot.inc"
 %include "pages.inc"
+%include "syscalls.inc"
+%include "messages.inc"
 
 RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
@@ -124,136 +85,6 @@ RFLAGS_VM	equ	(1 << 17)
 
 APIC_TICKS	equ	10000
 APIC_PBASE	equ	0xfee00000
-
-; SYSCALLS!
-;
-; arguments: rdi, rsi, rdx, (not rcx! rcx stores rip), r8, r9, r10 (used instead
-; of rcx in syscalls)
-; syscall-clobbered: rcx = rip, r11 = flags
-; syscall-preserved: rbp, rbx, r12-r15, rsp
-; return value(s): rax, rdx
-;
-; Message-passing through registers uses rax and rdi to send and return the
-; message code and sender/recipient. rsi, rdx, r8-10 are message parameters.
-
-SYSCALL_WRITE	equ	0
-SYSCALL_GETTIME	equ	1
-SYSCALL_YIELD	equ	2
-
-; Create a new process. Is this similar to fork? Details not really determined.
-;
-; The new process will have an empty address space, making it crash as soon as
-; it can.
-;
-; rdi: entry-point for new process
-; rsi: rsp for new process
-; Returns:
-; rax: process handle for child process or 0 on error (but what about error
-; codes?)
-; The entry point will have
-; rdi: process handle for parent process
-; rsi: ???
-; rax: 0
-; (remaining registers could be parameters for the process entry point, copied
-; from the calling process)
-SYSCALL_NEWPROC	equ	3
-
-; Send a message, wait synchronously for response from the same process.
-; Works the same as SYSCALL_SEND followed by SYSCALL_RECV but more efficient,
-;
-; Should add some way to let the receive part be a receive-from-any. A server
-; can get rid of a lot of syscalls by allowing it to send the response to proc
-; A at the same time as it receives the next request from any process.
-; Otherwise it'd need to SEND then return back just so that it can do a new
-; receive-from-any RECV.
-;
-; Takes:
-; rdi: message code
-; rsi: send-to (and receive-from) process handle.
-; <message parameters>
-;
-; (See also SYSCALL_SEND)
-;
-; Returns:
-; If the send was successful: see SYSCALL_RECV.
-; Otherwise, you'll get an error response in rax, and you'll probably not know
-; if it was the SEND or the RECV that failed. (TBD: would such information be
-; reliably useful?)
-SYSCALL_SENDRCV	equ	4
-
-; Receive a message
-;
-; rdi: receive-from (0 = receive-from-any)
-;
-; Returns in registers:
-; rax: message code
-; rdi: sending process ID
-; Remaining argument registers: message data
-SYSCALL_RECV	equ	5
-
-; Send a message
-; rax: message code
-; rdi: target process ID
-; Remaining argument registers: message data
-; Returns:
-; rax: error code or 0
-SYSCALL_SEND	equ	6
-
-SYSCALL_HALT	equ	7
-
-; Send a message without waiting for response, will fail instead of block if
-; the target process is not in blocking receive.
-SYSCALL_ASEND	equ	7
-
-; Receive a message if there is already some process IN_SEND waiting for us to
-; become IN_RECV, fail immediately otherwise.
-SYSCALL_ARECV	equ	8
-
-; MESSAGE TYPES! AND CODES!
-
-; Placeholder for e.g. no message received by asend/arecv
-MSG_NONE	equ	0
-; Map a page of this object (or an identified object in this process?)
-; * flags:
-;   * request to map or "grant" on page?
-;   * read-only/read-write/read-exec
-;   * shared or private/CoW
-; * virtual address on receiving side (depending on flag)
-; * offset inside object
-; * length to attempt to map
-; * (handle of object to map)
-MSG_MAP		equ	1
-; Received when a fault happens in a process that has mapped a page from you
-; Parameters:
-; * page(s) to fill with data. will be zeroed out and mapped by kernel
-; * offset inside object
-; * length/number of pages
-; * (handle (in local address space) of mapped object)
-; Status (in rax):
-; 0 if successfully filled
-; !0 on an error. the faulting process will terminate
-MSG_PFAULT	equ	2
-
-; Start of user-mapped message-type range
-MSG_USER	equ	16
-MSG_MAX		equ	255
-
-; Message codes are a 1-byte message number with some flags. For now, that's
-; only an error flag (1 or 0) and a response flag that is 0 for requests, 1 for
-; responses to them. What the meaning of request/response actually is, depends
-; on the message type and should be documented there.
-; TODO Find some nice way to put syscall numbers in this code too.
-MSG_MASK_CODE		equ 0xff
-MSG_BIT_ERROR		equ 8
-MSG_BIT_RESPONSE	equ 9
-MSG_FLAG_ERROR		equ (1 << MSG_BIT_ERROR)
-MSG_FLAG_RESPONSE	equ (1 << MSG_BIT_RESPONSE)
-
-%define msg_code(msg, error, respflag) \
-	(msg | (error << MSG_BIT_ERROR) | (respflag << MSG_BIT_RESPONSE))
-%define msg_resperr(msg) msg_code(msg, 1, 1)
-%define msg_resp(msg) msg_code(msg, 0, 1)
-%define msg_req(msg) msg_code(msg, 0, 0)
 
 
 
@@ -284,9 +115,8 @@ struc	gseg
 endstruc
 
 section .text vstart=pages.kernel
-section .data vfollows=.text follows=.text align=4
-section usermode vfollows=.data follows=.data align=1
-section bss nobits align=8 vfollows=usermode
+section .rodata vfollows=.text follows=.text align=4
+section bss nobits align=8 vfollows=.rodata
 
 ; get the physical address of a symbol in the .text section
 %define text_paddr(sym) (section..text.vstart + sym - text_vstart_dummy)
@@ -311,7 +141,7 @@ mboot MBOOT_FLAG_LOADINFO | MBOOT_FLAG_NEED_MEMMAP
 mboot_load \
 	text_paddr(mboot_header), \
 	section..text.vstart, \
-	section.usermode.end, \
+	section.data.end, \
 	section.bss.end, \
 	text_paddr(start32_mboot)
 endmboot
@@ -566,10 +396,21 @@ test_free:
 
 .done:
 
+fpu_initstate:
+	call	allocate_frame
+	o64 fxsave [rax]
+	mov	[rel globals.initial_fpstate], rax
+
+	; Make the first use of fpu/multimedia instructions cause an exception
+	mov	rax,cr0
+	bts	rax,CR0_TS_BIT
+	mov	cr0,rax
+
 list_mbi_modules:
 	mov	rbx, phys_vaddr(0)
 	mov	r12d, [mbi_pointer]
 	add	r12, rbx
+	zero	r13
 
 lodstr	rdi,	'%x modules loaded, table at %p', 10
 	mov	esi, [r12 + mbootinfo.mods_count]
@@ -589,6 +430,9 @@ lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
 	mov	edx, [rsi + mboot_mod.end]
 	mov	r8d, [rsi + mboot_mod.string]
 	mov	esi, [rsi + mboot_mod.start]
+	; save stuff away for launch_user
+	mov	r13, rsi ; start of module
+	mov	r14, rdx ; end of module
 	; edx = length
 	sub	edx, esi
 	; rbx = kernel_base, r8 = string, rsi = start
@@ -605,6 +449,8 @@ lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
 	pop	rcx
 	pop	rsi
 	add	rsi, mboot_mod_size
+	; hack
+	jmp	launch_user
 	loop	.loop
 .done:
 
@@ -612,56 +458,61 @@ lodstr	rdi,	'done.'
 	call	printf
 
 launch_user:
-	call	allocate_frame
-	o64 fxsave [rax]
-	mov	[rel globals.initial_fpstate], rax
+lodstr	rdi,	'Loading module %p..%p', 10
+	mov	rsi, r13
+	mov	rdx, r14
+	call	printf
 
-	; Make the first use of fpu/multimedia instructions cause an exception
-	mov	rax,cr0
-	bts	rax,CR0_TS_BIT
-	mov	cr0,rax
-
-	mov	edi, user_entry
-	call	new_user_proc
-
-	call	switch_next
+	mov	rdi, r13
+	mov	rsi, r14
 
 ; Set up a new process with some "sane" defaults for testing, and add it to the
 ; run queue.
 ;
-; rdi: user_entry
-new_user_proc:
-	mov	esi, user_stack_end
-	call	new_proc
-	push	rbx
-	mov	rbx, rax ; save away new process in callee-save register
-	mov	rdi, rax
-	call	runqueue_append
+; rdi: user_entry (start of module)
+; rsi: end of module
 
-	; Replicate the hard-coded read-only region for 0x8000 and 0x9000
+	; Round up end-of-module
+	add	rsi, 0xfff
+	and	si, 0xf000
+	mov	r12, rdi
+	mov	r13, rsi
+	; Round down entry-point/start-of-module
+	and	r12w, 0xf000
+
+	; rdi = entry point (preserved from in parameter)
+	; rsi = top of stack, we put it just below the start-of-module
+	mov	rsi, r12
+	call	new_proc
+	mov	rbx, rax ; save away created process in callee-save register
+
+	; Map module at 1MB
 	call	allocate_frame ; TODO allocate region, not whole page :)
-	mov	edx, pages.kernel
-	mov	ecx, 0x2000
-	mov	[rax + region.paddr], edx
-	mov	[rax + region.size], ecx
+	; vaddr, vsize
+	mov	rcx, r13 ; end of module (phys.)
+	sub	rcx, r12 ; substract start => length of module
+	mov	[rax + region.paddr], r12 ; start of module (phys.)
+	mov	[rax + region.size], rcx
+	mov	edx, 1 << 20 ; vaddr
 	mov	rdi, [rbx + proc.aspace]
 	mov	rsi, rax
 	call	map_region
 	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_X
 
-user_stack_end	equ	0x13000
-
+	; Map the user stack as an allocate-on-use ("anon") page, located just
+	; below the module start, where we pointed rsp.
 	mov	rdi, [rbx + proc.aspace]
 	zero	esi
-	; Map the user stack as an allocate-on-use ("anon") page
-	mov	rdx, user_stack_end - 0x1000
-	mov	rcx, 0x1000
+	mov	rdx, r12
+	mov	ecx, 0x1000 ; stack size
+	sub	rdx, rcx
 	call	map_region
 	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
 
+	mov	rdi, rbx
+	call	runqueue_append
 	mov	rax, rbx
-	pop	rbx
-	ret
+	call	switch_next
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15
@@ -1720,6 +1571,45 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 	swapgs
 	iretq
 
+; rdi = aspace
+; rsi = virtual address
+; Return mapping in rax if successful
+aspace_find_mapping:
+	mov	rdi, [rdi + aspace.mappings + dlist.head]
+.test_mapping:
+	test	rdi, rdi
+	jz	.no_match
+	push	rdi
+	push	rsi
+	mov	rsi, rdi
+	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
+	mov	rcx, [rdi + mapping.size - mapping.as_node]
+	mov	r8, [rdi + dlist_node.prev]
+	mov	r9, [rdi + dlist_node.next]
+%if log_find_mapping
+lodstr	rdi, 'Map %p: %p sz %x (%p<-->%p)', 10
+	call	printf
+%endif
+	pop	rsi
+	pop	rdi
+	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
+	cmp	rsi, rax
+	je	.found
+	jb	.next_mapping
+	add	rax, [rdi + mapping.size - mapping.as_node]
+	cmp	rsi, rax
+	jb	.found
+	; vaddr <= cr2 < vaddr+size
+.next_mapping:
+	mov	rdi, [rdi + dlist_node.next]
+	jmp	.test_mapping
+.no_match:
+	zero	eax
+	ret
+.found:
+	lea	rax, [rdi - mapping.as_node]
+	ret
+
 handler_PF:
 	test	byte [rsp], 0x4
 	jz	.kernel_fault
@@ -1759,35 +1649,10 @@ lodstr	rdi,	'Page-fault: cr2=%p error=%x proc=%p', 10
 
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
-	mov	rdi, [rdi + aspace.mappings + dlist.head]
 	mov	rsi, cr2
-.test_mapping:
-	test	rdi, rdi
-	jz	.no_match
-	push	rdi
-	push	rsi
-	mov	rsi, rdi
-	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
-	mov	rcx, [rdi + mapping.size - mapping.as_node]
-	mov	r8, [rdi + dlist_node.prev]
-	mov	r9, [rdi + dlist_node.next]
-%if log_mappings
-lodstr	rdi, 'Map %p: %p sz %x (%p<-->%p)', 10
-	call	printf
-%endif
-	pop	rsi
-	pop	rdi
-	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
-	cmp	rsi, rax
-	je	.found
-	jb	.next_mapping
-	add	rax, [rdi + mapping.size - mapping.as_node]
-	cmp	rsi, rax
-	jb	.found
-	; vaddr <= cr2 < vaddr+size
-.next_mapping:
-	mov	rdi, [rdi + dlist_node.next]
-	jmp	.test_mapping
+	call aspace_find_mapping
+	test	rax, rax
+	jnz	.found
 .no_match:
 lodstr	r12,	'No mapping found!', 10
 .invalid_match:
@@ -2071,26 +1936,80 @@ syscall_yield:
 	jmp	switch_next
 
 syscall_newproc:
-	; TODO: Validate some stuff
-	; rdi: entry point
-	call	new_user_proc
-	mov	rdi,rax
-	mov	rbx,rax ; Save new process id
-	call	runqueue_append
+	; For supporting loaders, we'd like something more like where we give
+	; an image (as a file object or other mappable thing) to the generic
+	; loader thingy, which will figure everything else out. Basically
+	; create the process with the entry point being in the loader instead.
 
-	; FIXME How should we decide which address space to use for the new
-	; process? For now we use new_user_proc, which will set up defaults.
-	;lea	rax, [phys_vaddr(aspace_test)]
-	;mov	[rbx + proc.aspace], rax
-	;mov	rsi, [rbp + proc.aspace]
-	;call	add_process_to_aspace
-	;call	rdi, rbx
+	; We also want some control over which address space to use for the new
+	; process. For now we always create a new unrelated address space.
+	; We'll want at least:
+	; - fork, make everything the same but CoW
+	; - clone/thread, share address space instead of creating a new
 
-	mov	r12, [rbp + gseg.process]
-	mov	rdi, [r12 + proc.aspace]
+	; Rewrite this:
+	; - Parameters:
+	;   rdi = entry-point/start-of-module
+	;   rsi = end-of-module
+	;   both as virtual addresses in the parent's address space.
+	; - Create new process object
+	;   rsp = 1MB (grows down starting at the beginning of the module)
+	;   rip = 1MB + (entry-point & 0xfff)
+	; - Find the region in the source process that maps the given range,
+	;   map that region (read-execute) in the new process at 1MB.
+	; - Create a new region for the stack
+	; - Go?
+
+	mov	r12, rdi ; entry-point/start
+	mov	r13, rsi ; end
+
+	; stack in new process = 1MB
+	mov	esi, 0x100000
+	; entry-point in new process = 1MB + (entry & 0xfff)
+	and	edi, 0xfff
+	add	edi, esi
+	call	new_proc
+	mov	rbx, rax ; Save new process id
+
+	; Find mapping for source
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
+	mov	rsi, r12
+	call	aspace_find_mapping
+	test	rax, rax
+	jz	.panic
+	; Set up to map the same region in the child process, at 1MB
+	mov	rdi, [rbx + proc.aspace]
+	mov	rsi, [rax + mapping.region]
+	mov	edx, 0x100000
+	; Set rcx to end, aligned up towards an even page
+	mov	rcx, r13
+	add	rcx, 0xfff
+	and	cx, 0xf000
+	; Then subtract start, and align upwards again
+	sub	rcx, r12
+	add	rcx, 0xfff
+	and	cx, 0xf000
+	; Check that we actually got a region
+	test	rsi, rsi
+	jz	.panic
+	call	map_region
+	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_X
+
+	; Create new stack region for child
+	mov	rdi, [rbx + proc.aspace]
+	zero	esi
+	mov	edx, 0x100000 - 0x1000 ; 1MB - stack size
+	mov	ecx, 0x1000 ; stack size
+	call	map_region
+	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
+
+	; Map handle to child in parent process
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
 	mov	rsi, rbx ; New process that should be mapped
 	call	map_handle
-	; r13: handle to new process
+	; r13: handle to child process
 	mov	r13, rax
 
 lodstr	rdi, 'newproc %p at %p', 10
@@ -2098,19 +2017,26 @@ lodstr	rdi, 'newproc %p at %p', 10
 	mov	rdx, rax
 	call	printf
 
+	; Map handle to parent in child process
 	mov	rdi, [rbx + proc.aspace]
 	mov	rsi, [rbp + gseg.process]
 	call	map_handle
-	; New process' first argument: creator pid
+	; New process' first argument: parent handle
 	mov	[rbx + proc.rdi], rax
 
+	; Child is set up, append it to the run queue
+	mov	rdi,rbx
+	call	runqueue_append
+
+	; And return the child's handle to the parent
 	mov	rax, r13
 	ret
+.panic:
+	PANIC
 
 syscall_halt:
 	lodstr	rdi, '<<HALT>>'
 	call	printf
-	cli
 	hlt
 
 syscall_send:
@@ -2343,25 +2269,7 @@ lodstr	rdi,	'No senders found to %p', 10
 
 %include "printf.asm"
 
-section usermode
-
-%define printf user_printf
-%define puts user_puts
-%define putchar user_putchar
-
-user_entry:
-%include "user/newproc.asm"
-
-; edi: character to put
-user_putchar:
-	mov	eax, SYSCALL_WRITE
-	syscall
-	clear_clobbered
-	ret
-
-%include "printf.asm"
-
-section .data
+section .rodata
 
 %macro vga_string 1-*
 	%assign color %1
@@ -2373,10 +2281,6 @@ section .data
 %endmacro
 message:
 	vga_string 7,'L','O','N','G','M','O','D','E'
-digits:
-	db '0123456789abcdef'
-null_str:
-	db '(null)', 0
 
 section .text
 tss:
@@ -2410,7 +2314,7 @@ gdt_start:
 	define_segment 0,0,RW_ACCESS | SEG_DPL3
 gdt_end:
 
-section .data
+section .rodata
 align	4
 gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
@@ -2456,7 +2360,7 @@ idt:
 	interrupt_gate timer_handler ; APIC Timer
 idt_end:
 
-section .data
+section .rodata
 idtr:
 	dw	idt_end-idt-1
 	dq	text_vpaddr(idt)
@@ -2477,9 +2381,6 @@ memory_start resd 1
 
 section.bss.end:
 
-section .data
+section .rodata
 section.data.end:
-
-section usermode
-section.usermode.end:
 

@@ -147,3 +147,9 @@ puts:
 	clear_clobbered
 	ret
 
+pushsection .rodata
+digits:
+	db '0123456789abcdef'
+null_str:
+	db '(null)', 0
+popsection

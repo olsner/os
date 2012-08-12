@@ -28,18 +28,22 @@ else
 BUILD_OBJ ?= elf64
 endif
 
-ASMFILES := kstart.asm
+ASMFILES := kstart.asm user/newproc.asm
+MOD_ASMFILES := newproc.asm
 DEPFILES := $(ASMFILES:.asm=.dep)
-ASMOUTS  := $(patsubst %.asm, grub/%.b, $(ASMFILES)) \
-			$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
-			$(DEPFILES)
+ASMOUTS  := \
+	grub/kstart.b \
+	$(patsubst user/%.asm, grub/user_%.mod, $(filter user/%.asm, $(ASMFILES))) \
+	$(patsubst %.asm, out/%.b, $(ASMFILES)) \
+	$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
+	$(DEPFILES)
 
 all: cpuid rflags grub.iso
 
 clean:
 	rm -f grub.iso
-	rm -f $(ASMOUTS)
 	rm -f cpuid rflags
+	rm -f $(ASMOUTS)
 	rm -f $(DEPFILES)
 
 %: %.cpp
@@ -50,14 +54,20 @@ clean:
 
 -include $(DEPFILES)
 
-grub/%.b: %.asm
+out/%.b: %.asm
 	@mkdir -p $(@D)
-	@$(YASM) -e -M $< -o $@ >$*.dep
-	$(HUSH_ASM) $(YASM) -f bin $< -o $@ -L nasm -l $*.lst
+	@$(YASM) -i . -e -M $< -o $@ >$*.dep
+	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $*.lst
 	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
+
+grub/%.b: out/%.b
+	@$(CP) $< $@
+
+grub/user_%.mod: out/user/%.b
+	@$(CP) $< $@
 
 GRUB_MODULES = --modules="boot multiboot"
 
-grub.iso: grub/kstart.b grub/boot/grub/grub.cfg
+grub.iso: grub/kstart.b grub/boot/grub/grub.cfg grub/user_newproc.mod
 	@echo Creating grub boot image $@ from $^
 	grub-mkrescue --diet $(GRUB_MODULES) -o $@ grub/ >/dev/null

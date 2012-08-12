@@ -1,6 +1,6 @@
 ; vim:filetype=nasm:
 %assign strcounter 0
-%define strsection .data
+%define strsection .rodata
 %macro STR 1+
 [section strsection]
 %xdefine _STR .str_ %+ strcounter

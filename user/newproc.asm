@@ -1,5 +1,9 @@
+%include "module.inc"
+
+[map all newproc.map]
+
 	mov	edi, user_entry_new
-	mov	rsi, rsp
+	mov	rsi, end_of_module
 	mov	eax, SYSCALL_NEWPROC
 	syscall
 
@@ -73,3 +77,5 @@ lodstr	rdi, 'new received %p %x %x %x %x', 10
 
 	jmp	.loop
 
+%include "printf.asm"
+%include "putchar.asm"
