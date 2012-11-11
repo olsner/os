@@ -142,7 +142,7 @@ mboot_load \
 	text_paddr(mboot_header), \
 	section..text.vstart, \
 	section.data.end, \
-	section.bss.end, \
+	kernel_reserved_end, \
 	text_paddr(start32_mboot)
 endmboot
 

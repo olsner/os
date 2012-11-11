@@ -4,7 +4,7 @@
 	resb (4096*%1)
 %endmacro
 
-struc pages, 0xa000
+struc pages, 0x100000
 .kernel		respage 2
 
 .page_tables:
@@ -22,4 +22,5 @@ struc pages, 0xa000
 endstruc
 
 kernel_stack_end equ pages.kernel_stack_end
-free_mem_start equ 0x100000
+kernel_reserved_end equ pages + pages_size
+free_mem_start equ kernel_reserved_end
