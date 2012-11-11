@@ -30,7 +30,7 @@ endif
 
 OUTDIR   := out
 GRUBDIR  := $(OUTDIR)/grub
-ASMFILES := kstart.asm user/newproc.asm user/gettime.asm
+ASMFILES := kstart.asm user/newproc.asm user/gettime.asm user/loop.asm
 MOD_ASMFILES := $(filter user/%.asm, $(ASMFILES))
 MODFILES := $(MOD_ASMFILES:user/%.asm=$(GRUBDIR)/user_%.mod)
 DEPFILES := $(ASMFILES:.asm=.dep)
