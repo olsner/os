@@ -8,3 +8,8 @@ while [ $# -gt 0 ]; do
 	echo "}"
 	shift
 done
+
+echo "menuentry \"idle\" {"
+echo "    multiboot (cd)/kstart.b"
+echo "    boot"
+echo "}"

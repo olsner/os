@@ -454,8 +454,9 @@ lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
 	loop	.loop
 .done:
 
-lodstr	rdi,	'done.'
+lodstr	rdi,	'done.', 10
 	call	printf
+	jmp	idle
 
 launch_user:
 lodstr	rdi,	'Loading module %p..%p', 10
@@ -719,9 +720,14 @@ runqueue_pop:
 	ret
 
 idle:
-lodstr	rdi, 'idle', 10
-	call	printf
+	; Fun things to do while idle: check how soon the first timer wants to
+	; run, make sure the APIC timer doesn't trigger before then.
+	swapgs
+	sti
 	hlt
+	; We should never get here: the interrupt handler(s) will return through
+	; the scheduler which will just re-idle if needed.
+	PANIC
 
 switch_next:
 %if log_switch_next
@@ -1166,8 +1172,9 @@ dlist_prepend:
 dlist_pop:
 	mov	rsi, [rdi + dlist.head]
 	test	rsi, rsi
-	jnz	dlist_remove
-	ret
+	jz	dlist_remove.not_tail
+	; Non-zero: continue to remove the node in rsi
+
 ; rsi = dlist_node (must be in the list)
 dlist_remove:
 	mov	rcx, [rsi + dlist_node.prev]
@@ -1490,9 +1497,6 @@ save_from_iret:
 timer_handler:
 	push	rax
 	push	rbp
-	; FIXME If we got here by interrupting kernel code, don't swapgs
-	; But currently, all kernel code is cli, so we can only get here as the
-	; result of a fault...
 	swapgs
 
 	mov	word [rel 0xb8002], 0x0700|'T'
@@ -1506,10 +1510,23 @@ timer_handler:
 	mov	dword [rel -0x1000 + APIC_REG_EOI], 0
 
 	mov	rax, [rbp + gseg.process]
+	test	rax, rax
+	jnz	.save
+
+	; Pop the saved rax/rbp, plus the 5-word interrupt stack frame
+	add	rsp, 7 * 8
+%if log_timer_interrupt
+lodstr	rdi, 'Timer interrupt while idle', 10
+	call	printf
+%endif
+	jmp	switch_next
+
+.save:
 	; The rax and rbp we saved above, store them in process
 	pop	qword [rax + proc.rbp]
 	pop	qword [rax + proc.rax]
 	call	save_from_iret
+
 %if log_timer_interrupt
 lodstr	rdi, 'Timer interrupt in %p (%x)', 10
 	mov	rsi, [rbp + gseg.process]
