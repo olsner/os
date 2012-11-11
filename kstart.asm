@@ -202,7 +202,7 @@ init_frames:
 	; The range of memory map info is now in rsi..rbx
 .loop:
 	cmp	rbx, rsi
-	jb	.done
+	jbe	.done
 	lodsd ; size of entry
 	lea	r12, [rsi + rax] ; pointer to next entry
 	lodsq
