@@ -396,6 +396,13 @@ test_free:
 
 .done:
 
+init_keyboard:
+lodstr	rdi,	'Enable keyboard', 10
+	call	printf
+
+	mov	al,0xff ^ 2 ; Enable IRQ 1 (keyboard)
+	out	PIC1_DATA, al
+
 fpu_initstate:
 	call	allocate_frame
 	o64 fxsave [rax]
@@ -1494,6 +1501,45 @@ save_from_iret:
 	mov	rsp, rcx
 	ret
 
+key_handler:
+	push	rax
+	push	rbp
+	swapgs
+
+	mov	word [rel 0xb8002], 0x0700|'K'
+
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
+	add	rax, [rbp + gseg.process]
+	jz	.no_save
+	; The rax and rbp we saved above, store them in process
+	pop	qword [rax + proc.rbp]
+	pop	qword [rax + proc.rax]
+	call	save_from_iret
+
+	mov	rdi, [rbp + gseg.process]
+	mov	qword [rbp + gseg.process], 0 ; some kind of temporary code
+	call	runqueue_append
+	jmp	.saved
+.no_save:
+	; Pop the saved rax/rbp, plus the 5-word interrupt stack frame
+	add	rsp, 7 * 8
+.saved:
+
+KEY_DATA	equ 0x60
+
+	zero	eax
+	in	al, KEY_DATA
+
+lodstr	rdi,	'Key interrupt! key %x', 10
+	mov	esi, eax
+	call	printf
+
+	mov	al, PIC_EOI
+	out	PIC1_CMD, al
+
+	jmp	switch_next
+
 timer_handler:
 	push	rax
 	push	rbp
@@ -2379,7 +2425,13 @@ idt:
 	%rep (32-18)
 	null_gate
 	%endrep
-	interrupt_gate timer_handler ; APIC Timer
+	; Note: PIC interrupts are mapped at 0x20.., this means IRQ 0 overlaps
+	; with the vector we set for the APIC timer. But since IRQ 0 is the
+	; PIT and we don't use it, this should be fine :)
+	interrupt_gate timer_handler ; APIC Timer / IRQ 0
+	interrupt_gate key_handler ; IRQ 1, keyboard (or generally, 8042?)
+	; We don't need the rest of these (I think), since all unused IRQs are
+	; masked.
 idt_end:
 
 section .rodata
