@@ -83,4 +83,4 @@ $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 # build, and put all other output products outside out/grub/
 $(OUTDIR)/grub.iso: $(GRUB_CFG) $(GRUBDIR)/kstart.b $(MODFILES)
 	@echo Creating grub boot image $@ from $^
-	grub-mkrescue --diet $(GRUB_MODULES) -o $@ $(GRUBDIR) >/dev/null
+	grub-mkrescue $(GRUB_MODULES) -o $@ $(GRUBDIR) >/dev/null
