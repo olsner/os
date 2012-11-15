@@ -6,7 +6,7 @@
 %define log_runqueue 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
 %define log_timer_interrupt 0
-%define log_page_fault 1
+%define log_page_fault 0
 %define log_find_mapping 0
 %define log_mappings 0
 %define log_lookup_handle 0
@@ -752,7 +752,7 @@ lodstr	rdi, 'switch_next', 10
 	jz	idle
 	tcall	switch_to
 
-%ifdef need_print_procstate
+%if need_print_procstate
 print_proc:
 	; rdi = format
 	; rsi = process
