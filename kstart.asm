@@ -115,13 +115,20 @@ struc	gseg
 endstruc
 
 section .text vstart=pages.kernel
+text_vstart_dummy:
 section .rodata vfollows=.text follows=.text align=4
+rodata_vstart_dummy:
 section bss nobits align=8 vfollows=.rodata
+bss_vstart_dummy:
 
 ; get the physical address of a symbol in the .text section
 %define text_paddr(sym) (section..text.vstart + sym - text_vstart_dummy)
+%define bss_paddr(sym) (section.bss.vstart + sym - bss_vstart_dummy)
+%define rodata_paddr(sym) (section..rodata.vstart + sym - rodata_vstart_dummy)
 ; get the virtual (kernel) address for a symbol in the .text section
 %define text_vpaddr(sym) phys_vaddr(text_paddr(sym))
+; get the virtual (kernel) address for a .bss-section symbol
+%define bss_vpaddr(sym) phys_vaddr(bss_paddr(sym))
 ; translate a physical address to a virtual address in the 'core'
 ; Note: in most cases, RIP-relative addressing is enough (since we tell the
 ; assembler we're based at 0x8000 while we're actually at kernel_base+0x8000),
@@ -131,7 +138,6 @@ section bss nobits align=8 vfollows=.rodata
 ; Note: Must all be in the same section, otherwise trouble with complicated
 ; expressions that rely on bitwise arithmetic on symbol relocations
 section .text
-text_vstart_dummy:
 
 %include "start32.inc"
 
@@ -162,11 +168,36 @@ start64:
 	; 64-bit address, we must do it in long mode...
 	jmp	phys_vaddr(.moved)
 .moved:
-	; Need to reload gdt and ldt, since they are using 32-bit addresses
-	; (vaddr==paddr) that will get unmapped as soon as we leave the
-	; boot code.
-	lidt	[idtr]
+	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
+	; will get unmapped as soon as we leave the boot code.
 	lgdt	[gdtr]
+	; Load before setup :)
+	lidt	[idtr]
+
+init_idt:
+	lea	rbp, [rel idt]
+	lea	rsi, [rel idt_data.vectors]
+	mov	ecx, (idt_data.vectors_end - idt_data) / 3
+.loop:
+	zero	eax
+	; Vector
+	lodsb
+	shl	eax, 4 ; 16 bytes per entry
+	lea	rdi, [rbp + rax]
+	; Offset from vstart
+	lodsw
+	; upper part of address: always 0xffffffff
+	add	eax, (kernel_base + pages.kernel) & 0xffff
+	; eax = lower address
+	stosw
+	mov	eax, cs
+	stosw
+	mov	eax, ((kernel_base + pages.kernel) & (0xffff << 16)) | ((GATE_PRESENT | GATE_TYPE_INTERRUPT) << 8)
+	stosd
+	dec	dword [rdi]
+	loop	.loop
+
+load_idt:
 
 	mov	rdi,phys_vaddr(0xb8004)
 	lea	rsi,[rel message]
@@ -1441,20 +1472,6 @@ mapping_page_to_frame equ _STR
 	cli
 	hlt
 
-handler_err:
-handler_no_err:
-	cli
-	hlt
-
-%assign i 0
-%rep 18
-handler_n %+ i:
-	cli
-	hlt
-	mov	al, i
-%assign i i+1
-%endrep
-
 ; rax is already saved, and now points to the process base
 ; rbp is already saved (points to the gseg, but not used by this function)
 ; rsp, rip, rflags are on the stack in "iretq format"
@@ -2388,56 +2405,22 @@ gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
 	dq	text_vpaddr(gdt_start)  ; Offset
 
-section .text
-idt:
-%macro interrupt_gate 1
-	define_gate64 code64_seg,text_vpaddr(%1),GATE_PRESENT|GATE_TYPE_INTERRUPT
-%assign i i+1
-%endmacro
-%define default_error interrupt_gate (handler_n %+ i)
-%define default_no_error interrupt_gate (handler_n %+ i)
-%define null_gate define_gate64 0,0,GATE_TYPE_INTERRUPT
-
-	; exceptions with errors:
-	; - 8/#DF/double fault (always zero)
-	; - 10/#TS/Invalid-TSS
-	; - 11/#NP/Segment-Not-Present
-	; - 12/#SS/Stack Exception
-	; - 13/#GP/General Protection
-	; - 14/#PF/Page Fault
-	; - 17/#AC/Alignment Check
-
-%assign i 0
-	; 0-6
-	%rep 7
-	default_no_error
-	%endrep
-	interrupt_gate handler_NM ; vector 7, #NM, Device-Not-Available
-	default_error ; 8
-	default_no_error ; 9
-	%rep 4
-	default_error ; 10-13
-	%endrep
-	interrupt_gate handler_PF ; 14, #PF
-	default_no_error ; 15
-	default_no_error
-	default_error
-	%rep (32-18)
-	null_gate
-	%endrep
-	; Note: PIC interrupts are mapped at 0x20.., this means IRQ 0 overlaps
-	; with the vector we set for the APIC timer. But since IRQ 0 is the
-	; PIT and we don't use it, this should be fine :)
-	interrupt_gate timer_handler ; APIC Timer / IRQ 0
-	interrupt_gate key_handler ; IRQ 1, keyboard (or generally, 8042?)
-	; We don't need the rest of these (I think), since all unused IRQs are
-	; masked.
-idt_end:
-
 section .rodata
 idtr:
 	dw	idt_end-idt-1
-	dq	text_vpaddr(idt)
+	dq	bss_vpaddr(idt)
+idt_data:
+.vectors:
+%macro reg_vec 2
+	db	%1
+	dw	%2 - text_vstart_dummy
+%endmacro
+	reg_vec 7, handler_NM
+	;reg_vec 8, handler_DF
+	reg_vec 14, handler_PF
+	reg_vec 32, timer_handler
+	reg_vec 33, key_handler
+.vectors_end:
 
 section bss
 globals:
@@ -2452,6 +2435,9 @@ globals:
 
 mbi_pointer resd 1
 memory_start resd 1
+
+idt	resq 2 * 34
+idt_end
 
 section.bss.end:
 
