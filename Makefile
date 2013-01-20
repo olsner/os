@@ -21,13 +21,6 @@ HUSH_CC=@echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 endif
 
-ifeq ($(SYSTEM), Darwin)
-BUILD_OBJ ?= macho64
-SYMBOLPREFIX ?= --prefix _
-else
-BUILD_OBJ ?= elf64
-endif
-
 OUTDIR   := out
 GRUBDIR  := $(OUTDIR)/grub
 ASMFILES := kstart.asm user/newproc.asm user/gettime.asm user/loop.asm
@@ -62,6 +55,9 @@ $(OUTDIR)/%.b: %.asm
 	@$(YASM) -i . -e -M $< -o $@ >$*.dep
 	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $*.lst
 	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
+
+%.asm.pp: %.asm
+	$(YASM) -i . -f bin -o $@ -e -L nasm $<
 
 $(GRUBDIR)/%.b: $(OUTDIR)/%.b
 	@mkdir -p $(@D)
