@@ -2339,7 +2339,7 @@ lodstr	rdi,	'recv: %p (%x)', 10
 	jz	.no_senders
 	lea	rsi, [rax - proc.node]
 	test	[rax - proc.node + proc.flags], byte PROC_IN_SEND
-	jnz	transfer_message
+	tc nz,	transfer_message
 
 	mov	rax, [rax + dlist_node.next]
 	jmp	.loop
@@ -2349,7 +2349,7 @@ lodstr	rdi,	'No senders found to %p', 10
 	mov	rsi, [rsp]
 	call	printf
 
-	jmp	switch_next
+	tcall	switch_next
 %endif
 
 %include "printf.asm"
