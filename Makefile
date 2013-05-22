@@ -36,6 +36,8 @@ ASMOUTS  := \
 
 all: cpuid rflags $(OUTDIR)/grub.iso
 
+.SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b)
+
 clean:
 	rm -f $(OUTDIR)/grub.iso
 	rm -f cpuid rflags
