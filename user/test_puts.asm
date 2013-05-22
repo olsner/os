@@ -1,3 +1,5 @@
+%include "module.inc"
+
 	movq	xmm1, rbx
 	movq	xmm0, xmm1
 .start:
@@ -26,3 +28,5 @@ lodstr	rsi,	'Hello World',0
 
 	jmp	.start
 
+%include "printf.asm"
+%include "putchar.asm"
