@@ -23,35 +23,28 @@ lodstr	rdi, 'old: calling new proc...', 10
 	mov	edi, ebx
 	syscall
 
-lodstr	rdi, 'old: call returned message %x', 10
-	mov	rsi, rax
-	call	printf
+lodstr	rdi, 'old: call returned %x from %x: %x %x %x %x %x', 10
+	call log_message
 
-	mov	rdx, 1
-	mov	r10, 2
-	mov	r8, 3
-	mov	r9, 4
-
-.call_new:
 lodstr	rdi, 'old calling %p...', 10
 	mov	rsi, rbx
 	call	printf
+
+	mov	esi, 1
+	mov	edx, 2
+	mov	r8, 3
+	mov	r9, 4
+	mov	r10, 5
+
+.call_new:
 	mov	eax, msg_call(MSG_USER)
 	mov	rdi, rbx
 	syscall
 
-	push	rdx
-	push	r8
-	push	r9
-	push	r10
-	mov	rsi, rdi
-	mov	rcx, r10
+	test	si, si
+	jnz	.call_new
 lodstr	rdi, 'old received %p %x %x %x %x', 10
-	call	printf
-	pop	r10
-	pop	r9
-	pop	r8
-	pop	rdx
+	call	log_message
 
 	jmp	.call_new
 
@@ -66,8 +59,8 @@ user_entry_new:
 
 .loop:
 	mov	rsi, [rsp]
-lodstr	rdi, 'new receiving from %p...', 10
-	call	printf
+;lodstr	rdi, 'new receiving from %p...', 10
+;	call	printf
 
 	mov	rdi, [rsp]
 	zero	eax
@@ -76,24 +69,40 @@ lodstr	rdi, 'new receiving from %p...', 10
 	;    (ax di si dx r8 r9 10) ->
 	; di (si dx cx r8 r9 st st)
 
+;lodstr	rdi, 'new received %x from %x: %x %x %x %x %x', 10
+;	call log_message
+
+	mov	rdi, [rsp]
+	inc	rsi
+	mov	eax, msg_send(MSG_USER + 1)
+	syscall
+
+	jmp	.loop
+
+; rdi = log message
+; [rsp+8] = old rdi
+; other registers: as they were when received
+; returns: all message registers except rdi restored
+log_message:
+	push	r8
+	push	rdx
+	push	rsi
+	push	rax
 	push	r10
 	push	r9
 	mov	r9, r8
 	mov	r8, rdx
 	mov	rcx, rsi
-	mov	rdx, rdi
+	mov	rdx, [rsp + 7*8]
 	mov	rsi, rax
-lodstr	rdi, 'new received %x from %p: %x %x %x %x %x', 10
 	call printf
-
-	pop	r10
 	pop	r9
-	mov	rdi, [rsp]
-	inc	edx
-	mov	eax, msg_send(MSG_USER + 1)
-	syscall
-
-	jmp	.loop
+	pop	r10
+	pop	rax
+	pop	rsi
+	pop	rdx
+	pop	r8
+	ret
 
 %include "printf.asm"
 %include "putchar.asm"

@@ -8,14 +8,14 @@
 %define log_timer_interrupt 0
 %define log_page_fault 0
 %define log_find_mapping 0
+%define log_find_handle 0
 %define log_mappings 0
-%define log_lookup_handle 0
 %define log_waiters 0
 %define log_messages 0
 
 %define debug_tcalls 0
 
-%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue)
+%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_waiters)
 
 CR0_PE		equ	0x00000001
 CR0_MP		equ	0x00000002
@@ -30,24 +30,10 @@ CR4_PCE		equ	0x100
 CR4_OSFXSR	equ	0x200
 CR4_OSXMMEXCPT	equ	0x400
 
-%define TODO TODO_ __LINE__
-%macro TODO_ 1-2 'TODO'
-lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
-	mov	esi, %1
-	call	printf
-
-	cli
-	hlt
-%endmacro
-
 %define PANIC PANIC_ __LINE__
 %macro PANIC_ 1-2 'PANIC'
-lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
 	mov	esi, %1
-	call	printf
-
-	cli
-	hlt
+	jmp	panic_print
 %endmacro
 
 %macro tcall 1
@@ -59,6 +45,8 @@ lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
 %endif
 %endmacro
 
+; "tc nz, foo" does the same as jnz foo (but also includes breadcrumbs in debug
+; builds)
 %macro tc 2
 %if debug_tcalls
 	j%-1	%%skip
@@ -78,6 +66,7 @@ lodstr	rdi, %2, ' @ %x', 10 ; Decimal output would be nice...
 %include "pages.inc"
 %include "syscalls.inc"
 %include "messages.inc"
+%include "handles.inc"
 
 RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
@@ -86,10 +75,7 @@ RFLAGS_VM	equ	(1 << 17)
 APIC_TICKS	equ	10000
 APIC_PBASE	equ	0xfee00000
 
-
-
 kernel_base equ -(1 << 30)
-handle_top equ 0x7fff_ffff_f000 ; For now, we waste one whole page per handle (I think)
 
 ; Per-CPU data (theoretically)
 struc	gseg
@@ -713,6 +699,7 @@ lodstr	rdi,	'Unblocked process %p (%x)', 10
 	call	print_proc
 lodstr	rdi,	'<end>', 10
 	call	puts
+	pop	rdi
 	ret
 %else
 	pop	rdi
@@ -743,8 +730,19 @@ lodstr	rdi, 'runqueue_append %p', 10
 %endif
 	ret
 .queueing_blocked:
-	PANIC
+	mov	rsi, rdi
+lodstr	rdi, 'queueing blocked %p (%x)', 10
+	jmp	.panic
 .already_running:
+	mov	rsi, rdi
+lodstr	rdi, 'queueing already running %p (%x)', 10
+.panic:
+%if need_print_procstate
+	call	print_proc
+	call	print_procstate
+%else
+	mov	rdx, [rsi + proc.flags]
+%endif
 	PANIC
 
 runqueue_pop:
@@ -886,7 +884,7 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 
 	bt	dword [rax + proc.flags], PROC_ON_RUNQUEUE_BIT
 	jnc	.not_blocked
-	TODO
+	PANIC
 .not_blocked:
 
 	; Update pointer to current process
@@ -995,6 +993,7 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 ; point.
 ; If you do not know that rax is the current process, you must use switch_to
 ; instead. But that should be cheap for the fastret case.
+; This does *not* swapgs, that must be run before getting here.
 fastret:
 %macro load_regs 1-*
 %rep %0
@@ -1009,6 +1008,9 @@ fastret:
 
 	clear_clobbered_syscall
 .no_clear:
+	mov	rbx, cr3
+	cmp	rbx, [rax + proc.cr3]
+	jne	.wrong_cr3
 	load_regs rbp,rbx,r12,r13,r14,r15
 .fast_fastret:
 	mov	rsp, [rax+proc.rsp]
@@ -1016,6 +1018,11 @@ fastret:
 	mov	r11, [rax+proc.rflags]
 	mov	rax, [rax+proc.rax]
 	o64 sysret
+.wrong_cr3:
+	PANIC
+.from_recv:
+	load_regs rdi,rsi,rdx,r8,r9,r10
+	jmp	.no_clear
 
 ; End switch
 
@@ -1102,6 +1109,44 @@ struc dlist_node
 	.next	resq 1
 	.prev	resq 1
 endstruc
+struc dict
+	.root	resq 1
+endstruc
+struc dict_node
+	.key	resq 1
+	.left	resq 1
+	.right	resq 1
+endstruc
+; These are stored in some map/search structure, to support lookups from an
+; int64 in this aspace to a process (that should receive messages) and the
+; corresponding remote int64 (or null if not yet associated there).
+; associate: always done by copying an existing handle. We copy the proc pointer
+; and increase the proc's refcount, but reset other to null. Then insert into
+; the map.
+; dissociate: remove from dictionary, set other's other to null, deref proc,
+; deallocate
+; send: lookup handle by key, fetch proc pointer, look at other to see what key
+; should be "received from" when it gets the message
+; (if other == null, we need the receiver to be in a receive-and-associate
+; mode with a handle to receive - and need to associate before receiving)
+; receive:
+; * if null, receive-from-any and discard the source ID if not already mapped
+;   in the receiver
+; * lookup handle by key:
+;   * if associated, proceed with a receive-from-specific. We already know the
+;     handle to have received from and don't need to fiddle with it.
+;   * not associated, finish association to proc and return
+;
+; associated = proc is not null
+struc handle
+	.dnode	restruc dict_node
+	.proc	resq 1
+	; pointer to other handle if any. Its 'key' field is the other-name that
+	; we need when e.g. sending it a message. If null this is not associated
+	; in other-proc yet.
+	.other	resq 1
+endstruc
+handle.key equ handle.dnode + dict_node.key
 
 ; A region is a sequential range of pages that can be mapped into various
 ; address spaces. Not all pages need to be backed by actual frames, e.g. for
@@ -1129,7 +1174,7 @@ MAPFLAG_RWX	equ 7 ; All/any of the R/W/X flags
 MAPFLAG_COW	equ 8 ; Hmm, are *mappings* CoW or are *regions*?
 MAPFLAG_ANON	equ 16 ; Anonymous page: allocate frame and region on first read.
 ; "Special" flags are >= 0x10000
-MAPFLAG_HANDLE	equ 0x10000
+MAPFLAG_HANDLE	equ 0x10000 ; deprecated
 
 ; A non-present page in the page table with this flag set is a handle
 PT_FLAG_HANDLE	equ 0x2
@@ -1140,7 +1185,7 @@ PT_FLAG_HANDLE	equ 0x2
 struc mapping
 	.owner	resq 1 ; address_space
 	.region	resq 1
-	.kobj	equ .region ; If flags has MAPFLAG_HANDLE, .region points to a kernel object instead
+	.kobj	equ .region ; deprecated
 	.flags	resq 1
 	; Offset into region that corresponds to the first page mapped here
 	.reg_offset resq 1
@@ -1148,7 +1193,7 @@ struc mapping
 	.size	resq 1
 	; Links for region.mappings
 	.reg_node	restruc dlist_node
-	; Links for process.mappings
+	; Links for aspace.mappings
 	.as_node	restruc dlist_node
 endstruc
 
@@ -1167,6 +1212,7 @@ struc aspace
 	; similar to how we (will) handle noncontiguous mappings will apply :)
 	; Also, all handles have mappings.
 	.handles_bottom	resq 1
+	.handles	restruc dict
 endstruc
 
 section .text
@@ -1294,88 +1340,152 @@ map_region:
 	ret
 map_add_region equ .add
 
-; rdi: the address space being mapped into
-; rsi: the kernel object being mapped
-; For starters, all handles point to processes and have no flags.
-map_handle:
-	test	rsi, 0xf
-	jnz	.unaligned_kernel_object
-
-	; Calculate the virtual address for the handle
-	mov	rdx, [rdi + aspace.handles_bottom]
-	sub	rdx, 0x1000
-	mov	[rdi + aspace.handles_bottom], rdx
-
-	; rdi: address space
-	zero	ecx ; size is 0
-	push	rdx ; vaddr of handle, also return value
-	push	rsi
-	zero	rsi ; rsi: region (== 0, we'll set it later)
-	call	map_region
-	; pop the kernel object pointer (the rsi we pushed above).
-	; MAPFLAG_HANDLE indicates the region pointer is not a region but a
-	; kernel object.
-	pop	qword [rax + mapping.kobj]
-	mov	byte [rax + mapping.flags + 2], MAPFLAG_HANDLE >> 16
-	pop	rax
-	ret
-
-.unaligned_kernel_object:
-lodstr	rdi,	'Unaligned kobj %p', 10
-	call	printf
-	cli
-	hlt
-
-; rdi: address space
-; rsi: handle to look up
-lookup_handle:
-%if log_lookup_handle
-	push	rsi
-%endif
-	mov	rdi, [rdi + aspace.mappings + dlist.head]
-.loop:
-%if log_lookup_handle
+; rdi: the address space being searched
+; rsi: the local address (key) of a handle
+; =>
+; rax: pointer to 'handle' struct or 0
+find_handle:
+	lea	rdi, [rdi + aspace.handles]
+%if log_find_handle
 	push	rdi
 	push	rsi
-	mov	rsi, [rdi + mapping.vaddr - mapping.as_node]
-	mov	rdx, [rdi + mapping.kobj - mapping.as_node]
-lodstr	rdi, 'lookup_handle: vaddr=%p kobj=%p', 10
+	mov	rdx, rdi
+lodstr	rdi,	'find_handle for %x in %p', 10
 	call	printf
 	pop	rsi
 	pop	rdi
-%endif
-
-	test	rdi, rdi
-	jz	.not_found
-	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
-	cmp	rax, rsi
-	je	.found
-	mov	rdi, [rdi + dlist_node.next]
-	jmp	.loop
-
-.found:
-	mov	rax, [rdi + mapping.kobj - mapping.as_node]
-	test	byte [rdi + mapping.flags - mapping.as_node + 2], MAPFLAG_HANDLE >> 16
-	jz	.not_found
-
-%if log_lookup_handle
-lodstr	rdi,	'lookup_handle on %p: %p', 10
-	pop	rsi
-	mov	rdx, rax ; looked-up target process
+	call	dict_lookup
 	push	rax
+lodstr	rdi,	'find_handle found %p', 10
+	mov	rsi, rax
 	call	printf
+	cmp	qword [rsp], 0
+	jz	.no_handle_found
+	; found a handle, does it have an other-end?
+	zero	edx
+	mov	rax, [rsp]
+	mov	rsi, [rax + handle.other]
+	test	rsi, rsi
+	jz	.no_other
+	mov	rsi, [rsi + handle.key]
+	mov	rdx, [rax + handle.proc]
+.no_other:
+lodstr	rdi,	'-> %x in %p', 10
+	call	printf
+.no_handle_found:
 	pop	rax
+	ret
+%else
+	tcall	dict_lookup
 %endif
+	; assume dict_node comes first in each handle
 
+
+; rdi: dictionary to insert into
+; rsi: entry to insert
+; =>
+; rax: input rsi
+dict_insert:
+	;mov	rdx, [rsi + dict_node.key]
+	; Fishy dictionary!
+	; just set node->left = 0, node->right = root, root = node
+	zero	eax
+	mov	[rsi + dict_node.left], rax
+	mov	rax, rsi
+	xchg	rsi, [rdi + dict.root]
+	mov	[rax + dict_node.right], rsi
 	ret
 
-.not_found:
-%if log_lookup_handle
-lodstr	rdi, 'lookup_handle %p: not found.', 10
-	pop	rsi ; handle to look up
-	call	printf
-%endif
-	zero	eax
+; rdi: dictionary to find in
+; rsi: key to find
+; =>
+; rax: entry or null
+dict_lookup:
+	mov	rax, [rdi + dict.root]
+.loop:
+	test	rax, rax
+	jz	.done
+	cmp	[rax + dict_node.key], rsi
+	jz	.done
+	mov	rax, [rax + dict_node.right]
+	jmp	.loop
+.done:
+	ret
+
+; Add a preallocated and filled-in handle object to a process' dictionary of
+; handles.
+; rdi: the process to modify
+; rsi: the handle to insert
+proc_insert_handle:
+	mov	rdi, [rdi + proc.aspace]
+	lea	rdi, [rdi + aspace.handles]
+	tcall	dict_insert
+
+; rdi: the address space being mapped into
+; rsi: the local address (key) being mapped
+; rdx: the other-process being mapped
+; =>
+; rax: the handle object we just mapped
+map_handle:
+	push	rdi
+	push	rsi
+	push	rdx
+	call	find_handle
+	; rax = previous handle at 'rsi', if any
+	test	rax, rax
+	jnz	.found_existing
+
+	; Allocate and insert a new handle
+
+	call	allocate_frame
+	; rax = newly allocated handle object
+	pop	rdx
+	pop	qword [rax + handle.key]
+	mov	[rax + handle.proc], rdx
+	inc	qword [rdx + proc.count]
+
+	pop	rdi
+	mov	rsi, rax
+	lea	rdi, [rdi + aspace.handles]
+	; rdi = address space's handle dictionary
+	; rsi = handle to insert
+	tcall	dict_insert
+
+.found_existing:
+	pop	rdi ; other-process, keep this
+	; Then also pop the stuff we don't need anymore
+	pop	rsi
+	pop	rsi
+	; Is there a remote association for this handle yet?
+
+	; A handle with no remote proc doesn't exist: those are in effect the
+	; same as handles that aren't in the map, so we just shouldn't have
+	; those in the map in the first place :)
+	;cmp	qword [rax + handle.proc], 0
+
+	; If other != null we need to dissociate this handle before we proceed.
+	mov	rsi, [rax + handle.other]
+	test	rsi, rsi
+	jz	.no_other
+	; There's an other-handle here. Sever the link by clearing the other-
+	; pointers. Their handle remains pointing to this process, our handle
+	; will have its process updated in the next step.
+	zero	edx
+	mov	[rsi + handle.other], rdx
+	mov	[rax + handle.other], rdx
+
+.no_other:
+	; rax = current handle, rax->other = null, rax->proc = some process
+	; rdi = process to reference
+
+	; Reference new process, dereference old process
+	; Assume proc != null for all handles
+	inc	qword [rdi + proc.count]
+	xchg	rdi, [rax + handle.proc]
+	;TODO call	deref_proc or something
+	dec	qword [rdi + proc.count]
+
+	; rax = handle
 	ret
 
 
@@ -1656,6 +1766,17 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 ; rsi = virtual address
 ; Return mapping in rax if successful
 aspace_find_mapping:
+%if log_find_mapping
+	push	rbp
+	push	rdi
+	push	rsi
+	mov	rdx, rdi
+lodstr	rdi, 'Map find %x in aspace %p', 10
+	call	printf
+	pop	rsi
+	pop	rdi
+	pop	rbp
+%endif
 	mov	rdi, [rdi + aspace.mappings + dlist.head]
 .test_mapping:
 	test	rdi, rdi
@@ -1668,7 +1789,7 @@ aspace_find_mapping:
 	mov	r8, [rdi + dlist_node.prev]
 	mov	r9, [rdi + dlist_node.next]
 %if log_find_mapping
-lodstr	rdi, 'Map %p: %p sz %x (%p<-->%p)', 10
+lodstr	rdi, 'Map %p: %p sz %x (%p<-->%p) vaddr %x', 10
 	call	printf
 %endif
 	pop	rsi
@@ -1911,9 +2032,12 @@ syscall_entry:
 	lea	rbx, [rsp + 16]
 	mov	[rbp + gseg.rsp], rbx
 	mov	[rax + proc.rflags], r11
-	pop	rbx ; We don't need to save rax in the process, it's clobbered.
+	pop	rbx
+	mov	[rax + proc.rax], rbx
 	pop	qword [rax + proc.rip]
 
+	cmp	bl, MSG_USER
+	jae	syscall_ipc
 	cmp	rbx, N_SYSCALLS
 	jae	.invalid_syscall
 	mov	eax, dword [text_vpaddr(.table) + 4 * rbx]
@@ -1937,16 +2061,19 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	dd	syscall_ %+ %1 - syscall_entry
 %endmacro
 .table
-	sc write
-	sc gettime
-	sc yield
-	sc newproc
-	sc sendrcv
 	sc recv
-	sc send
-	sc halt
+	sc nosys ; MAP
+	sc nosys ; PFAULT
+	sc nosys ; UNMAP
+	sc nosys ; HMOD
+	sc newproc
+	; backdoor syscalls
+	sc write
 .end_table
 N_SYSCALLS	equ (.end_table - .table) / 4
+
+syscall_nosys:
+	jmp syscall_entry.invalid_syscall
 
 syscall_write:
 	; user write: 0x0f00 | char (white on black)
@@ -1958,6 +2085,10 @@ kputchar:
 	; kernel write: 0x1f00 | char (white on blue)
 	movzx	edi, dil
 	or	di, 0x1f00
+	mov	edx, 0xe9
+	mov	ecx, 5
+lodstr	rsi, 27, '[44m'
+	rep outsb
 .user:
 	mov	eax, edi
 	mov	rdi, [rbp + gseg.vga_pos]
@@ -1965,9 +2096,14 @@ kputchar:
 	; blue background: ESC[44m
 	; reset: ESC[0m
 	; (... if we want to bother with colored output in Bochs)
-	out	0xe9, al
 	cmp	al,10
 	je	.newline
+
+	out	0xe9, al
+	mov	edx, 0xe9
+	mov	ecx, 5
+lodstr	rsi, 27, '[0m'
+	rep outsb
 
 	stosw
 
@@ -1992,6 +2128,11 @@ kputchar:
 	jmp	.ret
 
 .newline:
+	mov	edx, 0xe9
+	mov	ecx, 5
+lodstr	rsi, 27, '[0m', 10
+	rep outsb
+
 	mov	esi, eax
 	mov	rax, rdi
 	sub	rax, [rbp + gseg.vga_base] ; Result fits in 16 bits.
@@ -2007,7 +2148,6 @@ kputchar:
 
 	jmp	.finish_write
 
-
 syscall_gettime:
 	movzx	eax, byte [rbp + gseg.curtime]
 	ret
@@ -2021,6 +2161,9 @@ syscall_yield:
 	jmp	switch_next
 
 syscall_newproc:
+;lodstr	rdi, 'hi, newproc here', 10
+;	call	printf
+
 	; For supporting loaders, we'd like something more like where we give
 	; an image (as a file object or other mappable thing) to the generic
 	; loader thingy, which will figure everything else out. Basically
@@ -2032,10 +2175,10 @@ syscall_newproc:
 	; - fork, make everything the same but CoW
 	; - clone/thread, share address space instead of creating a new
 
-	; Rewrite this:
 	; - Parameters:
-	;   rdi = entry-point/start-of-module
-	;   rsi = end-of-module
+	;   rdi = handle of child process
+	;   rsi = entry-point/start-of-module
+	;   rdx = end-of-module
 	;   both as virtual addresses in the parent's address space.
 	; - Create new process object
 	;   rsp = 1MB (grows down starting at the beginning of the module)
@@ -2045,8 +2188,13 @@ syscall_newproc:
 	; - Create a new region for the stack
 	; - Go?
 
-	mov	r12, rdi ; entry-point/start
-	mov	r13, rsi ; end
+	mov	r12, rsi ; entry-point/start
+	mov	r13, rdx ; end
+	mov	r14, rdi ; handle of child process
+
+	; changed some parameters, should redo register assignment here...
+	mov	rdi, rsi
+	mov	rsi, rdx
 
 	; stack in new process = 1MB
 	mov	esi, 0x100000
@@ -2091,30 +2239,31 @@ syscall_newproc:
 
 	; Map handle to child in parent process
 	mov	rdi, [rbp + gseg.process]
+	mov	rsi, r14 ; local-addr of handle
 	mov	rdi, [rdi + proc.aspace]
-	mov	rsi, rbx ; New process that should be mapped
+	mov	rdx, rbx ; child process
 	call	map_handle
-	; r13: handle to child process
-	mov	r13, rax
+	push	rax
 
-lodstr	rdi, 'newproc %p at %p', 10
+lodstr	rdi, 'newproc %p at %x', 10
 	mov	rsi, rbx
-	mov	rdx, rax
+	mov	rdx, r14
 	call	printf
 
 	; Map handle to parent in child process
 	mov	rdi, [rbx + proc.aspace]
-	mov	rsi, [rbp + gseg.process]
+	mov	rsi, r14 ; local-addr of handle
+	mov	rdx, [rbp + gseg.process]
 	call	map_handle
-	; New process' first argument: parent handle
-	mov	[rbx + proc.rdi], rax
+	mov	[rbx + proc.rdi], r14
+	pop	rdi
+	mov	[rdi + handle.other], rax
+	mov	[rax + handle.other], rdi
 
 	; Child is set up, append it to the run queue
 	mov	rdi,rbx
 	call	runqueue_append
 
-	; And return the child's handle to the parent
-	mov	rax, r13
 	ret
 .panic:
 	PANIC
@@ -2128,59 +2277,159 @@ syscall_send:
 	mov	rax, [rbp + gseg.process]
 	save_regs rdi,rsi,rdx,r8,r9,r10
 
+	mov	rsi, rdi
 	mov	rdi, [rax + proc.aspace]
+	; rdi = address space
 	; rsi = target process in user address space
-	call	lookup_handle
-	; rax = target proc object
+	call	find_handle
+	; rax = source handle object or null
+	test	rax, rax
+	jz	.no_target
+
+%if log_messages
+	push	rax
+lodstr	rdi,	'%p send via %p to %x (%p)', 10
+	mov	rsi, [rbp + gseg.process]
+	mov	rdx, rax
+	mov	rcx, [rax + handle.key]
+	mov	r8, [rax + handle.proc]
+	call	printf
+	pop	rax
+%endif
 
 	mov	rsi, [rbp + gseg.process]
 	or	[rsi + proc.flags], byte PROC_IN_SEND
+	mov	[rsi + proc.rdi], rax
+	mov	rdi, [rax + handle.proc]
+	; rdi: source *handle* for target process
+	; rsi: source *process*
+	call	send_or_block
+	mov	rax, [rbp + gseg.process]
+	swapgs
+	jmp	fastret
 
-	mov	rdi, rax ; target
-	tcall	send_or_block
+.no_target:
+	ret
+
+; bx = saved message code, old ax
+syscall_ipc:
+	mov	rax, [rbp + gseg.process]
+	save_regs rdi, rdx, r8, r9, r10
+
+	cmp	bh, MSG_KIND_SEND >> 8
+	je	syscall_send
+
+	cmp	bh, MSG_KIND_CALL >> 8
+	je	syscall_call
+
+	;cmp	bh, MSG_KIND_REPLYWAIT >> 8
+	;je	syscall_replywait
+
+	tcall	syscall_nosys
 
 syscall_recv:
-	save_regs rsi
-
-	test	rsi, rsi
-	jz	.no_source_given
-
-	mov	rdi, [rbp + gseg.process]
-	mov	rdi, [rdi + proc.aspace]
-	call	lookup_handle
-	mov	rsi, rax
-
-.no_source_given:
-	; rsi = source process (?)
-	mov	rdi, [rbp + gseg.process]
-	or	[rdi + proc.flags], byte PROC_IN_RECV
-
-	tcall	recv_from
-
-syscall_sendrcv:
 	mov	rax, [rbp + gseg.process]
-	; rdi: message code, rsi: target process, remaining: message params
+	save_regs rdi
+
+	mov	rsi, rdi
+	test	rsi, rsi
+	jz	.do_recv
+
+	mov	rdi, [rax + proc.aspace]
+	; rsi = local handle name
+	call	find_handle
+	zero	esi
+	; saved rdi: target's handle name for specific source
+	; rax: handle object (*if* it already exists!)
+	test	rax, rax
+	jz	.from_fresh
+
+%if log_messages
+	push	rax
+lodstr	rdi, '%p: recv from %x in %p', 10
+	mov	rsi, [rbp + gseg.process]
+	mov	rdx, [rax + handle.other]
+	mov	rcx, [rax + handle.proc]
+	mov	rdx, [rdx + handle.key]
+	call	printf
+	pop	rax
+%endif
+
+	; non-fresh specific source, we know what we want
+	mov	rsi, [rax + handle.proc]
+.do_recv:
+	mov	rdi, [rbp + gseg.process]
+	; rdi = receiving process
+	; rax = handle to receive from
+	; rsi = sender process, if any
+	mov	[rdi + proc.rdi], rax
+	or	[rdi + proc.flags], byte PROC_IN_RECV
+	call	recv
+%if log_messages
+lodstr	rdi,	'sync. recv in %p finished', 10
+	mov	rsi, [rbp + gseg.process]
+	call	printf
+%endif
+	; The receive finished synchronously, continue running this process.
+	mov	rax, [rbp + gseg.process]
+	swapgs
+	jmp	fastret.from_recv
+
+	; saved rdi = handle name
+	; no previous handle for rdi
+.from_fresh:
+	call	allocate_frame
+	mov	rdi, [rbp + gseg.process]
+	mov	rdx, [rdi + proc.rdi]
+	mov	[rax + handle.key], rdx
+	; rax = handle, rdi = receiving process
+	jmp	.do_recv
+
+syscall_call:
+	mov	rax, [rbp + gseg.process]
+	; saved rax: message code
+	; rdi: target process
+	; remaining: message params
 	save_regs rdi,rsi,rdx,r8,r9,r10
 
 	mov	rdi, [rax + proc.aspace]
-	; rsi = target process
-	mov	r12, rsi
-	call	lookup_handle
-	mov	r13, rax
-	; TODO Check that the handle was correct and actually a process
+	mov	rsi, [rax + proc.rdi]
+	call	find_handle
+	mov	rsi, [rbp + gseg.process]
+	; Put the target handle in proc's rdi
+	mov	[rsi + proc.rdi], rax
+	; A send must have a specific target
+	test	rax, rax
+	jz	.no_target
+
+%if log_messages
+	push	rax
+lodstr	rdi,	'%p call via %p to %x (%p)', 10
+	mov	rdx, rax
+	mov	rcx, [rax + handle.key]
+	mov	r8, [rax + handle.proc]
+	call	printf
+	pop	rax
+	mov	rsi, [rbp + gseg.process]
+%endif
 
 	; 1. Set IN_SEND and IN_RECV for this process
-	mov	rsi, [rbp + gseg.process]
 	or	[rsi + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
+	mov	rdi, [rax + handle.proc]
+	call	send_or_block
+	mov	rax, [rbp + gseg.process]
+	jmp	switch_to
 
-	mov	rdi, r13
-	tcall	send_or_block
+.no_target:
+	; TODO Error out
+	ret
 
 ; Returns unless it blocks.
-; rdi: recipient
+; rdi: recipient process
 ; rsi: source (the process that will block if it can't send)
+; Both will have a handle (or null) in proc.rdi
 ; rsi must be IN_SEND or IN_SEND|IN_RECV
-; rdi may be in any state.
+; rdi might be in any state.
 send_or_block:
 	test	[rsi + proc.flags], byte PROC_IN_SEND
 	jz	.not_in_send
@@ -2236,10 +2485,112 @@ lodstr	rdi,	'%p (%x) blocked on send to %p (%x)', 10
 	; Otherwise, just tailcall add_to_waiters, return to caller.
 	tcall	add_to_waiters
 
+; Associate a pair of handles with each other. Assume that rcx (sender handle)
+; is already pointing to rdi (recipient).
+;
+; rdi: target/recipient process
+; rsi: sender/source process
+; rdx: recipient handle object
+; rcx: sender handle object
+assoc_handles:
+	; TODO Check that these start out as null
+	mov	[rdx + handle.other], rcx
+	mov	[rdx + handle.proc], rsi
+	mov	[rcx + handle.other], rdx
+	; TODO Check that sender handle's proc is indeed rdi
+
+	; Finish adding handle to process
+	mov	rsi, rdx
+	tcall	proc_insert_handle
+
 ; rdi: target process
 ; rsi: source process
 ; Note: we return from transfer_message if not blocked
 transfer_message:
+	push	rdi
+	push	rsi
+
+	; [rsp] = source/sender process
+	; [rsp+8] = target/recipient process
+
+	; Find the source handle we were sending from
+	mov	rbx, [rsi + proc.rdi]
+	; rcx = source handle object (assumed non-zero, because otherwise
+	; there'd be no way for them to send anything!)
+
+	mov	rdx, [rdi + proc.rdi] ; recipient handle
+	test	rdx, rdx
+	jz	.null_recipient_id
+	mov	rax, [rdx + handle.other]
+	test	rax, rax
+	jz	.fresh_handle
+
+	; not-fresh handle: check that the recipient did want a message from
+	; *us*. If not, give an error back to sender and keep recipient waiting.
+	cmp	rbx, rax
+	push	qword [rdx + handle.key]
+	pop	qword [rdi + proc.rdi]
+	je	.rcpt_rdi_set
+
+	; rbx = actual sender's handle
+	; rdx = recipient's handle
+	; rax = recipient's handle's other handle
+%if log_messages
+lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
+	mov	rsi, rdx
+	mov	rdx, rax
+	mov	rcx, rbx
+	call	printf
+%endif
+
+	; Mismatched sender/recipient.
+	PANIC
+
+.fresh_handle
+	; Get the source handle's other handle, i.e. the recipient handle.
+	mov	rax, [rcx + handle.other]
+	test	rax, rax
+	; other is not null: a fresh-handle receive got fulfilled by a known
+	; handle - return that handle instead as if we'd have given null.
+	jnz	.junk_fresh_handle
+
+	push	rdi
+	push	rsi
+	; rdi = recipient process
+	; rsi = sender process
+	; rdx = recipient handle
+	; rcx = source handle
+	call	assoc_handles
+	pop	rsi
+	pop	rdi
+
+	jmp	.rcpt_rdi_set
+
+.junk_fresh_handle:
+	; rax = actual handle
+	push	rax
+	push	rdi
+	push	rsi
+	; rdx = recipient handle object we would've used
+	mov	rdi, rdx
+	call	free_frame
+
+	pop	rsi
+	pop	rdi
+	pop	rax
+	jmp	.rax_has_handle
+
+.null_recipient_id:
+	mov	rax, [rbx + handle.other]
+	test	rax, rax
+	jz	.rax_has_key
+.rax_has_handle:
+	; rax is the recipient-side handle - pick out its key directly
+	mov	rax, [rax + handle.key]
+.rax_has_key:
+	mov	[rsi + proc.rdi], rax
+.rcpt_rdi_set:
+
 %macro copy_regs 0-*
 %rep %0
 	mov	rax, [rsi + proc. %+ %1]
@@ -2249,70 +2600,121 @@ transfer_message:
 %endmacro
 	; If message-parameter registers were ordered in the file, we could
 	; do a rep movsd here.
-	; rsi is not copied - that was just the sender's process handle to the
+	; rdi is not copied - that's the sender's process handle to the
 	; recipient process.
-	copy_regs rdi, rdx, r8, r9, r10
+	copy_regs rax, rsi, rdx, r8, r9, r10
 
 	and	[rdi + proc.flags], byte ~PROC_IN_RECV
-	push	rdi
-	push	rsi
-	mov	rdx, rdi
 %if log_messages
+	mov	rdx, rdi
 lodstr	rdi, 'Copied message from %p to %p', 10
 	call	printf
 %endif
-
-	mov	rdi, [rsp] ; source process, the one we were waiting for
 	; The recipient is guaranteed to be unblocked by this, make it stop
 	; waiting.
 	mov	rsi, [rsp + 8] ; recipient, the one being unblocked
 	test	[rsi + proc.flags], byte PROC_RUNNING
 	jnz	.not_blocked
+	; Recipient was blocked - unblock it.
+	mov	rdi, [rsp]
 	call	stop_waiting
 .not_blocked:
 
-	; rdi: sending process, it's no longer sending
 	pop	rdi
 	pop	rsi
+	; rsi = source/sender process
+	; rdi = target/recipient process
 
 	; If the previously-sending process is now receiving (was in sendrcv),
 	; continue with its receiving phase. Otherwise unblock it.
 	and	[rdi + proc.flags], byte ~PROC_IN_SEND
 	test	[rdi + proc.flags], byte PROC_IN_RECV
-	tc nz, recv_from
-	test	[rdi + proc.flags], byte PROC_RUNNING
-	; rdi should stop waiting for rsi now, swap the registers
-	xchg	rsi, rdi
-	tc z,	stop_waiting
+	tc nz,	recv
+
+%if log_messages
+	push	rdi
+	push	rsi
+	mov	rsi, rdi
+	mov	rdx, [rsi + proc.flags]
+lodstr	rdi, '%p (%x) just sent, not sendrcv', 10
+	call	printf
+	pop	rdi
+	pop	rsi
+%else
+	xchg	rsi,rdi
+%endif
+
+	; The sender was only sending - unblock it if necessary
+	test	[rsi + proc.flags], byte PROC_RUNNING
+	mov	qword [rsi + proc.rdi], 0
+	jnz	.sender_was_running
+
+	; rdi: process that was being waited for
+	; rsi: process that might need waking up
+	tcall	stop_waiting
+
+.sender_was_running:
 	ret
 
 ; rdi: process that might have become able to receive
-; rsi: process it wants to receive from
+; rsi: process it wants to receive from (or null)
 ; If this does not block, it will return to the caller.
-recv_from:
+recv:
+	test	rsi, rsi
+	tc z,	recv_from_any
+	; recipient has a specific handle, but the sender might be sending to
+	; a different one.
+	mov	rax, [rdi + proc.rdi]
+	mov	rax, [rax + handle.other]
+	test	rax, rax
+	jz	.fresh_recv
+.fresh_recv:
 	test	[rsi + proc.flags], byte PROC_IN_SEND
-	tc nz,	transfer_message
+	jz	.not_in_send
+	cmp	rax, [rsi + proc.rdi]
+	; correct handle => transfer and continue
+	tc e,	transfer_message
 
+.not_match:
+%if log_messages
+	push	rdi
+	push	rsi
+	mov	rcx, rsi
+	mov	rdx, [rdi + proc.rdi]
+	mov	rsi, rdi
+	mov	r8, [rcx + proc.rdi]
+lodstr	rdi, '%p blocked on receive from %x: mismatch (%p has %x)', 10
+	call	printf
+	pop	rdi
+	pop	rsi
+%else
+	; Swap to match add_to_waiters parameters
+	xchg	rsi, rdi
+%endif
+	jmp	.block
+
+.not_in_send:
 %if log_messages
 	push	rdi
 	push	rsi
 	mov	rdx, rsi
 	mov	rsi, rdi
-lodstr	rdi, '%p blocked on receive from %p', 10
+lodstr	rdi, '%p blocked on receive from %p: not in send', 10
 	call	printf
 	pop	rdi
 	pop	rsi
 %else
 	xchg	rsi, rdi
 %endif
+
+.block:
+	; rsi = recipient, rdi = potential sender
 	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
+	; If recipient was not running, add to waiters and return
 	tc nc,	add_to_waiters
-	; Looks like we couldn't do anything more right now, so just do
-	; something else for a while.
 	tcall	switch_next
 
-%if 0
-; Find a sender that's waiting to send something to this process. If one
+; Find any sender that's waiting to send something to this process. If one
 ; exists, transfer the message.
 ;
 ; Receiving half:
@@ -2322,11 +2724,12 @@ lodstr	rdi, '%p blocked on receive from %p', 10
 ; 2.1. Remove it from waiter queue, it's no longer waiting.
 ; 2.2. Do transfer_message to it
 ;
+; rdi: process that wants to receive
+; Returns if something was received.
 recv_from_any:
-	; [rsp] = recipient, [rsp+8] = sender, if any
 	mov	rax, [rdi + proc.waiters]
 .loop:
-%if 1
+%if need_print_procstate
 	push	rax
 lodstr	rdi,	'recv: %p (%x)', 10
 	lea	rsi, [rax - proc.node]
@@ -2350,9 +2753,15 @@ lodstr	rdi,	'No senders found to %p', 10
 	call	printf
 
 	tcall	switch_next
-%endif
 
 %include "printf.asm"
+
+panic_print:
+lodstr	rdi, 'PANIC @ %x', 10 ; Decimal output would be nice...
+	call	printf
+
+	cli
+	hlt
 
 section .rodata
 
