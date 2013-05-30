@@ -31,6 +31,7 @@ struc	proc, -0x80
 	.node	restruc dlist_node
 	.cr3	resq 1
 	.aspace	resq 1
+	.count	resq 1
 
 	align 16
 	.fxsave	resb	512
@@ -43,20 +44,29 @@ endstruc
 
 ; The process is currently queued on the run queue.
 defbit	PROC_ON_RUNQUEUE,	0
-; Return to user-mode with sysret, only some registers will be restored:
+; Can return to user-mode with sysret, only some registers will be restored:
 ; rsp, rip: restored to previous values
 ; rcx, r11: rip and rflags, respectively
 ; rax: syscall return value
 ; Remaining registers will be 0 (?)
+; TODO where do we set this? do we use it?
 defbit	PROC_FASTRET,	1
-; Similar to FASTRET but we can make a message-send rendezvous immediately
+; IN_RECV: Similar to FASTRET, when waiting for a message-send rendezvous
+; When set together with IN_SEND, it's a sendrcv and the SEND needs to finish
+; first.
+; At any time when IN_RECV is set, the proc's saved rdi contains a pointer to
+; the handle being received from.
+; When a process starts a receive, until it becomes properly blocked on some
+; process or finishes the receive immediately, it will be both RUNNING and
+; IN_RECV.
 defbit	PROC_IN_RECV,	2
 ; Process is trying to do a synchronous send or sendrcv, blocking on the
 ; waiting_for process to reach a PROC_IN_RECV state. Both IN_SEND and IN_RECV
-; can be set at the same time (TODO does it have to be sending to and
-; receiving from the same process? Currently: yes. But servers will want to
-; do a fastret-style sending of the first response and receiving the next
-; command)
+; can be set at the same time.
+; At any time when IN_SEND is set, the proc's saved rdi contains a pointer to
+; the handle being sent to.
+; When a process starts a send, until it becomes properly blocked on some
+; process or finishes the operation, it will be both RUNNING and IN_SEND.
 defbit	PROC_IN_SEND,	3
 ; Jump to CPL 0 instead of CPL 3. In reality unused. May be required for
 ; device drivers? Untested!

@@ -1,6 +1,24 @@
 ; vim:filetype=nasm:
 
+; There is a single syscall that does IPC.
+; Fixed parameters:
+; * rax: message number and flags (flags specify the direction and kind of ipc)
+; * rdi: target handle
+; Message registers: rsi, rdx, r8, r9, r10
+; syscall-clobbered: rcx = rip, r11 = flags
+; syscall-preserved: rbp, rbx, r12-r15, rsp
+; Return value(s):
+; * rax: message/error code for receives, error code for sends
+; * rdi: source handle of return value, 0, or the target handle we failed to
+; send to
+; * message registers for receives
+
 ; SYSCALLS!
+; TODO Replace non-IPC syscalls with IPC (perhaps to specific objects), to free
+; registers from mostly-uninteresting syscall number to specify message numbe
+; instead.
+; special object values should be avoided - using 0/-1 for non/all might allow
+; send, sendrcv, rcv to be merged. (though some more flags might be needed?)
 ;
 ; arguments: rdi, rsi, rdx, (not rcx! rcx stores rip), r8, r9, r10 (used instead
 ; of rcx in syscalls)
@@ -8,12 +26,12 @@
 ; syscall-preserved: rbp, rbx, r12-r15, rsp
 ; return value(s): rax, rdx
 ;
-; Message-passing through registers uses rax and rdi to send and return the
-; message code and sender/recipient. rsi, rdx, r8-10 are message parameters.
+; Message-passing through registers uses rdi and rsi to send the message code
+; and sender/recipient, rax to receive the message code. rdx, r8-10 are message
+; parameters.
 
 SYSCALL_WRITE	equ	0
 SYSCALL_GETTIME	equ	1
-SYSCALL_YIELD	equ	2
 
 ; Create a new process. Is this similar to fork? Details not really determined.
 ;
@@ -35,7 +53,7 @@ SYSCALL_YIELD	equ	2
 SYSCALL_NEWPROC	equ	3
 
 ; Send a message, wait synchronously for response from the same process.
-; Works the same as SYSCALL_SEND followed by SYSCALL_RECV but more efficient,
+; Works the same as SYSCALL_SEND followed by SYSCALL_RECV but more efficient.
 ;
 ; Should add some way to let the receive part be a receive-from-any. A server
 ; can get rid of a lot of syscalls by allowing it to send the response to proc
@@ -68,20 +86,11 @@ SYSCALL_SENDRCV	equ	4
 SYSCALL_RECV	equ	5
 
 ; Send a message
-; rax: message code
-; rdi: target process ID
+; rdi: message code
+; rsi: target process ID
 ; Remaining argument registers: message data
 ; Returns:
 ; rax: error code or 0
 SYSCALL_SEND	equ	6
 
 SYSCALL_HALT	equ	7
-
-; Send a message without waiting for response, will fail instead of block if
-; the target process is not in blocking receive.
-SYSCALL_ASEND	equ	7
-
-; Receive a message if there is already some process IN_SEND waiting for us to
-; become IN_RECV, fail immediately otherwise.
-SYSCALL_ARECV	equ	8
-

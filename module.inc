@@ -9,6 +9,7 @@ jmp	%1
 %include "syscalls.inc"
 %include "messages.inc"
 %include "string.inc"
+%include "handles.inc"
 
 bits 64
 default rel

@@ -5,6 +5,8 @@ printf:
 	; al: number of vector arguments (won't be used...)
 	; rdi: format string
 	; rsi,rdx,rcx,r8,r9: consecutive arguments
+	; following parameters are on the stack pushed from right, so that the
+	; stack on entry is <ret>, arg 5, arg 6, etc
 
 	; reorder the stack a bit so that we have all our parameters in a row
 	mov	[rsp-32],rsi

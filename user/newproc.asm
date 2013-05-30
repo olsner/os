@@ -2,14 +2,28 @@
 
 [map all newproc.map]
 
-	mov	edi, user_entry_new
-	mov	esi, end_of_module
-	mov	eax, SYSCALL_NEWPROC
+CHILD_HANDLE	equ	1
+
+	mov	edi, CHILD_HANDLE
+	mov	ebx, edi ; save it away for later
+	mov	esi, user_entry_new
+	mov	edx, end_of_module
+	mov	eax, MSG_NEWPROC
 	syscall
 
-	mov	rbx, rax
+lodstr	rdi, 'old: calling new proc...', 10
+	call	printf
 
-lodstr	rdi, 'newproc: %p', 10
+	mov	esi, 1
+	mov	edx, 2
+	mov	r8, 3
+	mov	r9, 4
+	mov	r10, 5
+	mov	eax, msg_call(MSG_USER)
+	mov	edi, ebx
+	syscall
+
+lodstr	rdi, 'old: call returned message %x', 10
 	mov	rsi, rax
 	call	printf
 
@@ -18,10 +32,12 @@ lodstr	rdi, 'newproc: %p', 10
 	mov	r8, 3
 	mov	r9, 4
 
-.recv_from_new:
+.call_new:
+lodstr	rdi, 'old calling %p...', 10
 	mov	rsi, rbx
-	mov	eax, SYSCALL_SENDRCV
-	mov	edi, msg_req(MSG_USER)
+	call	printf
+	mov	eax, msg_call(MSG_USER)
+	mov	rdi, rbx
 	syscall
 
 	push	rdx
@@ -37,7 +53,7 @@ lodstr	rdi, 'old received %p %x %x %x %x', 10
 	pop	r8
 	pop	rdx
 
-	jmp	.recv_from_new
+	jmp	.call_new
 
 user_entry_new:
 	; Creator pid (not parent, parents don't really exist here...)
@@ -48,31 +64,33 @@ user_entry_new:
 	; - function parameters in registers?
 	; - address space
 
-lodstr	rdi, 'user_entry_new', 10
-	call	printf
-
 .loop:
 	mov	rsi, [rsp]
-	mov	eax, SYSCALL_RECV
+lodstr	rdi, 'new receiving from %p...', 10
+	call	printf
+
+	mov	rdi, [rsp]
+	zero	eax
 	syscall
 
-	mov	rsi, rdi
-	mov	rcx, r10
-	push	rdx
-	push	r8
-	push	r9
+	;    (ax di si dx r8 r9 10) ->
+	; di (si dx cx r8 r9 st st)
+
 	push	r10
-lodstr	rdi, 'new received %p %x %x %x %x', 10
+	push	r9
+	mov	r9, r8
+	mov	r8, rdx
+	mov	rcx, rsi
+	mov	rdx, rdi
+	mov	rsi, rax
+lodstr	rdi, 'new received %x from %p: %x %x %x %x %x', 10
 	call printf
 
 	pop	r10
 	pop	r9
-	pop	r8
-	pop	rdx
-	mov	edi, msg_resp(MSG_USER)
-	mov	rsi, [rsp]
-	mov	eax, SYSCALL_SEND
+	mov	rdi, [rsp]
 	inc	edx
+	mov	eax, msg_send(MSG_USER + 1)
 	syscall
 
 	jmp	.loop

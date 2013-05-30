@@ -1,5 +1,18 @@
 %include "module.inc"
 
+	; TODO Needs to be updated for new syscall ABI.
+	; Writes:
+	; * eax = msg_send(MSG_CON_WRITE)
+	; * rdi = HANDLE_CONSOLE
+	; * esi = char
+	; (Or use putchar.)
+	; Gettime:
+	; * eax = msg_sendrcv(MSG_MISC_GETTIME)
+	; * rdi = HANDLE_MISC
+	; => rdi = current time
+	; Yield:
+	; * no-op message to misc process.
+
 	xor	eax,eax
 
 	mov	edi,'U'
@@ -25,7 +38,7 @@
 	mov	eax,SYSCALL_GETTIME
 	syscall
 	movzx	edi,al
-	xor	eax,eax ; SYSCALL_WRITE
+	xor	eax,eax
 	syscall
 
 	mov	edi,10
