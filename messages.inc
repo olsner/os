@@ -156,8 +156,9 @@ MSG_NEWPROC	equ	5
 ;   The loader now probably needs to create a new process and give that some
 ;   loader data and the file object to load from.
 
-; backdoor call
+; backdoor call(s)
 MSG_SYSCALL_WRITE	equ	6
+MSG_SYSCALL_IO		equ	7
 
 ; Start of user-mapped message-type range
 MSG_USER	equ	16

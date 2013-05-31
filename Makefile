@@ -23,9 +23,11 @@ endif
 
 OUTDIR   := out
 GRUBDIR  := $(OUTDIR)/grub
-ASMFILES := kstart.asm user/newproc.asm user/gettime.asm user/loop.asm user/test_puts.asm user/test_xmm.asm
-MOD_ASMFILES := $(filter user/%.asm, $(ASMFILES))
-MODFILES := $(MOD_ASMFILES:user/%.asm=$(GRUBDIR)/user_%.mod)
+MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm
+MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
+MOD_ASMFILES += kern/console.asm
+ASMFILES := kstart.asm $(MOD_ASMFILES)
+MODFILES := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod)
 DEPFILES := $(ASMFILES:.asm=.dep)
 ASMOUTS  := \
 	$(GRUBDIR)/kstart.b \
@@ -65,7 +67,7 @@ $(GRUBDIR)/%.b: $(OUTDIR)/%.b
 	@mkdir -p $(@D)
 	@$(CP) $< $@
 
-$(GRUBDIR)/user_%.mod: $(OUTDIR)/user/%.b
+$(GRUBDIR)/%.mod: $(OUTDIR)/%.b
 	@mkdir -p $(@D)
 	@$(CP) $< $@
 
