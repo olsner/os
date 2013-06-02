@@ -25,7 +25,7 @@ OUTDIR   := out
 GRUBDIR  := $(OUTDIR)/grub
 MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
-MOD_ASMFILES += kern/console.asm
+MOD_ASMFILES += kern/console.asm kern/pic.asm
 ASMFILES := kstart.asm $(MOD_ASMFILES)
 MODFILES := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod)
 DEPFILES := $(ASMFILES:.asm=.dep)
@@ -77,7 +77,7 @@ GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
 $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
-	bash $< $(MOD_ASMFILES:user/%.asm=%) > $@
+	bash $< $(MOD_ASMFILES:%.asm=%) > $@
 
 # TODO We should change this so that out/grub/ is removed and regenerated each
 # build, and put all other output products outside out/grub/

@@ -104,22 +104,6 @@ copy_multiboot_info:
 
 start32:
 
-PIC1_CMD	equ	0x20
-PIC1_DATA	equ	0x21
-PIC2_CMD	equ	0xa0
-PIC2_DATA	equ	0xa1
-
-ICW1_ICW4	equ	0x01
-ICW1_INIT	equ	0x10
-
-ICW3_MASTER	equ	4
-ICW3_SLAVE	equ	2
-
-ICW4_8086	equ	0x01
-
-; Send this on the command port to signal EOI
-PIC_EOI		equ	0x20
-
 	; Remap PICs to 0x20..0x2f. We do this despite the fact we're going to
 	; disable them just afterwards, since spurious interrupts may still
 	; happen (and in any case, we want to be able to tell exceptions from

@@ -67,6 +67,7 @@ CR4_OSXMMEXCPT	equ	0x400
 %include "syscalls.inc"
 %include "messages.inc"
 %include "handles.inc"
+%include "pic.inc"
 
 RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)

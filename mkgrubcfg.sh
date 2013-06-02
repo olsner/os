@@ -1,9 +1,9 @@
 #!/bin/bash
 
 while [ $# -gt 0 ]; do
-	echo "menuentry \"$1\" {"
+	echo "menuentry \"${1#user/}\" {"
 	echo "    multiboot (cd)/kstart.b"
-	echo "    module (cd)/user_$1.mod"
+	echo "    module (cd)/$1.mod"
 	echo "    boot"
 	echo "}"
 	shift
