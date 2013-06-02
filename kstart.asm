@@ -16,9 +16,13 @@
 %define log_waiters 0
 %define log_messages 0
 
+%define builtin_keyboard 1
+%define builtin_timer 1
+%define bochs_con 1
+
 %define debug_tcalls 0
 
-%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders)
+%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
 CR0_PE		equ	0x00000001
 CR0_MP		equ	0x00000002
@@ -308,7 +312,11 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	mov	ax,1010b
 	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
 
+%if builtin_timer
 	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x20000 + APIC_TIMER_IRQ
+%else
+	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x10000
+%endif
 	mov	dword [rbp+APIC_REG_PERFC_LVT-rbpoffset], 0x10000
 	mov	dword [rbp+APIC_REG_LINT0_LVT-rbpoffset], 0x8700
 	mov	dword [rbp+APIC_REG_LINT1_LVT-rbpoffset], 0x0400
@@ -419,12 +427,14 @@ test_free:
 
 .done:
 
+%if builtin_keyboard
 init_keyboard:
 lodstr	rdi,	'Enable keyboard', 10
 	call	printf
 
 	mov	al,0xff ^ 2 ; Enable IRQ 1 (keyboard)
 	out	PIC1_DATA, al
+%endif
 
 fpu_initstate:
 	call	allocate_frame
@@ -1648,6 +1658,7 @@ save_from_iret:
 	mov	rsp, rcx
 	ret
 
+%if builtin_keyboard
 key_handler:
 	push	rax
 	push	rbp
@@ -1686,7 +1697,9 @@ lodstr	rdi,	'Key interrupt! key %x', 10
 	out	PIC1_CMD, al
 
 	jmp	switch_next
+%endif
 
+%if builtin_timer
 timer_handler:
 	push	rax
 	push	rbp
@@ -1735,6 +1748,7 @@ lodstr	rdi, 'Next proc %p (%x)', 10
 	call	print_proc
 %endif
 	jmp	switch_next
+%endif
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	push	rbp
@@ -2105,10 +2119,12 @@ kputchar:
 	; kernel write: 0x1f00 | char (white on blue)
 	movzx	edi, dil
 	or	di, 0x1f00
+%if bochs_con
 	mov	edx, 0xe9
 	mov	ecx, 5
 lodstr	rsi, 27, '[44m'
 	rep outsb
+%endif
 .user:
 	mov	eax, edi
 	mov	rdi, [rbp + gseg.vga_pos]
@@ -2119,11 +2135,13 @@ lodstr	rsi, 27, '[44m'
 	cmp	al,10
 	je	.newline
 
+%if bochs_con
 	out	0xe9, al
 	mov	edx, 0xe9
 	mov	ecx, 5
 lodstr	rsi, 27, '[0m'
 	rep outsb
+%endif
 
 	stosw
 
@@ -2148,10 +2166,12 @@ lodstr	rsi, 27, '[0m'
 	jmp	.ret
 
 .newline:
+%if bochs_con
 	mov	edx, 0xe9
 	mov	ecx, 5
 lodstr	rsi, 27, '[0m', 10
 	rep outsb
+%endif
 
 	mov	esi, eax
 	mov	rax, rdi
@@ -2873,8 +2893,12 @@ idt_data:
 	;reg_vec 8, handler_DF
 	reg_vec 14, handler_PF
 	; 32..47: PIC interrupts
+%if builtin_keyboard
 	reg_vec 33, key_handler
+%endif
+%if builtin_timer
 	reg_vec APIC_TIMER_IRQ, timer_handler
+%endif
 .vectors_end:
 
 ; db 0x50 ; push rax
