@@ -54,11 +54,15 @@ irq:
 	bt	dword [rsp], esi
 	jnc	rcv_loop
 
-	mov	rdi, rsi
+	push	rsi
+lodstr	rdi,	'rawIRQ: %x triggered', 10
+	call	printf
+
+	pop	rdi
 	mov	eax, msg_send(MSG_IRQ_T)
 	syscall
 
-	ret
+	jmp	rcv_loop
 
 ; rdi is the fresh handle that wants to register
 ; rsi is the interrupt number
@@ -75,6 +79,10 @@ reg_irq:
 	zero	edx
 	mov	eax, MSG_HMOD
 	syscall
+
+lodstr	rdi, 'rawIRQ: %x registered', 10
+	pop	rsi
+	call	printf
 
 	jmp	rcv_loop
 

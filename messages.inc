@@ -92,25 +92,16 @@ MSG_UNMAP	equ	3
 ; Duplicate, rename or dissociate a handle.
 ;
 ; rdi: handle to duplicate/rename/dissociate
-; rsi: new handle 1
-; rdx: new handle 2
+; rsi: renamed handle
+; rdx: duplicated dissociated handle
 ;
-; If either rsi or rdx is already associated, they will be dissociated
-; If rdi is not associated, both rsi and rdx will be dissociated
-; If both rsi and rdx are 0, rdi will be dissociated
-; If neither rsi or rdx are 0, rdi will be duplicated
-; If only one of rsi/rdx are non-zero, this renames rdi to the non-zero value
+; The end result is that rsi's handle (if not null) is an exact duplicate of
+; rdi (linked to the same remote handle), rdi is destroyed (if not same as
+; rsi), and rdx (if not null) is a fresh handle pointing to the same process
+; that rdi pointed to.
 ;
-; if 1 is a handle for object A,
-; hmod(1, 1, 2) will end up with 1 remaining a handle for A and 2 being a
-; fresh handle for the same process, except 2 will be unknown to A's process
-; and not map to any handle on the remote side (yet).
-; if 2 previously pointed anywhere (even in A's process), that association is
-; forgotten and sending something to 2 will (even if it's the same process)
-; not associate to any remote value.
-; hmod(1, 2, 0) makes 2 a handle for A, keeping the remote association intact
-; and disassociating 1 completely. Messages that would be received for 1 will
-; now be received for 2.
+; rdi must be a handle. (But does not have to be associated - in this case,
+; rsi and rdx have the same function.)
 MSG_HMOD	equ	4
 
 ; "Send" a message to a previously dissociated handle and create a process on

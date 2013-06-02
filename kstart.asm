@@ -1443,6 +1443,34 @@ dict_lookup:
 .done:
 	ret
 
+dict_remove:
+	mov	rax, [rdi + dict.root]
+.loop:
+	test	rax, rax
+	jz	.done_end
+	cmp	[rax + dict_node.key], rsi
+	jz	.done_found
+	mov	rax, [rax + dict_node.right]
+	jmp	.loop
+.done_found:
+	mov	rdx, [rax + dict_node.right]
+	mov	rcx, [rax + dict_node.left]
+	test	rcx, rcx
+	jnz	.not_first
+; left is null: update root
+	mov	[rdi + dict.root], rdx
+	jmp	.no_left
+.not_first:
+	mov	[rcx + dict_node.right], rdx
+.no_left:
+	test	rdx, rdx
+	jz	.no_right
+	mov	[rdx + dict_node.left], rcx
+.no_right:
+.done_end:
+	; rax == removed node (if any)
+	ret
+
 ; Add a preallocated and filled-in handle object to a process' dictionary of
 ; handles.
 ; rdi: the process to modify
@@ -1452,11 +1480,24 @@ proc_insert_handle:
 	lea	rdi, [rdi + aspace.handles]
 	tcall	dict_insert
 
+; rdi: the address space being removed from
+; rsi: the local address (key) of the handle being removed
+delete_handle:
+	lea	rdi, [rdi + aspace.handles]
+	call	dict_remove
+	test	rax, rax
+	mov	rdi, rax
+	tc nz,	free_frame
+	ret
+
 ; rdi: the address space being mapped into
 ; rsi: the local address (key) being mapped
 ; rdx: the other-process being mapped
 ; =>
 ; rax: the handle object we just mapped
+;
+; This will replace a previous handle object if any, making it point to the
+; new other-process and severing the old link to another process.
 map_handle:
 	push	rdi
 	push	rsi
@@ -2100,7 +2141,7 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	sc nosys ; MAP
 	sc nosys ; PFAULT
 	sc nosys ; UNMAP
-	sc nosys ; HMOD
+	sc hmod ; HMOD
 	sc newproc
 	; backdoor syscalls
 	sc write
@@ -2201,6 +2242,94 @@ syscall_yield:
 	and	[rdi + proc.flags], byte ~PROC_RUNNING
 	call	runqueue_append
 	jmp	switch_next
+
+syscall_hmod:
+	; inputs:
+	; rdi = source handle
+	; rsi = renamed handle
+	; rdx = duplicated handle
+	;
+	; The end result is that rsi's handle (if not null) is an exact
+	; duplicate of rdi (linked to the same remote handle), rdi is destroyed
+	; (if not same as rsi), and rdx (if not null) is a fresh handle
+	; pointing to the same process that rdi pointed to.
+
+	push	rdi
+	push	rsi
+	push	rdx
+
+	mov	rcx, rdx
+	mov	rdx, rsi
+	mov	rsi, rdi
+lodstr	rdi,	'HMOD %x -> %x, %x', 10
+	call	printf
+
+	pop	rdx
+	pop	rsi
+	pop	rdi
+
+	; rdi must be non-null (no-op (error) otherwise).
+	test	rdi, rdi
+	jz	.ret
+
+	push	rsi
+
+	mov	rsi, rdi
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
+	push	rdi
+	push	rdx
+	call	find_handle
+
+	test	rax, rax
+	jnz	.found_handle
+	add	rsp, 3*8
+	ret
+
+.found_handle:
+	pop	rdx
+	push	rax
+
+	; if dup-handle (rdx): create handle pointing to proc
+	test	rdx, rdx
+	jz	.no_dup
+
+	mov	rsi, rdx ; local-addr of handle
+	mov	rdi, [rsp + 8]
+	mov	rdx, [rax + handle.proc]
+	call	map_handle
+
+.no_dup:
+	; stack: origin-handle aspace rename-handle
+	pop	rsi ; origin-handle
+	pop	rdi ; aspace
+	push	qword [rsi + handle.other]
+	push	qword [rsi + handle.proc]
+	push	rdi
+	mov	rsi, [rsi + handle.key]
+	call	delete_handle
+
+	; stack: aspace proc other rename-handle
+	pop	rdi ; aspace
+	pop	rdx ; proc
+	pop	rbx ; other-handle
+	pop	rsi ; rename-handle
+	test	rsi, rsi
+	jz	.just_delete
+
+	call	map_handle
+	pop	qword [rax + handle.other]
+	ret
+
+.just_delete:
+	pop	rax
+	ret
+
+.just_dup:
+	; Save process out of handle rdi
+
+.ret:
+	ret
 
 syscall_newproc:
 ;lodstr	rdi, 'hi, newproc here', 10
