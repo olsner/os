@@ -1,5 +1,25 @@
 #!/bin/bash
 
+cat <<EOF
+menuentry "irq+pic+console" {
+    multiboot (cd)/kstart.b
+    module (cd)/kern/irq.mod
+    module (cd)/kern/pic.mod
+    module (cd)/kern/console.mod
+    boot
+}
+
+menuentry "irq+pic+console+newproc" {
+    multiboot (cd)/kstart.b
+    module (cd)/kern/irq.mod
+    module (cd)/kern/pic.mod
+    module (cd)/kern/console.mod
+    module (cd)/user/newproc.mod
+    boot
+}
+
+EOF
+
 while [ $# -gt 0 ]; do
 	echo "menuentry \"${1#user/}\" {"
 	echo "    multiboot (cd)/kstart.b"
@@ -12,15 +32,6 @@ done
 cat <<EOF
 menuentry "idle" {
     multiboot (cd)/kstart.b
-    boot
-}
-
-menuentry "irq+pic+console+newproc" {
-    multiboot (cd)/kstart.b
-    module (cd)/kern/irq.mod
-    module (cd)/kern/pic.mod
-    module (cd)/kern/console.mod
-    module (cd)/user/newproc.mod
     boot
 }
 EOF
