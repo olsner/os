@@ -7,17 +7,16 @@ PIC_IRQ_BASE	equ	0x20
 ; Base where we map incoming IRQs.
 IN_IRQ_BASE	equ	0x30
 
+fresh_handle	equ	2
+
 boot:
 	; Input: IRQ driver in rdi
+	mov	edi, 1
 	push	rdi
 	; Check that rdi doesn't overlap our internal stuff:
 	; 0x20..0x2f: keep track of our clients
 	; 0x30..0x3f: our receivers for interrupts
 	; 1: temporary handle for something that is registering itself
-
-	mov	rsi, rdi
-lodstr	rdi, 'PIC boot. rawIRQ is %x', 10
-	call	printf
 
 	; Reinitialize PIC?
 	; * Mask all interrupts (we don't want them until someone registers)
@@ -43,9 +42,20 @@ lodstr	rdi, 'PIC boot. rawIRQ is %x', 10
 	dec	ebx
 	jnz	.reg_loop
 
+	mov	eax, MSG_HMOD
+	mov	edi, fresh_handle
+	; delete
+	zero	esi
+	zero	edx
+	syscall
+
+	mov	rsi, [rsp]
+lodstr	rdi, 'PIC boot. rawIRQ is %x', 10
+	call	printf
+
 rcv_loop:
 	zero	eax
-	mov	edi, 1 ; 1 = anonymous new receiver
+	mov	edi, fresh_handle
 	syscall
 
 	cmp	rdi, [rsp] ; Incoming raw IRQ
@@ -60,9 +70,17 @@ rcv_loop:
 	jmp	rcv_loop
 
 reg_irq:
+	push	rsi
+%if 1
+lodstr	rdi,	'PIC registering IRQ %x', 10
+	call	printf
+
+	mov	edi, 1
+	mov	rsi, [rsp]
+%endif
+
 	; rsi = irq number to register
 	; Rename incoming handle (1) to the IRQ they registered
-	push	rsi
 	mov	eax, MSG_HMOD
 	zero	edx
 	syscall

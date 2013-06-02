@@ -14,10 +14,20 @@
 ;   (after 15 characters, start dropping stuff)
 
 the_reader equ 1
+pic_driver equ 2
+
+IRQ_KEYBOARD	equ 1
 
 boot:
-	; Need the PIC driver handle in rdi
+lodstr	rdi, 'Console booting...', 10
+	call	printf
+
+	mov	edi, pic_driver
 	push	rdi
+
+	mov	esi, IRQ_KEYBOARD
+	mov	eax, msg_call(MSG_REG_IRQ)
+	syscall
 
 	mov	rsi, rdi
 lodstr	rdi, 'Console boot complete, PIC driver %x', 10

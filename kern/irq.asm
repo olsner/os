@@ -81,8 +81,13 @@ reg_irq:
 	syscall
 
 lodstr	rdi, 'rawIRQ: %x registered', 10
-	pop	rsi
+	mov	rsi, [rsp]
 	call	printf
+
+	pop	rdi
+	mov	rsi, rdi
+	mov	eax, msg_send(MSG_REG_IRQ)
+	syscall
 
 	jmp	rcv_loop
 

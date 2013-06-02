@@ -11,6 +11,7 @@
 %define log_page_fault 0
 %define log_find_mapping 0
 %define log_find_handle 0
+%define log_new_handle 0
 %define log_find_senders 0
 %define log_mappings 0
 %define log_waiters 0
@@ -481,25 +482,128 @@ lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
 	mov	byte [r8 + rdx], 0
 	; r8 = start, rcx = string
 	mov	rsi, r8
+	push	rcx
 	; rsi = start
 	; rdx = mod_length
 	; rcx = string
 	; r8 = start
 	call	printf
+	pop	r8
 	pop	rcx
 	pop	rsi
 	add	rsi, mboot_mod_size
 	push	rsi
 	push	rcx
+	push	r8
 	call	launch_user
+	pop	r8
 	pop	rcx
 	pop	rsi
+	push	rax ; Superfluous push, to add the created process to a list
 	loop	.loop
 .done:
 
+	; We now have a list of processes at rsp..rsp+8*n, connect them to each
+	; other somehow.
+	;
+	; Perhaps set their initial register states to something nice like
+	; al = the number of processes in boot package, ah = index of self
+	; Where handles 1..al (except ah) are the handles to those processes
+	; It's up to each one to rename to something suitable or delete the
+	; handles. (And to have an idea of which handle goes to what.)
+
+	; Let's assume the stack was empty and page-aligned before that. (We
+	; could also push a 0 at the start (end) as a sentinel.)
+	mov	ecx, esp
+	neg	ecx
+	and	ecx, 0xfff
+	shr	ecx, 3
+	jrcxz	initial_handles.done
+initial_handles:
+	; cx = n, [rsp] = process n
+	; for each process from i = n-1 down to 1, map n <-> i
+	pop	rdi
+	mov	rsi, rsp
+	push	rcx
+.inner:
+	dec	ecx
+	jz	.inner_done
+
+	; rsi points to the next process to map
+	; rdi is process n (constant)
+	; [rsp] is old ecx (n)
+	; ecx goes from n-1 to 1
+	;
+	; we want to map rdi:ecx <-> [rsp]:[rsi++]
+	lodsq
+	mov	rdx, [rsp]
+	push	rsi
+	push	rdi
+	mov	rsi, rdi
+	mov	rdi, rax
+	push	rcx
+
+	call	proc_assoc_handles
+	pop	rcx
+	pop	rdi
+	pop	rsi
+	jmp	.inner
+
+.inner_done:
+	pop	rcx
+	loop	initial_handles
+
+.done:
 lodstr	rdi,	'done.', 10
 	call	printf
 	jmp	switch_next
+
+; rdi = process A
+; rsi = process B
+; rdx = handle name in A
+; rcx = handle name in B
+proc_assoc_handles:
+	push	rcx ; handle name in B (not used yet)
+	push	rdi ; procA
+	push	rsi ; procB
+
+%if 1
+	push	rdx
+	; di si dx cx --> di dx cx si --> si dx cx 8
+	mov	r8, rsi
+	mov	rsi, rdi
+lodstr	rdi,	'%p:%x <-> %x:%p', 10
+	call	printf
+
+	pop	rdx
+	mov	rsi, [rsp]
+	mov	rdi, [rsp + 8]
+	mov	ecx, [rsp + 16]
+%endif
+
+	mov	rdi, [rdi + proc.aspace]
+	xchg	rsi, rdx
+	; rdi = aspace
+	; rsi = handle name in A (we don't need this anymore)
+	; rdx = process B
+	call	map_handle
+	; rax = handleA
+
+	; stack: processB processA handleNameB
+	pop	rdi
+	mov	rdi, [rdi + proc.aspace]
+	pop	rdx
+	pop	rsi
+	; rax: the handle object we just mapped
+	push	rax
+	call	map_handle
+	; stack: handleA
+	pop	rdx
+	; rax = handleB
+	; rdx = handleA
+	mov	[rax + handle.other], rdx
+	mov	[rdx + handle.other], rax
+	ret
 
 launch_user:
 lodstr	rdi,	'Loading module %p..%p', 10
@@ -555,7 +659,10 @@ lodstr	rdi,	'Loading module %p..%p', 10
 	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
 
 	mov	rdi, rbx
-	tcall	runqueue_append
+	push	rdi
+	call	runqueue_append
+	pop	rax
+	ret
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15
@@ -1507,6 +1614,14 @@ map_handle:
 	test	rax, rax
 	jnz	.found_existing
 
+%if log_new_handle
+lodstr	rdi,	'%p mapping new handle: %x (proc=%p)', 10
+	mov	rsi, [rsp + 16]
+	mov	rdx, [rsp + 8]
+	mov	rcx, [rsp]
+	call	printf
+%endif
+
 	; Allocate and insert a new handle
 
 	call	allocate_frame
@@ -2258,10 +2373,11 @@ syscall_hmod:
 	push	rsi
 	push	rdx
 
-	mov	rcx, rdx
-	mov	rdx, rsi
-	mov	rsi, rdi
-lodstr	rdi,	'HMOD %x -> %x, %x', 10
+	mov	r8, rdx
+	mov	rcx, rsi
+	mov	rdx, rdi
+	mov	rsi, [rbp + gseg.process]
+lodstr	rdi,	'%p: HMOD %x -> %x, %x', 10
 	call	printf
 
 	pop	rdx
@@ -2318,7 +2434,7 @@ lodstr	rdi,	'HMOD %x -> %x, %x', 10
 	jz	.just_delete
 
 	call	map_handle
-	pop	qword [rax + handle.other]
+	mov	[rax + handle.other], rbx
 	ret
 
 .just_delete:
@@ -2582,10 +2698,14 @@ syscall_call:
 
 %if log_messages
 	push	rax
-lodstr	rdi,	'%p call via %p to %x (%p)', 10
-	mov	rdx, rax
-	mov	rcx, [rax + handle.key]
-	mov	r8, [rax + handle.proc]
+lodstr	rdi,	'%p: call through %x to %p (%x)', 10
+	mov	rdx, [rax + handle.key]
+	mov	rcx, [rax + handle.proc]
+	mov	r8, [rax + handle.other]
+	test	r8, r8
+	jz	.no_other
+	mov	r8, [r8 + handle.key]
+.no_other:
 	call	printf
 	pop	rax
 	mov	rsi, [rbp + gseg.process]
