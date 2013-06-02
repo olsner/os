@@ -15,6 +15,10 @@ boot:
 	; 0x30..0x3f: our receivers for interrupts
 	; 1: temporary handle for something that is registering itself
 
+	mov	rsi, rdi
+lodstr	rdi, 'PIC boot. rawIRQ is %x', 10
+	call	printf
+
 	; Reinitialize PIC?
 	; * Mask all interrupts (we don't want them until someone registers)
 	; * Map either to a constant range of real interrupts, or have some
@@ -128,3 +132,6 @@ unmask_slave:
 	out	PIC2_DATA, al
 	mov	edi, 2
 	jmp	unmask
+
+%include "printf.asm"
+%include "putchar.asm"

@@ -3,19 +3,22 @@
 ; Configuration
 %define log_switch_to 0
 %define log_switch_next 0
+%define log_idle 0
 %define log_runqueue 0
+%define log_runqueue_panic 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
 %define log_timer_interrupt 0
 %define log_page_fault 0
 %define log_find_mapping 0
 %define log_find_handle 0
+%define log_find_senders 0
 %define log_mappings 0
 %define log_waiters 0
 %define log_messages 0
 
 %define debug_tcalls 0
 
-%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_waiters)
+%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders)
 
 CR0_PE		equ	0x00000001
 CR0_MP		equ	0x00000002
@@ -277,7 +280,7 @@ apic_setup:
 	mov	ecx, MSR_APIC_BASE
 	rdmsr
 	; Clear high part of base address
-	xor	edx,edx
+	zero	edx
 	; Set base address, enable APIC (0x800), and set boot-strap CPU
 	mov	eax, APIC_PBASE | 0x800 | 0x100
 	wrmsr
@@ -738,11 +741,12 @@ lodstr	rdi, 'queueing blocked %p (%x)', 10
 	mov	rsi, rdi
 lodstr	rdi, 'queueing already running %p (%x)', 10
 .panic:
-%if need_print_procstate
+%if log_runqueue_panic
 	call	print_proc
 	call	print_procstate
 %else
 	mov	rdx, [rsi + proc.flags]
+	call	printf
 %endif
 	PANIC
 
@@ -757,14 +761,27 @@ runqueue_pop:
 	ret
 
 idle:
+%if log_idle
+lodstr	rdi, 'Idle: proc=%p', 10
+	mov	rsi, [rbp + gseg.process]
+	call	printf
+%endif
+	cmp	qword [rbp + gseg.process], 0
+	jnz	.panic
 	; Fun things to do while idle: check how soon the first timer wants to
 	; run, make sure the APIC timer doesn't trigger before then.
 	swapgs
 	sti
 	hlt
+.panic:
 	; We should never get here: the interrupt handler(s) will return through
 	; the scheduler which will just re-idle if needed.
 	PANIC
+
+block_and_switch:
+	btr	dword [rdi + proc.flags], PROC_RUNNING_BIT
+	jnc	switch_next
+	mov	qword [rbp + gseg.process], 0
 
 switch_next:
 %if log_switch_next
@@ -2339,7 +2356,6 @@ syscall_recv:
 	mov	rdi, [rax + proc.aspace]
 	; rsi = local handle name
 	call	find_handle
-	zero	esi
 	; saved rdi: target's handle name for specific source
 	; rax: handle object (*if* it already exists!)
 	test	rax, rax
@@ -2379,10 +2395,18 @@ lodstr	rdi,	'sync. recv in %p finished', 10
 	; saved rdi = handle name
 	; no previous handle for rdi
 .from_fresh:
+%if log_messages
+lodstr	rdi, '%p: recv from fresh %x', 10
+	mov	rsi, [rbp + gseg.process]
+	mov	rdx, [rsi + proc.rdi]
+	call	printf
+%endif
+
 	call	allocate_frame
 	mov	rdi, [rbp + gseg.process]
 	mov	rdx, [rdi + proc.rdi]
 	mov	[rax + handle.key], rdx
+	zero	esi
 	; rax = handle, rdi = receiving process
 	jmp	.do_recv
 
@@ -2711,8 +2735,15 @@ lodstr	rdi, '%p blocked on receive from %p: not in send', 10
 .block:
 	; rsi = recipient, rdi = potential sender
 	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
+
+	; Argh! I still don't understand what this code is doing :(
+	; I think it goes something like this:
+	; * If the process was running: add to waiters then switch to next
+	; * If the process was not running: only add to waiters
+	;
 	; If recipient was not running, add to waiters and return
 	tc nc,	add_to_waiters
+	call	add_to_waiters
 	tcall	switch_next
 
 ; Find any sender that's waiting to send something to this process. If one
@@ -2730,17 +2761,17 @@ lodstr	rdi, '%p blocked on receive from %p: not in send', 10
 recv_from_any:
 	mov	rax, [rdi + proc.waiters]
 .loop:
-%if need_print_procstate
+	test	rax, rax
+	jz	.no_senders
+%if log_find_senders
+	push	rdi
 	push	rax
 lodstr	rdi,	'recv: %p (%x)', 10
 	lea	rsi, [rax - proc.node]
-	test	rax, rax
-	cmovz	rsi, rax
 	call	print_proc
 	pop	rax
+	pop	rdi
 %endif
-	test	rax, rax
-	jz	.no_senders
 	lea	rsi, [rax - proc.node]
 	test	[rax - proc.node + proc.flags], byte PROC_IN_SEND
 	tc nz,	transfer_message
@@ -2749,11 +2780,18 @@ lodstr	rdi,	'recv: %p (%x)', 10
 	jmp	.loop
 
 .no_senders:
-lodstr	rdi,	'No senders found to %p', 10
-	mov	rsi, [rsp]
+	push	rdi
+	mov	rsi, rdi
+lodstr	rdi,	'No senders found to %p (%x)', 10
+%if need_print_procstate
+	call	print_proc
+%else
+	mov	rdx, [rsi + proc.flags]
 	call	printf
+%endif
 
-	tcall	switch_next
+	pop	rdi
+	tcall	block_and_switch
 
 %include "printf.asm"
 

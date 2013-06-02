@@ -14,11 +14,14 @@
 ;   (after 15 characters, start dropping stuff)
 
 the_reader equ 1
-pic_driver equ 2
 
 boot:
 	; Need the PIC driver handle in rdi
 	push	rdi
+
+	mov	rsi, rdi
+lodstr	rdi, 'Console boot complete, PIC driver %x', 10
+	call	printf
 
 rcv_loop:
 	mov	eax, MSG_HMOD
@@ -75,3 +78,6 @@ KEY_DATA	equ 0x60
 	mov	eax, msg_send(MSG_IRQ_ACK)
 	syscall
 	jmp	rcv_loop
+
+%include "printf.asm"
+%include "putchar.asm"
