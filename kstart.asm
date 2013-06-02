@@ -489,14 +489,17 @@ lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
 	pop	rcx
 	pop	rsi
 	add	rsi, mboot_mod_size
-	; hack
-	jmp	launch_user
+	push	rsi
+	push	rcx
+	call	launch_user
+	pop	rcx
+	pop	rsi
 	loop	.loop
 .done:
 
 lodstr	rdi,	'done.', 10
 	call	printf
-	jmp	idle
+	jmp	switch_next
 
 launch_user:
 lodstr	rdi,	'Loading module %p..%p', 10
@@ -552,9 +555,7 @@ lodstr	rdi,	'Loading module %p..%p', 10
 	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
 
 	mov	rdi, rbx
-	call	runqueue_append
-	mov	rax, rbx
-	call	switch_next
+	tcall	runqueue_append
 
 ; note to self:
 ; callee-save: rbp, rbx, r12-r15

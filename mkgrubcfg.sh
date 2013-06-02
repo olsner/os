@@ -9,7 +9,18 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-echo "menuentry \"idle\" {"
-echo "    multiboot (cd)/kstart.b"
-echo "    boot"
-echo "}"
+cat <<EOF
+menuentry "idle" {
+    multiboot (cd)/kstart.b
+    boot
+}
+
+menuentry "irq+pic+console+newproc" {
+    multiboot (cd)/kstart.b
+    module (cd)/kern/irq.mod
+    module (cd)/kern/pic.mod
+    module (cd)/kern/console.mod
+    module (cd)/user/newproc.mod
+    boot
+}
+EOF
