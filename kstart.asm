@@ -300,13 +300,15 @@ APIC_REG_APICTIC	equ	0x380
 APIC_REG_APICTCC	equ	0x390
 APIC_REG_TIMER_DIV	equ	0x3e0
 
+%assign APIC_TIMER_IRQ 0x30
+
 %assign rbpoffset 0x380
 
 	mov	rbp,kernel_base-0x1000+rbpoffset
 	mov	ax,1010b
 	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
 
-	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x20020
+	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x20000 + APIC_TIMER_IRQ
 	mov	dword [rbp+APIC_REG_PERFC_LVT-rbpoffset], 0x10000
 	mov	dword [rbp+APIC_REG_LINT0_LVT-rbpoffset], 0x8700
 	mov	dword [rbp+APIC_REG_LINT1_LVT-rbpoffset], 0x0400
@@ -2862,13 +2864,32 @@ idt_data:
 %macro reg_vec 2
 	db	%1
 	dw	%2 - text_vstart_dummy
+%if idt_max_vec < %1
+%assign idt_max_vec %1
+%endif
 %endmacro
+%assign idt_max_vec 0
 	reg_vec 7, handler_NM
 	;reg_vec 8, handler_DF
 	reg_vec 14, handler_PF
-	reg_vec 32, timer_handler
+	; 32..47: PIC interrupts
 	reg_vec 33, key_handler
+	reg_vec APIC_TIMER_IRQ, timer_handler
 .vectors_end:
+
+; db 0x50 ; push rax
+; db 0xb0 ; mov al,
+; db 0x00 ; identity
+; db 0x66, 0xe9 ; jmp word
+; dw 0x0  ; offset to real handler
+; 7 bytes == could use a 64-bit word as template
+; then byte [dest + 2] <- identity, word [dest + 5] <- offset
+irqr_template:
+	push	rax
+	mov	al,0x0
+	jmp	word 0
+irqr_template_end:
+irqr_template_size	equ (irqr_template_end - irqr_template)
 
 section bss
 globals:
@@ -2884,8 +2905,12 @@ globals:
 mbi_pointer resd 1
 memory_start resd 1
 
-idt	resq 2 * 34
+; Provide room for all possible interrupts, although we'll only use up to
+; 48 or so
+idt	resq 2 * (idt_max_vec + 1)
 idt_end
+
+irqrouters	resb	irqr_template_size * 16
 
 section.bss.end:
 

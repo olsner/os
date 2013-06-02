@@ -25,7 +25,7 @@ OUTDIR   := out
 GRUBDIR  := $(OUTDIR)/grub
 MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
-MOD_ASMFILES += kern/console.asm kern/pic.asm
+MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES := kstart.asm $(MOD_ASMFILES)
 MODFILES := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod)
 DEPFILES := $(ASMFILES:.asm=.dep)
@@ -35,6 +35,7 @@ ASMOUTS  := \
 	$(ASMFILES:%.asm=$(OUTDIR)/%.b) \
 	$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
 	$(DEPFILES)
+INLINE_MODULES = $(OUTDIR)/kern/irq.b
 
 all: cpuid rflags $(OUTDIR)/grub.iso
 
@@ -59,6 +60,8 @@ $(OUTDIR)/%.b: %.asm
 	@$(YASM) -i . -e -M $< -o $@ >$*.dep
 	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $*.lst
 	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
+
+$(OUTDIR)/kstart.b: $(INLINE_MODULES)
 
 %.asm.pp: %.asm
 	$(YASM) -i . -f bin -o $@ -e -L nasm $<
