@@ -2108,6 +2108,7 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 N_SYSCALLS	equ (.end_table - .table) / 4
 
 syscall_nosys:
+	pop rdi
 	jmp syscall_entry.invalid_syscall
 
 syscall_write:
@@ -2443,12 +2444,12 @@ syscall_call:
 	mov	rdi, [rax + proc.aspace]
 	mov	rsi, [rax + proc.rdi]
 	call	find_handle
-	mov	rsi, [rbp + gseg.process]
-	; Put the target handle in proc's rdi
-	mov	[rsi + proc.rdi], rax
 	; A send must have a specific target
 	test	rax, rax
 	jz	.no_target
+	; Put the target handle in proc's rdi
+	mov	rsi, [rbp + gseg.process]
+	mov	[rsi + proc.rdi], rax
 
 %if log_messages
 	push	rax
@@ -2469,8 +2470,9 @@ lodstr	rdi,	'%p call via %p to %x (%p)', 10
 	jmp	switch_to
 
 .no_target:
-	; TODO Error out
-	ret
+	mov	rax, [rbp + gseg.process]
+	swapgs
+	jmp	fastret
 
 ; Returns unless it blocks.
 ; rdi: recipient process
