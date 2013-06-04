@@ -2402,7 +2402,20 @@ lodstr	rdi,	'%p: HMOD %x -> %x, %x', 10
 	mov	rsi, rdx ; local-addr of handle
 	mov	rdi, [rsp + 8]
 	mov	rdx, [rax + handle.proc]
+	push	rsi
 	call	map_handle
+	; dup-handle should not get a pointer to something (but proc should
+	; get set?)
+
+lodstr	rdi, 'dup_handle: %p (key=%x proc=%p)', 10
+	mov	rsi, rax
+	mov	rdx, [rax + handle.key]
+	mov	rcx, [rax + handle.proc]
+	call	printf
+
+	pop	rsi
+	mov	rdi, [rsp + 8]
+	call	find_handle
 
 .no_dup:
 	; stack: origin-handle aspace rename-handle
@@ -2609,7 +2622,19 @@ syscall_recv:
 
 	mov	rsi, rdi
 	test	rsi, rsi
+
+%if log_messages == 0
 	jz	.do_recv
+%else
+	jnz	.have_handle
+	push	rax
+lodstr	rdi, '%p: recv from any', 10
+	mov	rsi, rax
+	call	printf
+	pop	rax
+	jmp	.do_recv
+.have_handle:
+%endif
 
 	mov	rdi, [rax + proc.aspace]
 	; rsi = local handle name
