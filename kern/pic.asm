@@ -18,6 +18,9 @@ boot:
 	; 0x30..0x3f: our receivers for interrupts
 	; 1: temporary handle for something that is registering itself
 
+lodstr	rdi, 'PIC booting...', 10
+	call	printf
+
 	; Reinitialize PIC?
 	; * Mask all interrupts (we don't want them until someone registers)
 	; * Map either to a constant range of real interrupts, or have some
@@ -26,7 +29,7 @@ boot:
 	; For now - assume PICs are mapped to 0x20..0x2f and all interrupts are
 	; masked (this is what start32.inc does).
 
-	mov	ebx, 16
+	mov	ebx, 2
 .reg_loop:
 	; Duplicate IRQ handler -> 0x30..0x3f (incoming IRQ)
 	mov	rdi, [rsp]
@@ -50,13 +53,27 @@ boot:
 	syscall
 
 	mov	rsi, [rsp]
-lodstr	rdi, 'PIC boot. rawIRQ is %x', 10
+lodstr	rdi, 'PIC boot complete. rawIRQ is %x', 10
 	call	printf
 
 rcv_loop:
 	zero	eax
 	mov	edi, fresh_handle
 	syscall
+
+	push	rax
+	push	rdi
+	push	rsi
+
+	mov	rcx, rsi
+	mov	rdx, rdi
+	mov	rsi, rax
+lodstr	rdi, 'PIC received %x from %x: %x', 10
+	call	printf
+
+	pop	rsi
+	pop	rdi
+	pop	rax
 
 	cmp	rdi, [rsp] ; Incoming raw IRQ
 	je	irq
@@ -85,7 +102,7 @@ lodstr	rdi,	'PIC registering IRQ %x', 10
 	zero	edx
 	syscall
 
-	lea	edi, [rsi - PIC_IRQ_BASE]
+	mov	edi, [rsp]
 	call	unmask
 
 	; TODO Do whatever is needed for the "raw IRQ" handler to talk to us
@@ -128,7 +145,7 @@ ack_irq:
 	; to allow it to be delivered again.
 
 	; TODO Needs some validation :)
-	lea	edi, [rdi - 0x20]
+	sub	edi, PIC_IRQ_BASE
 	call	unmask
 	jmp	rcv_loop
 
