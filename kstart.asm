@@ -1506,8 +1506,8 @@ lodstr	rdi,	'find_handle found %p', 10
 	test	rsi, rsi
 	jz	.no_other
 	mov	rsi, [rsi + handle.key]
-	mov	rdx, [rax + handle.proc]
 .no_other:
+	mov	rdx, [rax + handle.proc]
 lodstr	rdi,	'-> %x in %p', 10
 	call	printf
 .no_handle_found:
