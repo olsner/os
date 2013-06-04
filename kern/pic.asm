@@ -153,18 +153,18 @@ unmask:
 	cmp	edi, 8
 	jae	unmask_slave
 
-	in	al, PIC1_DATA
+	;in	al, PIC1_DATA
 	; Unmask registered IRQ
 	btr	eax, edi
-	out	PIC1_DATA, al
+	;out	PIC1_DATA, al
 
 	ret
 
 unmask_slave:
 	sub	edi, 8
-	in	al, PIC2_DATA
+	;in	al, PIC2_DATA
 	btr	eax, edi
-	out	PIC2_DATA, al
+	;out	PIC2_DATA, al
 	mov	edi, 2
 	jmp	unmask
 
