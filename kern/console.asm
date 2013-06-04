@@ -30,7 +30,7 @@ lodstr	rdi, 'Console booting...', 10
 	syscall
 
 	mov	rsi, rdi
-lodstr	rdi, 'Console boot complete, PIC driver %x', 10
+lodstr	rdi, 'Console boot complete, PIC interrupt %x', 10
 	call	printf
 
 rcv_loop:

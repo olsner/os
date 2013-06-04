@@ -3,8 +3,11 @@
 %include "pic.inc"
 
 ; Base vector for PIC interrupts. Assume slave is mapped at base + 8.
+; Clients are mapped at PIC_IRQ_BASE..PIC_IRQ_BASE+15
+; This is also the same as the raw IRQ numbers we listen to.
+; Note: clients register for IRQs 0..15 :)
 PIC_IRQ_BASE	equ	0x20
-; Base where we map incoming IRQs.
+; Base where we map incoming IRQs. (handles to rawIRQ process)
 IN_IRQ_BASE	equ	0x30
 
 fresh_handle	equ	2
@@ -78,7 +81,7 @@ lodstr	rdi, 'PIC received %x from %x: %x', 10
 	cmp	rdi, [rsp] ; Incoming raw IRQ
 	je	irq
 
-	cmp	eax, MSG_REG_IRQ
+	cmp	al, MSG_REG_IRQ
 	je	reg_irq
 
 	cmp	eax, MSG_IRQ_ACK
@@ -86,18 +89,24 @@ lodstr	rdi, 'PIC received %x from %x: %x', 10
 
 	jmp	rcv_loop
 
+; rsi = 0..15
+; rdi = (probably) fresh handle
+;
+; Remap rdi to rdi + PIC_IRQ_BASE (where we have our clients), then unmask
+; the corresponding IRQ.
 reg_irq:
 	push	rsi
 %if 1
+	push	rdi
 lodstr	rdi,	'PIC registering IRQ %x', 10
 	call	printf
 
-	mov	edi, 1
+	pop	rdi
 	mov	rsi, [rsp]
 %endif
 
-	; rsi = irq number to register
-	; Rename incoming handle (1) to the IRQ they registered
+	; Rename incoming handle to the IRQ they registered + PIC_IRQ_BASE
+	add	esi, PIC_IRQ_BASE
 	mov	eax, MSG_HMOD
 	zero	edx
 	syscall
@@ -105,10 +114,9 @@ lodstr	rdi,	'PIC registering IRQ %x', 10
 	mov	edi, [rsp]
 	call	unmask
 
-	; TODO Do whatever is needed for the "raw IRQ" handler to talk to us
-
 	; Send response to tell caller they're registered
 	pop	rdi
+	add	edi, PIC_IRQ_BASE
 	mov	eax, msg_send(MSG_REG_IRQ)
 	syscall
 
@@ -117,6 +125,9 @@ lodstr	rdi,	'PIC registering IRQ %x', 10
 irq:
 	; rdi = IN_IRQ_BASE + num
 	sub	edi, IN_IRQ_BASE
+
+	; TODO Check for slave IRQs and handle them.
+	; Also check for spurious IRQs for 7 and 15
 
 	; Mask interrupt (ignore it until the driver has responded back to us)
 	in	al, PIC1_DATA
