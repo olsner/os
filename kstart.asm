@@ -2388,7 +2388,9 @@ lodstr	rdi,	'%p: HMOD %x -> %x, %x', 10
 
 	test	rax, rax
 	jnz	.found_handle
-	add	rsp, 3*8
+	pop	rax
+	pop	rax
+	pop	rax
 	ret
 
 .found_handle:
@@ -2437,10 +2439,7 @@ lodstr	rdi, 'dup_handle: %p (key=%x proc=%p)', 10
 
 	call	map_handle
 	mov	[rax + handle.other], rbx
-	ret
-
 .just_delete:
-	pop	rax
 	ret
 
 .just_dup:
@@ -2598,7 +2597,7 @@ lodstr	rdi,	'%p send via %p to %x (%p)', 10
 	jmp	fastret
 
 .no_target:
-	ret
+	PANIC
 
 ; bx = saved message code, old ax
 syscall_ipc:
@@ -2666,8 +2665,9 @@ lodstr	rdi, '%p: recv from %x in %p', 10
 	or	[rdi + proc.flags], byte PROC_IN_RECV
 	call	recv
 %if log_messages
-lodstr	rdi,	'sync. recv in %p finished', 10
+lodstr	rdi,	'sync. recv in %p finished (recvd from %x)', 10
 	mov	rsi, [rbp + gseg.process]
+	mov	rdx, [rsi + proc.rdi]
 	call	printf
 %endif
 	; The receive finished synchronously, continue running this process.
@@ -2742,6 +2742,7 @@ lodstr	rdi,	'%p: call through %x to %p (%x)', 10
 ; rsi: source (the process that will block if it can't send)
 ; Both will have a handle (or null) in proc.rdi
 ; rsi must be IN_SEND or IN_SEND|IN_RECV
+; rsi will always be the currently running process.
 ; rdi might be in any state.
 send_or_block:
 	test	[rsi + proc.flags], byte PROC_IN_SEND
@@ -2791,12 +2792,16 @@ lodstr	rdi,	'%p (%x) blocked on send to %p (%x)', 10
 	pop	rdi
 	pop	rsi
 %endif
+	; I think this code is not as complicated as it needs to be...
+	; Or maybe it's more complicated...
+	; rsi is always the previously running process when we get here
 	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
-	; If the running bit was set on the process we just blocked, we must
-	; context switch
-	tc c,	switch_next
-	; Otherwise, just tailcall add_to_waiters, return to caller.
-	tcall	add_to_waiters
+	jnc	.sender_not_running
+	call	add_to_waiters
+	tcall	switch_next
+
+.sender_not_running:
+	PANIC
 
 ; Associate a pair of handles with each other. Assume that rcx (sender handle)
 ; is already pointing to rdi (recipient).
@@ -2861,7 +2866,7 @@ lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
 
 .fresh_handle
 	; Get the source handle's other handle, i.e. the recipient handle.
-	mov	rax, [rcx + handle.other]
+	mov	rax, [rbx + handle.other]
 	test	rax, rax
 	; other is not null: a fresh-handle receive got fulfilled by a known
 	; handle - return that handle instead as if we'd have given null.
@@ -2873,15 +2878,15 @@ lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
 	; rsi = sender process
 	; rdx = recipient handle
 	; rcx = source handle
+	mov	rcx, rbx
 	call	assoc_handles
 	pop	rsi
 	pop	rdi
 
-	jmp	.rcpt_rdi_set
+	jmp	.null_recipient_id
 
 .junk_fresh_handle:
 	; rax = actual handle
-	push	rax
 	push	rdi
 	push	rsi
 	; rdx = recipient handle object we would've used
@@ -2890,8 +2895,6 @@ lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
 
 	pop	rsi
 	pop	rdi
-	pop	rax
-	jmp	.rax_has_handle
 
 .null_recipient_id:
 	mov	rax, [rbx + handle.other]
@@ -2901,7 +2904,7 @@ lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
 	; rax is the recipient-side handle - pick out its key directly
 	mov	rax, [rax + handle.key]
 .rax_has_key:
-	mov	[rsi + proc.rdi], rax
+	mov	[rdi + proc.rdi], rax
 .rcpt_rdi_set:
 
 %macro copy_regs 0-*
@@ -2942,6 +2945,9 @@ lodstr	rdi, 'Copied message from %p to %p', 10
 	; continue with its receiving phase. Otherwise unblock it.
 	and	[rdi + proc.flags], byte ~PROC_IN_SEND
 	test	[rdi + proc.flags], byte PROC_IN_RECV
+	; Error: someone's proc.rdi got reset back to the local-address instead
+	; of pointing to the handle object before we did this.
+	; (It was rdi + proc.rdi)
 	tc nz,	recv
 
 %if log_messages
@@ -3022,15 +3028,24 @@ lodstr	rdi, '%p blocked on receive from %p: not in send', 10
 
 .block:
 	; rsi = recipient, rdi = potential sender
-	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
+	; (we have swapped since the entry point)
 
-	; Argh! I still don't understand what this code is doing :(
-	; I think it goes something like this:
-	; * If the process was running: add to waiters then switch to next
-	; * If the process was not running: only add to waiters
+	; Make sure that rsi is no longer runnable and on the waiters list
+	; for rdi. The return if it doesn't block thing means: if the process
+	; we're blocking is not running we should return.
+
+	; This code may get called as a tail call from transfer_message to
+	; finish more message transfers, so we don't know if the recipient is
+	; the current process (in a syscall_recv), or some other process.
 	;
-	; If recipient was not running, add to waiters and return
+	; Can we assume that if the recipient is not running it was already
+	; blocked on the sender?
+	btr	dword [rsi + proc.flags], PROC_RUNNING_BIT
+	; Not blocking the current process: we might be able to do more stuff,
+	; so return to whoever called after adding to waiters.
 	tc nc,	add_to_waiters
+	; Blocking the current process: add to waiters and switch_next
+.not_running:
 	call	add_to_waiters
 	tcall	switch_next
 
