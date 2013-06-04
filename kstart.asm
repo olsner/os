@@ -1551,29 +1551,18 @@ dict_lookup:
 	ret
 
 dict_remove:
-	mov	rax, [rdi + dict.root]
+	lea	rdx, [rdi + dict.root - dict_node.right]
 .loop:
+	mov	rax, [rdx + dict_node.right]
 	test	rax, rax
 	jz	.done_end
 	cmp	[rax + dict_node.key], rsi
 	jz	.done_found
-	mov	rax, [rax + dict_node.right]
+	mov	rdx, rax
 	jmp	.loop
 .done_found:
-	mov	rdx, [rax + dict_node.right]
-	mov	rcx, [rax + dict_node.left]
-	test	rcx, rcx
-	jnz	.not_first
-; left is null: update root
-	mov	[rdi + dict.root], rdx
-	jmp	.no_left
-.not_first:
-	mov	[rcx + dict_node.right], rdx
-.no_left:
-	test	rdx, rdx
-	jz	.no_right
-	mov	[rdx + dict_node.left], rcx
-.no_right:
+	mov	rcx, [rax + dict_node.right]
+	mov	[rdx + dict_node.right], rcx
 .done_end:
 	; rax == removed node (if any)
 	ret
