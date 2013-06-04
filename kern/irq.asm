@@ -17,19 +17,26 @@
 ; are reserved for cpu exceptions)
 fresh_handle	equ	256
 ; Further limit the interrupts we actually support
-MAX_IRQ		equ	0x30
-IRQ_START	equ	0x20
-NUM_IRQS	equ	MAX_IRQ - IRQ_START
+%define MAX_IRQ 0x30
+%define IRQ_START 0x20
+%define NUM_IRQS (MAX_IRQ - IRQ_START)
 
 boot:
 	; no parameters here
 
 	; Allocate space for bits for which interrupts have listeners
-	sub	rsp, NUM_IRQS / 8
-	mov	rdi, rsp
-	mov	ecx, NUM_IRQS / 32
 	zero	eax
-	rep	stosd
+%define NUM_IRQ_WORDS (NUM_IRQS + 63) / 64
+; The stack instructions are ridiculously cheap! Storing the count and doing
+; the loop takes 6 bytes, push rax takes 1 byte...
+%if NUM_IRQ_WORDS > 6
+	lea	ecx, [rax + NUM_IRQ_WORDS]
+.pushloop:
+	push	rax
+	loop	.pushloop
+%else
+	times NUM_IRQ_WORDS push rax
+%endif
 
 lodstr	rdi,	'rawIRQ boot.', 10
 	call	puts
