@@ -38,7 +38,7 @@ boot:
 	times NUM_IRQ_WORDS push rax
 %endif
 
-lodstr	rdi,	'rawIRQ boot.', 10
+lodstr	rdi,	'rawIRQ: boot complete.', 10
 	call	puts
 
 rcv_loop:

@@ -145,6 +145,7 @@ irq:
 	; Since this send is blocking, there's a time here where we are left
 	; unable to respond to interrupts. Bad stuff. I think something will
 	; be done elsewhere to allow interrupts to be queued.
+	mov	esi, edi ; actual irq number
 	add	edi, PIC_IRQ_BASE
 	mov	eax, msg_send(MSG_IRQ_T)
 	syscall

@@ -12,6 +12,7 @@
 %define log_find_mapping 0
 %define log_find_handle 0
 %define log_new_handle 0
+%define log_hmod 0
 %define log_find_senders 0
 %define log_mappings 0
 %define log_waiters 0
@@ -467,7 +468,7 @@ lodstr	rdi,	'%x modules loaded, table at %p', 10
 .loop:
 	push	rsi
 	push	rcx
-lodstr	rdi,	'Module at %p size %x: %s', 10, '%s', 10
+lodstr	rdi,	'Module at %p size %x', 10 ; : %s', 10, '%s', 10
 	mov	edx, [rsi + mboot_mod.end]
 	mov	r8d, [rsi + mboot_mod.string]
 	mov	esi, [rsi + mboot_mod.start]
@@ -567,7 +568,7 @@ proc_assoc_handles:
 	push	rdi ; procA
 	push	rsi ; procB
 
-%if 1
+%if 0
 	push	rdx
 	; di si dx cx --> di dx cx si --> si dx cx 8
 	mov	r8, rsi
@@ -2358,6 +2359,7 @@ syscall_hmod:
 	; (if not same as rsi), and rdx (if not null) is a fresh handle
 	; pointing to the same process that rdi pointed to.
 
+%if log_hmod
 	push	rdi
 	push	rsi
 	push	rdx
@@ -2372,6 +2374,7 @@ lodstr	rdi,	'%p: HMOD %x -> %x, %x', 10
 	pop	rdx
 	pop	rsi
 	pop	rdi
+%endif
 
 	; rdi must be non-null (no-op (error) otherwise).
 	test	rdi, rdi
@@ -3083,6 +3086,7 @@ lodstr	rdi,	'recv: %p (%x)', 10
 	jmp	.loop
 
 .no_senders:
+%if log_find_senders
 	push	rdi
 	mov	rsi, rdi
 lodstr	rdi,	'No senders found to %p (%x)', 10
@@ -3092,8 +3096,9 @@ lodstr	rdi,	'No senders found to %p (%x)', 10
 	mov	rdx, [rsi + proc.flags]
 	call	printf
 %endif
-
 	pop	rdi
+%endif
+
 	tcall	block_and_switch
 
 %include "printf.asm"
