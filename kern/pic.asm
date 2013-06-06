@@ -78,13 +78,16 @@ lodstr	rdi, 'PIC received %x from %x: %x', 10
 	pop	rdi
 	pop	rax
 
-	cmp	rdi, [rsp] ; Incoming raw IRQ
-	je	irq
+	cmp	edi, IN_IRQ_BASE + 16
+	jae	.not_irq
+	cmp	edi, IN_IRQ_BASE
+	ja	irq
 
+.not_irq:
 	cmp	al, MSG_REG_IRQ
 	je	reg_irq
 
-	cmp	eax, MSG_IRQ_ACK
+	cmp	al, MSG_IRQ_ACK
 	je	ack_irq
 
 	jmp	rcv_loop
@@ -123,6 +126,11 @@ lodstr	rdi,	'PIC registering IRQ %x', 10
 	jmp	rcv_loop
 
 irq:
+	push	rdi
+lodstr	rdi, 'PIC: IRQ triggered', 10
+	call	printf
+	pop	rdi
+
 	; rdi = IN_IRQ_BASE + num
 	sub	edi, IN_IRQ_BASE
 

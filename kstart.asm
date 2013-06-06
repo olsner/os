@@ -105,6 +105,10 @@ struc	gseg
 
 	; Process last in use of the floating point registers
 	.fpu_process	resq 1
+	; Process that should receive IRQ interrupts
+	.irq_process	resq 1
+	; bitmask of irqs that have been delayed (extend to per-irq counter?)
+	.irq_delayed	resq 1
 
 	.free_frame	resq 1
 	.temp_xmm0	resq 2
@@ -555,9 +559,91 @@ initial_handles:
 	loop	initial_handles
 
 .done:
-lodstr	rdi,	'done.', 10
+	mov	rsi, rdi
+	push	rsi
+lodstr	rdi,	'done. first process is %p', 10
 	call	printf
+
+	; Set up the pointer to the dedicated IRQ process
+	pop	qword [rbp + gseg.irq_process]
+
 	jmp	switch_next
+
+handle_irq_generic:
+	; we have an irq number in bl, user-space rbx on stack
+	; all other state undefined
+	push	rax
+	push	rbp
+	swapgs
+
+	mov	word [rel 0xb8002], 0x0700|'Q'
+
+	zero	eax
+	mov	rbp, [gs:rax + gseg.self]
+	add	rax, [rbp + gseg.process]
+	jz	.no_save
+	; The rax and rbp we saved above, store them in process
+	pop	qword [rax + proc.rbp]
+	pop	qword [rax + proc.rax]
+	movzx	ebx, bl ; not necessary, but nice
+	push	rbx ; interrupt number
+	; save_from_iret will save the wrong rbx now - we'll resave the right
+	; one below.
+	call	save_from_iret
+
+	mov	rdi, [rbp + gseg.process]
+	pop	rbx ; interrupt number
+	pop	qword [rdi + proc.rbx]
+	mov	qword [rbp + gseg.process], 0 ; some kind of temporary code
+	call	runqueue_append
+	jmp	.saved
+.no_save:
+	; Pop the saved rbx/rax/rbp, plus the 5-word interrupt stack frame
+	add	rsp, 8 * 8
+.saved:
+
+lodstr	rdi,	'handle_irq_generic: %x', 10
+	mov	rsi, rbx
+	call	printf
+
+	; Not very nice to duplicate message-sending here...
+	; Oh, and we forget to check some things:
+	; - the receiver has to be in an open-ended (fresh or null) receive,
+	;   otherwise we might accidentally "respond" to an in-progress call,
+	;   which will now get dropped on the floor.
+	; - (other things too, probably)
+	mov	rax, [rbp + gseg.irq_process]
+	test	[rax + proc.flags], byte PROC_IN_SEND
+	jnz	.delay
+	test	[rax + proc.flags], byte PROC_IN_RECV
+	jz	.delay
+
+	and	[rax + proc.flags], byte ~PROC_IN_RECV
+	mov	qword [rax + proc.rax], 0
+	mov	[rax + proc.rsi], ebx
+	mov	qword [rax + proc.rax], msg_send(MSG_IRQ_T)
+
+	jmp	switch_to
+.delay:
+lodstr	rdi,	'handle_irq_generic: delivery delayed', 10
+	mov	rsi, rbx
+	call	printf
+
+	bts	dword [rbp + gseg.irq_delayed], ebx
+	jmp	switch_next
+
+%macro handle_irqN_generic 1
+handle_irq_ %+ %1:
+	push	rbx
+	mov	bl, %1
+	jmp	handle_irq_generic
+%endmacro
+
+%assign irq 32
+%rep 16
+handle_irqN_generic irq
+%assign irq irq + 1
+%endrep
 
 ; rdi = process A
 ; rsi = process B
@@ -3170,36 +3256,27 @@ idt_data:
 %macro reg_vec 2
 	db	%1
 	dw	%2 - text_vstart_dummy
-%if idt_max_vec < %1
-%assign idt_max_vec %1
+%if idt_nvec <= %1
+%assign idt_nvec %1 + 1
 %endif
 %endmacro
-%assign idt_max_vec 0
+%assign idt_nvec 0
 	reg_vec 7, handler_NM
 	;reg_vec 8, handler_DF
 	reg_vec 14, handler_PF
 	; 32..47: PIC interrupts
-%if builtin_keyboard
+%assign idt_nvec 32
+%rep 16
+%if builtin_keyboard && idt_nvec == 33
 	reg_vec 33, key_handler
+%else
+	reg_vec idt_nvec, handle_irq_ %+ idt_nvec
 %endif
+%endrep
 %if builtin_timer
 	reg_vec APIC_TIMER_IRQ, timer_handler
 %endif
 .vectors_end:
-
-; db 0x50 ; push rax
-; db 0xb0 ; mov al,
-; db 0x00 ; identity
-; db 0x66, 0xe9 ; jmp word
-; dw 0x0  ; offset to real handler
-; 7 bytes == could use a 64-bit word as template
-; then byte [dest + 2] <- identity, word [dest + 5] <- offset
-irqr_template:
-	push	rax
-	mov	al,0x0
-	jmp	word 0
-irqr_template_end:
-irqr_template_size	equ (irqr_template_end - irqr_template)
 
 section bss
 globals:
@@ -3217,10 +3294,8 @@ memory_start resd 1
 
 ; Provide room for all possible interrupts, although we'll only use up to
 ; 48 or so
-idt	resq 2 * (idt_max_vec + 1)
+idt	resq 2 * idt_nvec
 idt_end
-
-irqrouters	resb	irqr_template_size * 16
 
 section.bss.end:
 
