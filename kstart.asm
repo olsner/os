@@ -2710,20 +2710,17 @@ syscall_recv:
 
 	mov	rsi, rdi
 	test	rsi, rsi
-
-%if log_messages == 0
-	jz	.do_recv
-%else
 	jnz	.have_handle
-	push	rax
+
+%if log_messages
 lodstr	rdi, '%p: recv from any', 10
 	mov	rsi, rax
 	call	printf
-	pop	rax
-	jmp	.do_recv
-.have_handle:
 %endif
+	zero	eax
+	jmp	.do_recv
 
+.have_handle:
 	mov	rdi, [rax + proc.aspace]
 	; rsi = local handle name
 	call	find_handle
