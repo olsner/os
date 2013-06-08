@@ -2209,7 +2209,7 @@ lodstr	r12, 'Write access to read-only page', 10
 
 	mov	rdi, r12 ; mapping
 
-.map_region
+.map_region:
 	; 1. The region has a physical page backing it already:
 	;   * Check that we are allowed to map it as it is (i.e. correct
 	;     permissions, no CoW required, etc)
@@ -2346,7 +2346,7 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 %macro sc 1
 	dd	syscall_ %+ %1 - syscall_entry
 %endmacro
-.table
+.table:
 	sc recv
 	sc nosys ; MAP
 	sc nosys ; PFAULT
@@ -2356,7 +2356,7 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	; backdoor syscalls
 	sc write
 	sc portio
-.end_table
+.end_table:
 N_SYSCALLS	equ (.end_table - .table) / 4
 
 syscall_nosys:
@@ -3351,7 +3351,7 @@ memory_start resd 1
 ; Provide room for all possible interrupts, although we'll only use up to
 ; 48 or so
 idt	resq 2 * idt_nvec
-idt_end
+idt_end:
 
 section.bss.end:
 
