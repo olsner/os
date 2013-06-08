@@ -5,8 +5,7 @@
 	movq	xmm0, xmm1
 .loop:
 	mov	edi,'2'
-	xor	eax,eax
-	syscall
+	call	putchar
 
 	paddq	xmm0,xmm1
 
@@ -16,3 +15,4 @@
 
 	jmp	.loop
 
+%include "putchar.asm"

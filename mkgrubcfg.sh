@@ -18,6 +18,13 @@ menuentry "irq+pic+console+shell" {
     boot
 }
 
+menuentry "puts+xmm" {
+    multiboot (cd)/kstart.b
+    module (cd)/user/test_puts.mod
+    module (cd)/user/test_xmm.mod
+    boot
+}
+
 EOF
 
 while [ $# -gt 0 ]; do

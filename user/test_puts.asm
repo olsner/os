@@ -6,19 +6,18 @@
 	mov	ebx, 7
 .loop
 	lea	edi,['a'+rbx]
-	xor	eax,eax
-	syscall
+	call	putchar
 
 	paddq	xmm0, xmm1
 	dec	ebx
 	jnz	.loop
 
 .end:
-lodstr	rdi,	'Hello World from puts', 10
+lodstr	edi,	'Hello World from puts', 10
 	call	puts
 
-lodstr	rdi,	'printf %% "%s" %c',10,0
-lodstr	rsi,	'Hello World',0
+lodstr	edi,	'printf %% "%s" %c',10,0
+lodstr	esi,	'Hello World',0
 	mov	edx,'C'
 	call	printf
 
