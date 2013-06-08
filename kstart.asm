@@ -17,6 +17,7 @@
 %define log_mappings 0
 %define log_waiters 0
 %define log_messages 0
+%define log_irq 0
 
 %define builtin_keyboard 1
 %define builtin_timer 1
@@ -556,18 +557,16 @@ initial_handles:
 	loop	initial_handles
 
 .done:
+	; Set up the pointer to the dedicated IRQ process
+	mov	[rbp + gseg.irq_process], rdi
 	mov	rsi, rdi
-	push	rsi
 lodstr	rdi,	'done. first process is %p', 10
 	call	printf
-
-	; Set up the pointer to the dedicated IRQ process
-	pop	qword [rbp + gseg.irq_process]
 
 	jmp	switch_next
 
 handle_irq_generic:
-	; we have an irq number in bl, user-space rbx on stack
+	; we have an irq number on stack
 	; all other state undefined
 	push	rax
 	push	rbp
@@ -582,26 +581,40 @@ handle_irq_generic:
 	; The rax and rbp we saved above, store them in process
 	pop	qword [rax + proc.rbp]
 	pop	qword [rax + proc.rax]
-	movzx	ebx, bl ; not necessary, but nice
-	push	rbx ; interrupt number
-	; save_from_iret will save the wrong rbx now - we'll resave the right
-	; one below.
 	call	save_from_iret
 
-	mov	rdi, [rbp + gseg.process]
+	mov	rdx, [rbp + gseg.process]
+	pop	rbx
 	pop	rbx ; interrupt number
-	pop	qword [rdi + proc.rbx]
+
+%if log_irq
+lodstr	rdi,	'handle_irq_generic(%x): proc=%p', 10
+	mov	rsi, rbx
+	call	printf
+%endif
+
+	mov	rdi, [rbp + gseg.process]
 	mov	qword [rbp + gseg.process], 0 ; some kind of temporary code
 	call	runqueue_append
 	jmp	.saved
 .no_save:
-	; Pop the saved rbx/rax/rbp, plus the 5-word interrupt stack frame
-	add	rsp, 8 * 8
-.saved:
-
-lodstr	rdi,	'handle_irq_generic: %x', 10
+	mov	rbx, [rsp + 24] ; rbp rax rip irq(was:cs)
+%if log_irq
+lodstr	rdi,	'handle_irq_generic(%x): idle', 10
 	mov	rsi, rbx
 	call	printf
+%endif
+
+	; Pop the saved rax/rbp, plus the 5-word interrupt stack frame
+	add	rsp, 7 * 8
+.saved:
+
+%if log_irq
+lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
+	mov	rsi, [rbp + gseg.irq_process]
+	mov	edx, [rsi + proc.flags]
+	call	printf
+%endif
 
 	; Not very nice to duplicate message-sending here...
 	; Oh, and we forget to check some things:
@@ -614,6 +627,12 @@ lodstr	rdi,	'handle_irq_generic: %x', 10
 	jnz	.delay
 	test	[rax + proc.flags], byte PROC_IN_RECV
 	jz	.delay
+	mov	rsi, [rax + proc.rdi]
+	test	rsi, rsi
+	jz	.recv_from_any
+	cmp	qword [rsi + handle.other], 0
+	jnz	.delay
+.recv_from_any:
 
 	and	[rax + proc.flags], byte ~PROC_IN_RECV
 	mov	qword [rax + proc.rax], 0
@@ -622,7 +641,7 @@ lodstr	rdi,	'handle_irq_generic: %x', 10
 
 	jmp	switch_to
 .delay:
-lodstr	rdi,	'handle_irq_generic: delivery delayed', 10
+lodstr	rdi,	'handle_irq_generic(%x): delivery delayed', 10
 	mov	rsi, rbx
 	call	printf
 
@@ -631,8 +650,8 @@ lodstr	rdi,	'handle_irq_generic: delivery delayed', 10
 
 %macro handle_irqN_generic 1
 handle_irq_ %+ %1:
-	push	rbx
-	mov	bl, %1
+	; Overwrite CS. We don't let user programs change their CS.
+	mov	[rsp + 8], byte %1
 	jmp	handle_irq_generic
 %endmacro
 
