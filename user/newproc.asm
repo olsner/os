@@ -11,7 +11,7 @@ CHILD_HANDLE	equ	1
 	mov	eax, MSG_NEWPROC
 	syscall
 
-lodstr	rdi, 'old: calling new proc...', 10
+lodstr	edi, 'old: calling new proc...', 10
 	call	printf
 
 	mov	esi, 1
@@ -23,10 +23,10 @@ lodstr	rdi, 'old: calling new proc...', 10
 	mov	edi, ebx
 	syscall
 
-lodstr	rdi, 'old: call returned %x from %x: %x %x %x %x %x', 10
+lodstr	edi, 'old: call returned %x from %x: %x %x %x %x %x', 10
 	call log_message
 
-lodstr	rdi, 'old calling %p...', 10
+lodstr	edi, 'old calling %p...', 10
 	mov	rsi, rbx
 	call	printf
 
@@ -43,7 +43,7 @@ lodstr	rdi, 'old calling %p...', 10
 
 	test	si, si
 	jnz	.call_new
-lodstr	rdi, 'old received %p %x %x %x %x', 10
+lodstr	edi, 'old received %p %x %x %x %x', 10
 	call	log_message
 
 	jmp	.call_new
@@ -59,7 +59,7 @@ user_entry_new:
 
 .loop:
 	mov	rsi, [rsp]
-;lodstr	rdi, 'new receiving from %p...', 10
+;lodstr	edi, 'new receiving from %p...', 10
 ;	call	printf
 
 	mov	rdi, [rsp]
@@ -69,7 +69,7 @@ user_entry_new:
 	;    (ax di si dx r8 r9 10) ->
 	; di (si dx cx r8 r9 st st)
 
-;lodstr	rdi, 'new received %x from %x: %x %x %x %x %x', 10
+;lodstr	edi, 'new received %x from %x: %x %x %x %x %x', 10
 ;	call log_message
 
 	mov	rdi, [rsp]

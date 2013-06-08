@@ -8,7 +8,7 @@ boot:
 	sub	esp, 0x400
 	push	rsp
 
-lodstr	rdi,	"Shell v0.1. Sorry there's no keymap yet.", 10
+lodstr	edi,	"Shell v0.1. Sorry there's no keymap yet.", 10
 	call	printf
 
 prompt:

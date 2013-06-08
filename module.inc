@@ -1,5 +1,7 @@
 ; vim:filetype=nasm:
 
+%define in_module 1
+
 ; Takes one argument: entry point label
 %macro defmod 1
 jmp	%1
