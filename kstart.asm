@@ -295,6 +295,7 @@ apic_setup:
 	mov	eax, APIC_PBASE | 0x800 | 0x100
 	wrmsr
 
+%if builtin_timer
 APIC_REG_TPR		equ	0x80
 APIC_REG_EOI		equ	0xb0
 APIC_REG_SPURIOUS	equ	0xf0
@@ -318,11 +319,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	mov	ax,1010b
 	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
 
-%if builtin_timer
 	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x20000 + APIC_TIMER_IRQ
-%else
-	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x10000
-%endif
 	mov	dword [rbp+APIC_REG_PERFC_LVT-rbpoffset], 0x10000
 	mov	dword [rbp+APIC_REG_LINT0_LVT-rbpoffset], 0x8700
 	mov	dword [rbp+APIC_REG_LINT1_LVT-rbpoffset], 0x0400
@@ -339,7 +336,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	; Set the task priority register to 0 (accept all interrupts)
 	zero	eax
 	mov	cr8,rax
-
+%endif
 
 	mov	ecx, MSR_STAR
 	; cs for syscall (high word) and sysret (low word).
