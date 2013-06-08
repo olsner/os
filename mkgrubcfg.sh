@@ -9,12 +9,12 @@ menuentry "irq+pic+console" {
     boot
 }
 
-menuentry "irq+pic+console+newproc" {
+menuentry "irq+pic+console+shell" {
     multiboot (cd)/kstart.b
     module (cd)/kern/irq.mod
     module (cd)/kern/pic.mod
     module (cd)/kern/console.mod
-    module (cd)/user/newproc.mod
+    module (cd)/user/shell.mod
     boot
 }
 

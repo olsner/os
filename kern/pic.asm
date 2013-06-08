@@ -127,40 +127,49 @@ lodstr	rdi,	'PIC registering IRQ %x', 10
 
 irq:
 	push	rdi
-lodstr	rdi, 'PIC: IRQ triggered', 10
+	mov	esi, edi
+lodstr	rdi, 'PIC: IRQ %x triggered', 10
 	call	printf
 	pop	rdi
 
 	; rdi = IN_IRQ_BASE + num
 	sub	edi, IN_IRQ_BASE
+	push	rdi
 
 	; TODO Check for slave IRQs and handle them.
 	; Also check for spurious IRQs for 7 and 15
 
 	; Mask interrupt (ignore it until the driver has responded back to us)
-	in	al, PIC1_DATA
-	bts	ax, di
-	out	PIC1_DATA, al
+	mov	esi, edi
+	mov	edi, PIC1_DATA
+	call	pic_mask
 
 	; Since we use the mask to control exactly which IRQs get delivered, we
 	; can use non-specific EOI (and we do it right away so that another IRQ
 	; can get delivered ASAP).
-	mov	al, PIC_EOI
-	out	PIC1_CMD, al
+	mov	edi, PIC1_CMD
+	mov	esi, PIC_EOI
+	call	outb
 
 	; Unmask later when we get a response from the handler.
 
 	; Since this send is blocking, there's a time here where we are left
 	; unable to respond to interrupts. Bad stuff. I think something will
 	; be done elsewhere to allow interrupts to be queued.
-	mov	esi, edi ; actual irq number
-	add	edi, PIC_IRQ_BASE
+	pop	rsi
+	lea	edi, [rsi + PIC_IRQ_BASE]
 	mov	eax, msg_send(MSG_IRQ_T)
 	syscall
 
 	jmp	rcv_loop
 
 ack_irq:
+	push	rdi
+	mov	esi, edi
+lodstr	rdi, 'PIC: IRQ %x acknowledged', 10
+	call	printf
+	pop	rdi
+
 	; The EOI was already sent. Now we just need to unmask the interrupt
 	; to allow it to be delivered again.
 
@@ -173,20 +182,44 @@ unmask:
 	cmp	edi, 8
 	jae	unmask_slave
 
-	;in	al, PIC1_DATA
-	; Unmask registered IRQ
-	btr	eax, edi
-	;out	PIC1_DATA, al
+.not_slave:
+	mov	esi, edi
+	mov	edi, PIC1_DATA
+	call	pic_unmask
 
 	ret
 
 unmask_slave:
-	sub	edi, 8
-	;in	al, PIC2_DATA
-	btr	eax, edi
-	;out	PIC2_DATA, al
+	lea	esi, [rdi - 8]
+	mov	edi, PIC2_DATA
+	call	pic_unmask
 	mov	edi, 2
-	jmp	unmask
+	jmp	unmask.not_slave
 
+; edi = PIC port
+; esi = bit to unmask
+pic_unmask:
+	push	rdi
+	push	rsi
+	call	inb
+	pop	rsi
+	btr	eax, esi
+	pop	rdi
+	mov	esi, eax
+	jmp	outb
+
+; edi = PIC port
+; esi = bit to mask
+pic_mask:
+	push	rdi
+	push	rsi
+	call	inb
+	pop	rsi
+	btr	eax, esi
+	pop	rdi
+	mov	esi, eax
+	jmp	outb
+
+%include "portio.asm"
 %include "printf.asm"
 %include "putchar.asm"
