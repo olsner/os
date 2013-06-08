@@ -2,6 +2,8 @@
 %include "module.inc"
 %include "pic.inc"
 
+%define log 0
+
 ; Base vector for PIC interrupts. Assume slave is mapped at base + 8.
 ; Clients are mapped at PIC_IRQ_BASE..PIC_IRQ_BASE+15
 ; This is also the same as the raw IRQ numbers we listen to.
@@ -21,8 +23,10 @@ boot:
 	; 0x30..0x3f: our receivers for interrupts
 	; 1: temporary handle for something that is registering itself
 
+%if log
 lodstr	rdi, 'PIC booting...', 10
 	call	printf
+%endif
 
 	; Reinitialize PIC?
 	; * Mask all interrupts (we don't want them until someone registers)
@@ -55,9 +59,11 @@ lodstr	rdi, 'PIC booting...', 10
 	zero	edx
 	syscall
 
+%if log
 	mov	rsi, [rsp]
 lodstr	rdi, 'PIC boot complete. rawIRQ is %x', 10
 	call	printf
+%endif
 
 rcv_loop:
 	zero	eax
@@ -68,11 +74,13 @@ rcv_loop:
 	push	rdi
 	push	rsi
 
+%if log
 	mov	rcx, rsi
 	mov	rdx, rdi
 	mov	rsi, rax
 lodstr	rdi, 'PIC received %x from %x: %x', 10
 	call	printf
+%endif
 
 	pop	rsi
 	pop	rdi
@@ -99,7 +107,7 @@ lodstr	rdi, 'PIC received %x from %x: %x', 10
 ; the corresponding IRQ.
 reg_irq:
 	push	rsi
-%if 1
+%if log
 	push	rdi
 lodstr	rdi,	'PIC registering IRQ %x', 10
 	call	printf
@@ -126,11 +134,13 @@ lodstr	rdi,	'PIC registering IRQ %x', 10
 	jmp	rcv_loop
 
 irq:
+%if log
 	push	rdi
 	mov	esi, edi
 lodstr	rdi, 'PIC: IRQ %x triggered', 10
 	call	printf
 	pop	rdi
+%endif
 
 	; rdi = IN_IRQ_BASE + num
 	sub	edi, IN_IRQ_BASE
@@ -164,11 +174,13 @@ lodstr	rdi, 'PIC: IRQ %x triggered', 10
 	jmp	rcv_loop
 
 ack_irq:
+%if log
 	push	rdi
 	mov	esi, edi
 lodstr	rdi, 'PIC: IRQ %x acknowledged', 10
 	call	printf
 	pop	rdi
+%endif
 
 	; The EOI was already sent. Now we just need to unmask the interrupt
 	; to allow it to be delivered again.
@@ -215,11 +227,13 @@ pic_mask:
 	push	rsi
 	call	inb
 	pop	rsi
-	btr	eax, esi
+	bts	eax, esi
 	pop	rdi
 	mov	esi, eax
 	jmp	outb
 
 %include "portio.asm"
+%if log
 %include "printf.asm"
 %include "putchar.asm"
+%endif

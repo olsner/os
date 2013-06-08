@@ -1,5 +1,7 @@
 %include "module.inc"
 
+%define log 0
+
 ; This is the out-of-kernel part of the rawIRQ handling. This is started by the
 ; kernel as the first process, and handed to the second process in rdi. (At
 ; this point there are no handles in that process, so the handle key can be
@@ -38,8 +40,10 @@ boot:
 	times NUM_IRQ_WORDS push rax
 %endif
 
+%if log
 lodstr	rdi,	'rawIRQ: boot complete.', 10
 	call	puts
+%endif
 
 rcv_loop:
 	zero	eax
@@ -61,11 +65,15 @@ irq:
 	bt	dword [rsp], esi
 	jnc	rcv_loop
 
+%if log
 	push	rsi
 lodstr	rdi,	'rawIRQ: %x triggered', 10
 	call	printf
 
 	pop	rdi
+%else
+	mov	edi, esi
+%endif
 	mov	eax, msg_send(MSG_IRQ_T)
 	syscall
 
@@ -87,9 +95,11 @@ reg_irq:
 	mov	eax, MSG_HMOD
 	syscall
 
+%if log
 lodstr	rdi, 'rawIRQ: %x registered', 10
 	mov	rsi, [rsp]
 	call	printf
+%endif
 
 	pop	rdi
 	mov	rsi, rdi
@@ -98,5 +108,7 @@ lodstr	rdi, 'rawIRQ: %x registered', 10
 
 	jmp	rcv_loop
 
+%if log
 %include "printf.asm"
 %include "putchar.asm"
+%endif

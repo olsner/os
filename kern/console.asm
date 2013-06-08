@@ -1,5 +1,7 @@
 %include "module.inc"
 
+%define log 0
+
 ; Interface summary:
 ; * MSG_CON_WRITE: write to screen
 ;   (use send - console does not respond)
@@ -20,8 +22,16 @@ IRQ_KEYBOARD	equ 1
 KEY_DATA	equ 0x60
 
 boot:
-lodstr	rdi, 'Console booting...', 10
+%if log
+lodstr	rdi, 'console: booting...', 10
 	call	printf
+%endif
+
+	; TODO Reinitialize the keyboard and 8042 here. We should not assume it
+	; has a sane state after the boot loader.
+	; Also, the key-up code of the last input to grub often comes in just
+	; after boot up. We should ignore that (would come as a bonus after
+	; resetting the keyboard.)
 
 	mov	edi, pic_driver
 	push	rdi
@@ -34,9 +44,10 @@ lodstr	rdi, 'Console booting...', 10
 	mov	eax, msg_call(MSG_REG_IRQ)
 	syscall
 
-	mov	rsi, rdi
-lodstr	rdi, 'Console boot complete, PIC interrupt %x', 10
+%if log
+lodstr	rdi, 'console: boot complete', 10
 	call	printf
+%endif
 
 	mov	eax, MSG_HMOD
 	mov	edi, the_reader
@@ -79,9 +90,11 @@ msg_write:
 
 msg_read:
 	push	rdi
+%if log
 	mov	rsi, rdi
 lodstr	edi,	'msg_read from %x', 10
 	call	printf
+%endif
 
 	pop	rdi
 	mov	eax, MSG_HMOD
@@ -89,25 +102,27 @@ lodstr	edi,	'msg_read from %x', 10
 	zero	edx
 	syscall
 
+	mov	byte [rbp + 1], 1
+%if log
 lodstr	edi,	'Have reader, key=%x waiting=%x', 10
 	movzx	esi, byte [rbp]
 	movzx	edx, byte [rbp + 1]
 	call	printf
+%endif
 
 	; no character queued yet, wait for input
 	cmp	byte [rbp], 0
-	jne	have_key
-
-	mov	byte [rbp + 1], 1
+	je	rcv_loop
+	call	have_key
 	jmp	rcv_loop
 
 have_key:
+%if log
 lodstr	edi,	'Have key %x (waiting=%x), sending to reader', 10
 	movzx	esi, byte [rbp]
 	movzx	edx, byte [rbp + 1]
 	call	printf
-
-	mov	byte [rbp + 1], 0
+%endif
 
 	mov	edi, the_reader
 	mov	eax, msg_send(MSG_CON_READ)
@@ -121,7 +136,10 @@ lodstr	edi,	'Have key %x (waiting=%x), sending to reader', 10
 	zero	edx
 	syscall
 
-	jmp	rcv_loop
+	zero	eax
+	mov	[rbp], eax
+
+	ret
 
 irq_message:
 	push	rdi
@@ -130,19 +148,32 @@ irq_message:
 	mov	edi, KEY_DATA
 	call	inb
 
+	test	al, 0x80
+	jz	.ack_and_ret
+
+	and	al, 0x7f
+	add	al, 0x20
 	mov	[rbp], al
+%if log
 	mov	esi, eax
-lodstr	edi,	'Key scancode received: %x', 10
+	movzx	edx, byte [rbp + 1]
+lodstr	edi,	'Key scancode received: %x (waiting=%x)', 10
 	call	printf
+%endif
+
+	cmp	byte [rbp + 1], 0
+	jz	.ack_and_ret
+	call	have_key
+.ack_and_ret:
 
 	pop	rdi
 	mov	eax, msg_send(MSG_IRQ_ACK)
 	syscall
 
-	cmp	byte [rbp + 1], 0
-	jnz	have_key
 	jmp	rcv_loop
 
 %include "portio.asm"
+%if log
 %include "printf.asm"
 %include "putchar.asm"
+%endif

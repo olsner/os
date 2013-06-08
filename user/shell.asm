@@ -8,30 +8,39 @@ boot:
 	sub	esp, 0x400
 	push	rsp
 
-lodstr	rdi,	'Shell', 10
+lodstr	rdi,	"Shell v0.1. Sorry there's no keymap yet.", 10
 	call	printf
 
-cmd_loop:
+prompt:
 	mov	edi, '$'
 	call	putchar
+	mov	edi, ' '
+	call	putchar
 
+cmd_loop:
 	call	getchar
 	pop	rdi
 	push	rdi
 
-	cmp	al, 10
+	cmp	al, 0x3c
 	je	newline
 
+%if 1
+	mov	edi, eax
+	call	putchar
+%else
 lodstr	edi,	'Char %x', 10
-	mov	esi, eax
+	mov	edi, eax
 	call	printf
+%endif
 
 	jmp	cmd_loop
 
 newline:
 	mov	edi, 10
 	call	putchar
-	jmp	cmd_loop
+
+	jmp	prompt
 
 putchar:
 	mov	esi, edi
