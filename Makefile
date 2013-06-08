@@ -21,25 +21,25 @@ HUSH_CC=@echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 endif
 
-OUTDIR   := out
-GRUBDIR  := $(OUTDIR)/grub
+OUTDIR       := out
+GRUBDIR      := $(OUTDIR)/grub
 MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm user/shell.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
-ASMFILES := kstart.asm $(MOD_ASMFILES)
-MODFILES := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod)
-DEPFILES := $(ASMFILES:.asm=.dep)
-ASMOUTS  := \
+ASMFILES     := kstart.asm $(MOD_ASMFILES)
+MOD_CFILES   := cuser/helloworld.c
+MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod)
+DEPFILES     := $(ASMFILES:.asm=.dep)
+ASMOUTS      := \
 	$(GRUBDIR)/kstart.b \
 	$(MODFILES) \
 	$(ASMFILES:%.asm=$(OUTDIR)/%.b) \
 	$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
 	$(DEPFILES)
-INLINE_MODULES = $(OUTDIR)/kern/irq.b
 
 all: cpuid rflags $(OUTDIR)/grub.iso
 
-.SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b)
+.SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_CFILES:.c=$(OUTDIR)/%.o)
 
 clean:
 	rm -f $(OUTDIR)/grub.iso
@@ -78,9 +78,18 @@ GRUB_MODULES = --modules="boot multiboot"
 
 GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
+# FIXME Dependencies
+$(OUTDIR)/cuser/%.o: cuser/%.c
+	@mkdir -p $(@D)
+	$(CC) -ffreestanding -Os -march=native -c -o $@ $<
+
+$(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
+	@mkdir -p $(@D)
+	ld -o $@ -T $^ -Map $(OUTDIR)/$*.map
+
 $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
-	bash $< $(MOD_ASMFILES:%.asm=%) > $@
+	bash $< $(MOD_ASMFILES:%.asm=%) $(MOD_CFILES:%.c=%) > $@
 
 # TODO We should change this so that out/grub/ is removed and regenerated each
 # build, and put all other output products outside out/grub/
