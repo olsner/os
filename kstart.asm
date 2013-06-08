@@ -2336,6 +2336,7 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 	sc newproc
 	; backdoor syscalls
 	sc write
+	sc portio
 .end_table
 N_SYSCALLS	equ (.end_table - .table) / 4
 
@@ -2421,6 +2422,29 @@ lodstr	rsi, 27, '[0m', 10
 	rep	stosw
 
 	jmp	.finish_write
+
+syscall_portio:
+	; di = port
+	; si = flags (i/o) and data size
+	; (edx = data)
+
+	; Put port in dx and data in ax, since that's what in/out uses
+	xchg	edi, edx
+	mov	eax, edi
+
+	cmp	esi, 0x1
+	je	.inb
+	cmp	esi, 0x11
+	je	.outb
+	ret
+
+.inb:
+	in	al, dx
+	ret
+
+.outb:
+	out	dx, al
+	ret
 
 syscall_gettime:
 	movzx	eax, byte [rbp + gseg.curtime]
