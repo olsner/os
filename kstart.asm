@@ -2568,12 +2568,17 @@ lodstr	rdi, 'dup_handle: %p (key=%x proc=%p)', 10
 	pop	rdx ; proc
 	pop	rbx ; other-handle
 	pop	rsi ; rename-handle
+	zero	eax
 	test	rsi, rsi
 	jz	.just_delete
 
 	call	map_handle
 	mov	[rax + handle.other], rbx
 .just_delete:
+	test	rbx, rbx
+	jz	.no_other
+	mov	[rbx + handle.other], rax
+.no_other:
 	ret
 
 .just_dup:
