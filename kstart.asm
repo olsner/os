@@ -1,6 +1,8 @@
 [map all kstart.map]
 
 ; Configuration
+; NB: Enable too many of these and the kernel pops too close to 8kB and stops
+; working.
 %define log_switch_to 0
 %define log_switch_next 0
 %define log_idle 0
@@ -19,7 +21,7 @@
 %define log_messages 0
 %define log_irq 0
 
-%define builtin_keyboard 1
+%define builtin_keyboard 0
 %define builtin_timer 1
 %define bochs_con 1
 
