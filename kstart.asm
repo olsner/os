@@ -43,9 +43,10 @@ CR4_OSFXSR	equ	0x200
 CR4_OSXMMEXCPT	equ	0x400
 
 %define PANIC PANIC_ __LINE__
-%macro PANIC_ 1-2 'PANIC'
+%macro PANIC_ 1
 	mov	esi, %1
-	jmp	panic_print
+	tcall	panic_print
+%assign need_panic 1
 %endmacro
 
 %macro tcall 1
@@ -889,6 +890,7 @@ lodstr	rdi,	'Waiting for %p (%x)', 10
 	ret
 
 .deadlock:
+	; Kill both processes and clean up after them.
 	PANIC
 .on_runqueue:
 	PANIC
@@ -1224,8 +1226,7 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 	jmp	.restore_and_iretq
 
 .ret_no_intrs:
-	cli
-	hlt
+	PANIC
 
 ; Return to process in 'rax' using fastret.
 ; Note: This must be the same process as was last running, otherwise it'll have
@@ -2540,11 +2541,13 @@ lodstr	rdi,	'%p: HMOD %x -> %x, %x', 10
 	; dup-handle should not get a pointer to something (but proc should
 	; get set?)
 
+%if log_hmod
 lodstr	rdi, 'dup_handle: %p (key=%x proc=%p)', 10
 	mov	rsi, rax
 	mov	rdx, [rax + handle.key]
 	mov	rcx, [rax + handle.proc]
 	call	printf
+%endif
 
 	pop	rsi
 	mov	rdi, [rsp + 8]
@@ -2707,11 +2710,10 @@ syscall_send:
 
 %if log_messages
 	push	rax
-lodstr	rdi,	'%p send via %p to %x (%p)', 10
+lodstr	rdi,	'%p send via %x to %p', 10
 	mov	rsi, [rbp + gseg.process]
-	mov	rdx, rax
-	mov	rcx, [rax + handle.key]
-	mov	r8, [rax + handle.proc]
+	mov	rdx, [rsi + proc.rdi]
+	mov	rcx, [rax + handle.proc]
 	call	printf
 	pop	rax
 %endif
@@ -2720,14 +2722,20 @@ lodstr	rdi,	'%p send via %p to %x (%p)', 10
 	or	[rsi + proc.flags], byte PROC_IN_SEND
 	mov	[rsi + proc.rdi], rax
 	mov	rdi, [rax + handle.proc]
-	; rdi: source *handle* for target process
-	; rsi: source *process*
+	; rdi: target process
+	; rsi: source process
 	call	send_or_block
 	mov	rax, [rbp + gseg.process]
 	swapgs
 	jmp	fastret
 
 .no_target:
+%if log_messages
+lodstr	rdi,	'%p send to %x: no handle found', 10
+	mov	rsi, [rbp + gseg.process]
+	mov	rdx, [rsi + proc.rdi]
+	call	printf
+%endif
 	PANIC
 
 ; bx = saved message code, old ax
@@ -2982,17 +2990,19 @@ transfer_message:
 	; rdx = recipient's handle
 	; rax = recipient's handle's other handle
 %if log_messages
-lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
+lodstr	rdi, 'rcpt handle %p -> handle %p (proc %p) != sender handle %p', 10
 	mov	rsi, rdx
 	mov	rdx, rax
-	mov	rcx, rbx
+	mov	rcx, [rdx + handle.proc]
+	mov	r8, rbx
 	call	printf
 %endif
 
 	; Mismatched sender/recipient.
 	PANIC
 
-.fresh_handle
+.fresh_handle:
+	; rdx = recipient's (fresh) handle
 	; Get the source handle's other handle, i.e. the recipient handle.
 	mov	rax, [rbx + handle.other]
 	test	rax, rax
@@ -3017,8 +3027,19 @@ lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
 	; rax = actual handle
 	push	rdi
 	push	rsi
-	; rdx = recipient handle object we would've used
-	mov	rdi, rdx
+	push	rdx
+
+%if log_messages
+lodstr	rdi, 'Junking fresh rcpt %x because sender %x has other %x', 10
+	mov	rsi, [rdx + handle.key]
+	mov	rdx, [rbx + handle.key]
+	mov	rcx, [rbx + handle.other]
+	mov	rcx, [rcx + handle.key]
+	call	printf
+%endif
+
+	; rdi = recipient handle object we would've used
+	pop	rdi
 	call	free_frame
 
 	pop	rsi
@@ -3051,7 +3072,8 @@ lodstr	rdi, 'rcpt handle %p -> handle %p != sender handle %p', 10
 	and	[rdi + proc.flags], byte ~PROC_IN_RECV
 %if log_messages
 	mov	rdx, rdi
-lodstr	rdi, 'Copied message from %p to %p', 10
+	mov	rcx, [rdi + proc.rdi]
+lodstr	rdi, 'Copied message from %p to %p (handle = %x)', 10
 	call	printf
 %endif
 	; The recipient is guaranteed to be unblocked by this, make it stop
@@ -3215,12 +3237,8 @@ lodstr	rdi,	'recv: %p (%x)', 10
 	push	rdi
 	mov	rsi, rdi
 lodstr	rdi,	'No senders found to %p (%x)', 10
-%if need_print_procstate
-	call	print_proc
-%else
 	mov	rdx, [rsi + proc.flags]
 	call	printf
-%endif
 	pop	rdi
 %endif
 
@@ -3231,7 +3249,6 @@ lodstr	rdi,	'No senders found to %p (%x)', 10
 panic_print:
 lodstr	rdi, 'PANIC @ %x', 10 ; Decimal output would be nice...
 	call	printf
-
 	cli
 	hlt
 
