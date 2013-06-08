@@ -2898,6 +2898,37 @@ send_or_block:
 	cmp	edx, byte PROC_IN_RECV
 	jne	.block_on_send
 
+	mov	rdx, [rsi + proc.rdi]
+	mov	rax, [rdi + proc.rdi]
+	test	rax, rax
+	jz	.open_recv
+	mov	rcx, [rax + handle.other]
+
+	; other == null => receiving to fresh handle
+	test	rcx, rcx
+	jz	.do_transfer
+
+	; non-null other => receiving to specific, and we must match
+	cmp	rcx, rdx
+	jne	.block_on_send
+
+	jmp	.do_transfer
+
+.open_recv:
+%if log_messages
+	push	rdi
+	push	rsi
+	mov	rdx, rsi
+	mov	rsi, rdi
+lodstr	rdi,	'Open receive %p <- %p', 10
+	;call	printf
+
+	pop	rsi
+	pop	rdi
+%endif
+
+.do_transfer:
+
 	; --- If it can (it's IN_RECV and not IN_SEND):
 	; 2. Copy register contents from current process to recipient
 	; 3. Reset recipient's IN_RECV and sender's IN_SEND flags
