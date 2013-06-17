@@ -28,8 +28,9 @@ MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c
+MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod)
-DEPFILES     := $(ASMFILES:.asm=.dep)
+DEPFILES     := $(ASMFILES:.asm=.dep) $(MOD_OFILES:.o=.d)
 ASMOUTS      := \
 	$(GRUBDIR)/kstart.b \
 	$(MODFILES) \
@@ -39,7 +40,7 @@ ASMOUTS      := \
 
 all: cpuid rflags $(OUTDIR)/grub.iso
 
-.SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_CFILES:.c=$(OUTDIR)/%.o)
+.SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_OFILES)
 
 clean:
 	rm -f $(OUTDIR)/grub.iso
@@ -78,10 +79,15 @@ GRUB_MODULES = --modules="boot multiboot"
 
 GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
-# FIXME Dependencies
+USER_CFLAGS = -ffreestanding -Os -W -Wall -Wextra -march=native
+USER_CFLAGS += -Wno-unused-function
+
 $(OUTDIR)/cuser/%.o: cuser/%.c
 	@mkdir -p $(@D)
-	$(CC) -ffreestanding -Os -march=native -c -o $@ $<
+	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
+
+%.d: %.o
+	@
 
 $(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
