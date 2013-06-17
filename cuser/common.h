@@ -1,5 +1,7 @@
 #include <stdint.h>
 
+typedef uint64_t u64;
+
 // FIXME This causes 'start' to follow various silly calling conventions - such
 // as saving callee-save registers. Find some way to get rid of that...
 // Or wait for http://gcc.gnu.org/bugzilla/show_bug.cgi?id=38534 to be fixed.
@@ -14,6 +16,20 @@ enum syscalls_builtins {
 	MSG_HMOD,
 	SYSCALL_WRITE = 6,
 };
+
+enum msg_kind {
+	MSG_KIND_RECV = 0,
+	MSG_KIND_SEND = 1,
+	MSG_KIND_CALL = 2,
+	//MSG_KIND_REPLYWAIT = 3
+};
+
+static uintptr_t msg_set_kind(uintptr_t msg, enum msg_kind kind) {
+	return msg | (kind << 8);
+}
+static uintptr_t msg_send(uintptr_t msg) {
+	return msg_set_kind(msg, MSG_KIND_SEND);
+}
 
 /*
  * Tries to fit into the SysV syscall ABI for x86-64.
@@ -35,6 +51,7 @@ enum syscalls_builtins {
 // received message number. source param is updated to the sender value.
 // sendN: ipcN for sends - params are not by reference, only error code is
 // returned.
+
 
 static inline uintptr_t syscall1(uintptr_t msg, uintptr_t dest) {
 	uintptr_t res;
@@ -81,6 +98,19 @@ static inline uintptr_t syscall4(uintptr_t msg, uintptr_t dest, uintptr_t arg1, 
 	return msg;
 }
 
+static inline uintptr_t syscall5(uintptr_t msg, uintptr_t dest, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4) {
+	register long r8 __asm__("r8") = arg3;
+	register long r9 __asm__("r9") = arg4;
+	__asm__ __volatile__ ("syscall"
+		:	/* return value(s) */
+			"=a" (msg),
+			/* clobbered inputs */
+			"=D" (dest), "=S" (arg1), "=d" (arg2), "=r" (r8), "=r" (r9)
+		: "a" (msg), "D" (dest), "S" (arg1), "d" (arg2), "r" (r8), "r" (r9)
+		: "r10", "r11", "%rcx");
+	return msg;
+}
+
 // Send 3, receive 3, ignore r9 and r10
 static inline uintptr_t ipc3(uintptr_t msg, uintptr_t* destSrc, uintptr_t* arg1, uintptr_t* arg2, uintptr_t* arg3) {
 	register long r8 __asm__("r8") = *arg3;
@@ -114,16 +144,20 @@ static inline uintptr_t recv2(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)
 		:	/* return value(s) */
 			"=a" (msg),
 			/* in/outputs */
-			"=D" (*src)
-		: "a" (0), "D" (*src), "S" (*arg1), "d" (*arg2)
+			"=D" (*src), "=S" (*arg1), "=d" (*arg2)
+		: "a" (0), "D" (*src)
 		: "r8", "r9", "r10", "r11", "%rcx");
 	return msg;
 }
 
+static inline uintptr_t recv0(uintptr_t src)
+{
+	return syscall1(0, src);
+}
+
 static inline uintptr_t send2(uintptr_t msg, uintptr_t dst, uintptr_t arg1, uintptr_t arg2)
 {
-	// add "send"
-	return ipc2(msg, &dst, &arg1, &arg2);
+	return ipc2(msg_send(msg), &dst, &arg1, &arg2);
 }
 
 static void putchar(char c) {

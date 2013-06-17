@@ -12,6 +12,7 @@
 %define log_timer_interrupt 0
 %define log_page_fault 0
 %define log_find_mapping 0
+%define log_unmap 0
 %define log_find_handle 0
 %define log_new_handle 0
 %define log_hmod 0
@@ -79,7 +80,6 @@ CR4_OSXMMEXCPT	equ	0x400
 %include "pages.inc"
 %include "syscalls.inc"
 %include "messages.inc"
-%include "handles.inc"
 %include "pic.inc"
 
 RFLAGS_IF_BIT	equ	9
@@ -1394,44 +1394,51 @@ handle.key equ handle.dnode + dict_node.key
 
 ; A region is a sequential range of pages that can be mapped into various
 ; address spaces. Not all pages need to be backed by actual frames, e.g. for
-; memory-mapped objects. Pages that don't have frames here may have frames in
-; the parent region.
+; memory-mapped objects.
 struc region
-	.parent	resq 1
-	.count	resd 1
-	.flags	resd 1
+	.count	resq 1
 	.paddr	resq 1
 	.size	resq 1
 	; Arbitrary mapping, if there are any
 	.mappings restruc dlist
 	; Links in the global list of regions
-	.node restruc dlist_node
+	;.node restruc dlist_node
 endstruc
-
-REGFLAG_COW	equ 1 ; Hmm, are *mappings* CoW or are *regions*?
 
 ; Ordinary and boring flags
 MAPFLAG_X	equ 1
 MAPFLAG_W	equ 2
 MAPFLAG_R	equ 4
 MAPFLAG_RWX	equ 7 ; All/any of the R/W/X flags
-MAPFLAG_COW	equ 8 ; Hmm, are *mappings* CoW or are *regions*?
-MAPFLAG_ANON	equ 16 ; Anonymous page: allocate frame and region on first read.
-; "Special" flags are >= 0x10000
-MAPFLAG_HANDLE	equ 0x10000 ; deprecated
+MAPFLAG_ANON	equ 16 ; Anonymous page: allocate frame and region on first read
 
-; A non-present page in the page table with this flag set is a handle
-PT_FLAG_HANDLE	equ 0x2
+; "Special" flags are >= 0x10000
+MAPFLAG_HANDLE	equ 0x10000
 
 ; A mapping is a mapped virtual memory range, sometimes backed by a region,
-; other times just a placeholder for virtual memory that may become a region by
-; allocating/loading-from-disk/whatever the frames that would be required.
+; other times -just a placeholder for virtual memory that may become a region by
+; allocating/loading-from-disk/whatever the frames that would be required.-
+;
+; other times either backed by a handle+offset that hasn't yet been faulted from
+; the remote process, or backed by a remote mapping that has been faulted from
+; the first process but hasn't been faulted further. There may be a chain of
+; such recursive mappings, eventually a fault must reach a region-backed mapping
+; or fail.
+;
+; New:
+; * duplicate r/w/x into requested and actual r/w/x
+; * remove cow/anon (those will be the responsibility of the mapped thing)
+; * add required metadata for mapping -> backer/other mapping:
+;   * handle (in local addr space)
+;   * offset for handle
+;   * other-mapping (if backed by some mapping in handle's process)
+;   * linked list of re-mappings?
+
 struc mapping
-	.owner	resq 1 ; address_space
 	.region	resq 1
-	.kobj	equ .region ; deprecated
+	.handle	resq 1
 	.flags	resq 1
-	; Offset into region that corresponds to the first page mapped here
+	; Offset into region/handle that corresponds to the first page mapped
 	.reg_offset resq 1
 	.vaddr	resq 1
 	.size	resq 1
@@ -1447,15 +1454,11 @@ struc aspace
 	; it's less than 4TB is only a single entry in the PML4).
 	.pml4		resq 1
 	; TODO Lock structure for multiprocessing
-	.count		resd 1
-	.flags		resd 1
+	.count		resq 1
 	; Do we need a list of processes that share an address space?
+	; (That would remove the need for .count, I think.)
 	;.procs	resq 1
 	.mappings	restruc dlist
-	; Lowest handle used. The range may contain holes. Something clever
-	; similar to how we (will) handle noncontiguous mappings will apply :)
-	; Also, all handles have mappings.
-	.handles_bottom	resq 1
 	.handles	restruc dict
 endstruc
 
@@ -1535,6 +1538,64 @@ dlist_remove:
 	mov	rax, rsi
 	ret
 
+; rdi: address space to unmap from
+; rsi: starting virtual address
+; rdx: size of the mapping
+unmap_range:
+	add	rdx, rsi
+	; rdx == end of mapping instead
+%if log_unmap
+	push	rdi
+	push	rsi
+	push	rdx
+	mov	rcx, rdi
+	; rsi == start
+	; rdx already == end
+	; rcx = aspace
+lodstr	rdi, 'Unmap %x..%x in aspace %p', 10
+	call	printf
+	pop	rdx
+	pop	rsi
+	pop	rdi
+%endif
+
+	; Find all mappings that overlaps start..end, remove some piece of them
+	; and if they end up empty, remove the mapping.
+
+	mov	rdi, [rdi + aspace.mappings + dlist.head]
+.test_mapping:
+	test	rdi, rdi
+	jz	.done
+	push	rdi
+	push	rdx
+	push	rsi
+	mov	rsi, rdi
+	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
+	mov	rcx, [rdi + mapping.size - mapping.as_node]
+	mov	r8, [rdi + dlist_node.prev]
+	mov	r9, [rdi + dlist_node.next]
+%if log_unmap
+lodstr	rdi, 'Map %p: %p sz %x (%p<-->%p) vaddr %x..%x', 10
+	call	printf
+%endif
+	pop	rsi
+	pop	rdx
+	pop	rdi
+
+	; TODO Fix these tests, then actually implement the unmap bit!
+	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
+	cmp	rsi, rax
+	jb	.next_mapping
+	add	rax, [rdi + mapping.size - mapping.as_node]
+	cmp	rsi, rax
+	jb	.done
+	; vaddr <= cr2 < vaddr+size
+.next_mapping:
+	mov	rdi, [rdi + dlist_node.next]
+	jmp	.test_mapping
+.done:
+	ret
+
 ; rdi: the process (address space!) being mapped into
 ; rsi: the region or kernel object to map
 ; rdx: the virtual address to map the region at
@@ -1554,7 +1615,6 @@ map_region:
 	test	eax,eax
 	jz	.oom
 
-	mov	[rax + mapping.owner], rdi
 	mov	[rax + mapping.vaddr], rdx
 	mov	[rax + mapping.size], rcx
 
@@ -2164,15 +2224,11 @@ lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	mov	rsi, cr2
 	mov	rdi, r12 ; Doesn't need offsetting by mapping.as_node anymore
 
-	mov	rax, [rdi + mapping.flags]
-	mov	rsi, rax
-	test	eax, MAPFLAG_HANDLE
-lodstr	r12, 'Memory-access to handle', 10
-	jnz	.invalid_match ; Handles can never be accessed as memory
+	mov	eax, [rdi + mapping.flags]
+	mov	esi, eax
 	test	eax, MAPFLAG_RWX
 lodstr	r12, 'Access to page without access (%p)', 10
 	jz	.invalid_match ; We had none of the read/write/execute permissions
-
 	; Was the access a write access? (bit 1: set == write)
 	test	byte [rsp], 0x2
 	jz	.not_a_write
@@ -2185,13 +2241,17 @@ lodstr	r12, 'Write access to read-only page', 10
 	; TODO Check for access-during-instruction-fetch for a present NX page
 
 
-	test	eax, MAPFLAG_ANON
-	jz	.map_region
-
-	; If anonymous, but a region has already been set up, use that region
+	; If a region has already been set up, use that region
 	cmp	qword [rdi + mapping.region], 0
 	jnz	.map_region
 
+	test	eax, MAPFLAG_ANON
+	jnz	.map_anon
+
+	cmp	qword [rdi + mapping.handle], 0
+	jnz	.user_pfault
+
+.map_anon:
 	mov	r12, rdi
 
 	; Anonymous mapping: allocate a fresh zero page, create a region for
@@ -2202,7 +2262,6 @@ lodstr	r12, 'Write access to read-only page', 10
 	call	allocate_frame
 	mov	[rax + region.paddr], rbx
 	mov	word [rax + region.size], 0x1000
-	;mov	[rax + region.flags], REGFLAG_COW
 	mov	rdi, r12 ; mapping
 	mov	rsi, rax ; region
 	call	map_add_region
@@ -2262,6 +2321,16 @@ lodstr	r12, 'Mapping something without a region', 10
 .ret:
 	mov	rax, [rbp + gseg.process]
 	jmp	switch_to
+
+; The mapping is a mapped handle that lacks a backing region. Set up a PFAULT
+; IPC to the handle it came from, make this process wait for a response, switch
+; to something else for a while.
+; rdi = mapping
+.user_pfault:
+	mov	rax, [rbp + gseg.process]
+	mov	[rax + proc.fault_mapping], rdi
+	or	[rax + proc.flags], byte PROC_PFAULT
+	PANIC
 
 .no_mappings:
 .kernel_fault:
@@ -2348,12 +2417,12 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 %endmacro
 .table:
 	sc recv
-	sc nosys ; MAP
+	sc map
 	sc nosys ; PFAULT
 	sc nosys ; UNMAP
-	sc hmod ; HMOD
+	sc hmod
 	sc newproc
-	; backdoor syscalls
+	; ("temporary") backdoor syscalls
 	sc write
 	sc portio
 .end_table:
@@ -3279,6 +3348,44 @@ lodstr	rdi,	'No senders found to %p (%x)', 10
 %endif
 
 	tcall	block_and_switch
+
+; rdi = handle to map
+; rsi = flags
+; rdx = virtual address
+; r8 = offset in object
+; r9 = size of mapping
+syscall_map:
+	mov	rax, [rbp + gseg.process]
+	save_regs rdi,rsi,rdx,r8,r9
+
+	; TODO Look up handle (perhaps - need to decide whether to store the
+	; handle object, or just the key?)
+
+	; 1. Find previous mapping(s) and remove it/them
+	push	rax
+	mov	rdi, [rax + proc.aspace]
+	mov	rsi, [rax + proc.rdx]
+	mov	rdx, [rax + proc.r9]
+	call	unmap_range
+
+	; 2. Make new mapping at virtual address
+
+	pop	rbx
+	mov	rdi, [rbx + proc.aspace]
+	zero	esi ; region
+	mov	edx, [rbx + proc.rdx]
+	mov	ecx, [rbx + proc.r9]
+	call	map_region
+	mov	cl, [rbx + proc.rsi]
+	and	cl, 0x1f ; allowed flags
+	or	byte [rax + mapping.flags], cl
+	mov	rcx, [rbx + proc.r8]
+	mov	[rax + mapping.reg_offset], rcx
+	mov	rcx, [rbx + proc.rdi]
+	mov	[rax + mapping.handle], rcx
+
+	zero	rax
+	ret
 
 %include "printf.asm"
 

@@ -5,24 +5,25 @@
 ; (rcx and r11 are used by syscall.)
 
 ; Placeholder for e.g. no message received
+; (Also overloaded with the "receive syscall")
 MSG_NONE	equ	0
 
-; Map a page of this object (more like a syscall)
+; Map a page of this object (syscall)
+; * handle to map (or NULL if e.g. making an anonymous mapping)
 ; * flags:
-;   * read-only/read-write/read-exec
-;   * shared or private/CoW
-;   * arbitrary flags on receiving side? or official mapper/backer side flags?
-;   * CoW = requesting RW locally but RO backer-side
-;     not all backers necessarily support CoW though - needs a supply of frames
-;     this will be notified by the PFAULT handler not succeeding
+;   * r/w/x access
+;   * (temporary:) anon mapping - gets filled from kernel page-frame allocator
+;     on fault.
+;   * plus some arbitrary flags? there's a lot of space for flags (but we'll
+;     need twice the space to account for requested/actual flags)
 ; * virtual address on receiving side
 ; * offset inside object
 ; * length to map
 ;   does not matter except for management of local address space - we'll
 ;   notice at fault time if there's no such page.
 ;
-; Must be called with a CALL.
-; The reply will look like MSG_MAP if successful.
+; Registers the handle and offset in your virtual address space. Future memory
+; access may result in faults getting sent to the named handle.
 MSG_MAP		equ	1
 
 ; Received when a fault happens in a process that has mapped a page from you.

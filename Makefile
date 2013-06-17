@@ -30,7 +30,7 @@ MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm user/shell.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
-MOD_CFILES   := cuser/helloworld.c
+MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod)
 DEPFILES     := $(ASMFILES:%.asm=$(OUTDIR)/%.d) $(MOD_OFILES:.o=.d)

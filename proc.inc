@@ -32,6 +32,11 @@ struc	proc, -0x80
 	.cr3	resq 1
 	.aspace	resq 1
 	.count	resq 1
+	; When PROC_PFAULT is set, a pointer to the mapping that contains the
+	; faulted address. (TODO: remember whether it was a read, write or
+	; execute access - CoW wants to know.)
+	.fault_mapping	resq 1
+	.fault_addr	resq 1
 
 	align 16
 	.fxsave	resb	512
@@ -73,3 +78,6 @@ defbit	PROC_IN_SEND,	3
 defbit	PROC_KERNEL,	4
 ; Is the currently running process
 defbit	PROC_RUNNING,	5
+; Process has had a page fault that requires a response from a backer.
+; proc.fault_mapping is a pointer to the mapping that faulted.
+defbit	PROC_PFAULT,	6
