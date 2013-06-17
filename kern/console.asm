@@ -2,6 +2,10 @@
 
 %define log 0
 
+; set to 1 to disable AT/XT translation and activate scan code set 2.
+; the XT codes are easier to deal with though :)
+%define use_set2 0
+
 ; Interface summary:
 ; * MSG_CON_WRITE: write to screen
 ;   (use send - console does not respond)
@@ -20,12 +24,49 @@ pic_driver equ 2
 
 IRQ_KEYBOARD	equ 1
 KEY_DATA	equ 0x60
+KEY_CMD		equ 0x64
 
 boot:
 %if log
-lodstr	rdi, 'console: booting...', 10
+lodstr	edi, 'console: booting...', 10
 	call	printf
 %endif
+
+	; bits:
+	; 0 = first port IRQ (1 = enabled)
+	; 1 = second port irq (disabled)
+	; 2 = passed POST (not sure if need to write, but let's say we did pass
+	; POST)
+	; 3 = should be zero
+	; 4 = first ps/2 port clock (1 = disabled)
+	; 5 = second ps/2 port clock (1 = disabled)
+	; 6 = first ps/2 port translation (1 = enabled)
+	;     we want this disabled, to get the raw scan codes from keyboard
+CONFIG_BYTE	equ	1 | 4
+
+%if use_set2
+	mov	di, KEY_CMD
+	mov	si, 0x60 ; write config byte
+	call	outb
+	call	wait_ready_for_write
+	mov	di, KEY_DATA
+	mov	si, CONFIG_BYTE
+	call	outb
+	call	wait_ready_for_write
+	mov	di, KEY_DATA
+	mov	si, 0xff ; reset
+	call	outb
+	call	wait_ready_for_write
+	mov	di, KEY_DATA
+	mov	si, 0xf0 ; set scan code set
+	call	outb
+	call	wait_ready_for_write
+	mov	di, KEY_DATA
+	mov	si, 2 ; scan code set 2
+	call	outb
+%endif
+	mov	di, KEY_DATA
+	call	inb
 
 	; TODO Reinitialize the keyboard and 8042 here. We should not assume it
 	; has a sane state after the boot loader.
@@ -37,15 +78,16 @@ lodstr	rdi, 'console: booting...', 10
 	push	rdi
 	push	byte 0
 	mov	ebp, esp
-	; [rsp]: last character read, or 0
-	; [rsp+1]: non-zero if there's a process waiting for a key press
+	; [rbp]: last character read, or 0
+	; [rbp+1]: non-zero if there's a process waiting for a key press
+	; [rbp+4]: shift state
 
 	mov	esi, IRQ_KEYBOARD
 	mov	eax, msg_call(MSG_REG_IRQ)
 	syscall
 
 %if log
-lodstr	rdi, 'console: boot complete', 10
+lodstr	edi, 'console: boot complete', 10
 	call	printf
 %endif
 
@@ -148,11 +190,6 @@ irq_message:
 	mov	edi, KEY_DATA
 	call	inb
 
-	test	al, 0x80
-	jz	.ack_and_ret
-
-	and	al, 0x7f
-	add	al, 0x20
 	mov	[rbp], al
 %if log
 	mov	esi, eax
@@ -161,6 +198,20 @@ lodstr	edi,	'Key scancode received: %x (waiting=%x)', 10
 	call	printf
 %endif
 
+	call	map_key
+
+%if log
+	movzx	esi, byte [rbp]
+	mov	edx, esi
+	movzx	ecx, byte [rbp + 1]
+lodstr	edi,	'ASCII received: %c (%x) (waiting=%x)', 10
+	call	printf
+%endif
+
+	; mapping ate the key, or it didn't have a mapping or shouldn't output
+	; any characters.
+	cmp	byte [rbp], 0
+	jz	.ack_and_ret
 	cmp	byte [rbp + 1], 0
 	jz	.ack_and_ret
 	call	have_key
@@ -172,8 +223,62 @@ lodstr	edi,	'Key scancode received: %x (waiting=%x)', 10
 
 	jmp	rcv_loop
 
+%if use_set2
+wait_ready_for_write:
+	mov	di, KEY_CMD
+	call	inb
+	test	al, 2
+	jnz	wait_ready_for_write
+	ret
+%endif
+
+IS_SHIFTED	equ	1
+
+; one key event: optional e0 (or e1/e2), followed by one make/break code
+; for now, we ignore all e0 codes and only look at the "normal" code that follows
+
+; [rbp] = key
+; [rbp + 4] = shift state
+map_key:
+	movzx	eax, byte [rbp]
+	cmp	al, 0xe0
+	je	.ignore_this
+
+	and	al, 0x7f
+	cmp	al, keymap.numkeys
+	ja	.ignore_this
+
+.can_map_key:
+	test	byte [rbp + 4], IS_SHIFTED
+	jz	.not_shifted
+	add	eax, keymap.shifted - keymap
+.not_shifted:
+	mov	al, [keymap + rax]
+	cmp	al, SPEC_SHIFT
+	je	.shift
+
+.key_mapped:
+	; press events don't generate any characters
+	test	byte [rbp], 0x80
+	jz	.ret
+.ignore_this:
+	xor	eax,eax
+.ret
+	; al is ascii key code of a released normal key (or 0 for an ignored
+	; one).
+	mov	byte [rbp], al
+	ret
+
+.shift:
+	and	byte [rbp + 4], ~IS_SHIFTED
+	test	byte [rbp], 0x80
+	jnz	.ignore_this
+	or	byte [rbp + 4], IS_SHIFTED
+	jmp	.ignore_this
+
 %include "portio.asm"
 %if log
 %include "printf.asm"
 %include "putchar.asm"
 %endif
+%include "keymap.asm"

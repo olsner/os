@@ -8,7 +8,7 @@ boot:
 	sub	esp, 0x400
 	push	rsp
 
-lodstr	edi,	"Shell v0.1. Sorry there's no keymap yet.", 10
+lodstr	edi,	"Shell v0.1", 10
 	call	printf
 
 prompt:
@@ -22,7 +22,7 @@ cmd_loop:
 	pop	rdi
 	push	rdi
 
-	cmp	al, 0x3c
+	cmp	al, 0xa
 	je	newline
 
 %if 1
