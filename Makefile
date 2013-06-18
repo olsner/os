@@ -12,11 +12,14 @@ YASM ?= yasm/yasm
 
 ifeq ($(VERBOSE),YES)
 HUSH_ASM=
+HUSH_ASM_DEP=
 HUSH_CC=
 HUSH_CXX=
 CP=cp -v
 else
 HUSH_ASM=@echo ' [ASM]\t'$@;
+#HUSH_ASM_DEP=@echo ' [DEP]\t'$@;
+HUSH_ASM_DEP=@
 HUSH_CC=@echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 endif
@@ -30,7 +33,7 @@ ASMFILES     := kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod)
-DEPFILES     := $(ASMFILES:.asm=.dep) $(MOD_OFILES:.o=.d)
+DEPFILES     := $(ASMFILES:%.asm=$(OUTDIR)/%.d) $(MOD_OFILES:.o=.d)
 ASMOUTS      := \
 	$(GRUBDIR)/kstart.b \
 	$(MODFILES) \
@@ -43,10 +46,8 @@ all: cpuid rflags $(OUTDIR)/grub.iso
 .SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_OFILES)
 
 clean:
-	rm -f $(OUTDIR)/grub.iso
+	rm -fr $(OUTDIR)
 	rm -f cpuid rflags
-	rm -f $(ASMOUTS)
-	rm -f $(DEPFILES)
 
 %: %.cpp
 	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -o $@ $<
@@ -58,7 +59,7 @@ clean:
 
 $(OUTDIR)/%.b: %.asm
 	@mkdir -p $(@D)
-	@$(YASM) -i . -e -M $< -o $@ >$*.dep
+	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.b=.d)
 	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $*.lst
 	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
 
@@ -85,9 +86,6 @@ USER_CFLAGS += -Wno-unused-function
 $(OUTDIR)/cuser/%.o: cuser/%.c
 	@mkdir -p $(@D)
 	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
-
-%.d: %.o
-	@
 
 $(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
