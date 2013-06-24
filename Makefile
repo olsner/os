@@ -1,4 +1,4 @@
-# Makefile for Shaaman. Copyright by Simon Brenner, 2002
+# Makefile for asmos (SB1?). Copyright by Simon Brenner, 2002-2013
 
 .PHONY: all clean install commit
 
@@ -11,17 +11,14 @@ SYSTEM := $(shell uname -s)
 YASM ?= yasm/yasm
 
 ifeq ($(VERBOSE),YES)
-HUSH_ASM=
-HUSH_ASM_DEP=
-HUSH_CC=
-HUSH_CXX=
 CP=cp -v
 else
 HUSH_ASM=@echo ' [ASM]\t'$@;
 #HUSH_ASM_DEP=@echo ' [DEP]\t'$@;
 HUSH_ASM_DEP=@
-HUSH_CC=@echo ' [CC]\t'$@;
+HUSH_CC= @echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
+HUSH_LD= @echo ' [LD]\t'$@;
 endif
 
 OUTDIR       := out
@@ -57,9 +54,12 @@ clean:
 
 -include $(DEPFILES)
 
-$(OUTDIR)/%.b: %.asm
+$(OUTDIR)/%.d: %.asm
 	@mkdir -p $(@D)
 	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.b=.d)
+
+$(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d
+	@mkdir -p $(@D)
 	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $*.lst
 	@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
 
@@ -89,7 +89,7 @@ $(OUTDIR)/cuser/%.o: cuser/%.c
 
 $(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
-	ld -o $@ -T $^ -Map $(OUTDIR)/$*.map
+	$(HUSH_LD) $(LD) -o $@ -T $^ -Map $(OUTDIR)/$*.map
 
 $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
