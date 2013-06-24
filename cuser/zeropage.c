@@ -27,7 +27,7 @@ void start() {
 	 * page frame for each page faulted in from it. Until it runs out of
 	 * memory... */
 
-	if (*(volatile char*)zeropage) {
+	if (*zeropage) {
 		puts("zeropage: nonzero value in zero page!?\n");
 	} else {
 		puts("zeropage: zero page is indeed zero\n");

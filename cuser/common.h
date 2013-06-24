@@ -60,7 +60,7 @@ static inline uintptr_t syscall1(uintptr_t msg, uintptr_t dest) {
 		  /* clobbered inputs */
 		  "=D" (dest)
 		: "a" (msg), "D" (dest)
-		: "%rsi", "%rdx", "r8", "r9", "r10", "r11", "%rcx");
+		: "%rsi", "%rdx", "r8", "r9", "r10", "r11", "%rcx", "memory");
 	return res;
 }
 
@@ -71,7 +71,7 @@ static inline uintptr_t syscall2(uintptr_t msg, uintptr_t arg1, uintptr_t arg2) 
 			/* clobbered inputs */
 			"=D" (arg1), "=S" (arg2)
 		: "a" (msg), "D" (arg1), "S" (arg2)
-		: "%rdx", "r8", "r9", "r10", "r11", "%rcx");
+		: "%rdx", "r8", "r9", "r10", "r11", "%rcx", "memory");
 	return msg;
 }
 
@@ -82,7 +82,7 @@ static inline uintptr_t syscall3(uintptr_t msg, uintptr_t arg1, uintptr_t arg2, 
 			/* clobbered inputs */
 			"=D" (arg1), "=S" (arg2), "=d" (arg3)
 		: "a" (msg), "D" (arg1), "S" (arg2), "d" (arg3)
-		: "r8", "r9", "r10", "r11", "%rcx");
+		: "r8", "r9", "r10", "r11", "%rcx", "memory");
 	return msg;
 }
 
@@ -94,7 +94,7 @@ static inline uintptr_t syscall4(uintptr_t msg, uintptr_t dest, uintptr_t arg1, 
 			/* clobbered inputs */
 			"=D" (dest), "=S" (arg1), "=d" (arg2), "=r" (r8)
 		: "a" (msg), "D" (dest), "S" (arg1), "d" (arg2), "r" (r8)
-		: "r9", "r10", "r11", "%rcx");
+		: "r9", "r10", "r11", "%rcx", "memory");
 	return msg;
 }
 
@@ -107,7 +107,7 @@ static inline uintptr_t syscall5(uintptr_t msg, uintptr_t dest, uintptr_t arg1, 
 			/* clobbered inputs */
 			"=D" (dest), "=S" (arg1), "=d" (arg2), "=r" (r8), "=r" (r9)
 		: "a" (msg), "D" (dest), "S" (arg1), "d" (arg2), "r" (r8), "r" (r9)
-		: "r10", "r11", "%rcx");
+		: "r10", "r11", "%rcx", "memory");
 	return msg;
 }
 
@@ -120,7 +120,7 @@ static inline uintptr_t ipc3(uintptr_t msg, uintptr_t* destSrc, uintptr_t* arg1,
 			/* clobbered inputs */
 			"=D" (*destSrc), "=S" (*arg1), "=d" (*arg2), "=r" (r8)
 		: "a" (msg), "D" (*destSrc), "S" (*arg1), "d" (*arg2), "r" (r8)
-		: "r9", "r10", "r11", "%rcx");
+		: "r9", "r10", "r11", "%rcx", "memory");
 	*arg3 = r8;
 	return msg;
 }
@@ -133,7 +133,7 @@ static inline uintptr_t ipc2(uintptr_t msg, uintptr_t* src, uintptr_t* arg1, uin
 			/* in/outputs */
 			"=D" (*src), "=S" (*arg1), "=d" (*arg2)
 		: "a" (msg), "D" (*src), "S" (*arg1), "d" (*arg2)
-		: "r8", "r9", "r10", "r11", "%rcx");
+		: "r8", "r9", "r10", "r11", "%rcx", "memory");
 	return msg;
 }
 
@@ -146,7 +146,7 @@ static inline uintptr_t recv2(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)
 			/* in/outputs */
 			"=D" (*src), "=S" (*arg1), "=d" (*arg2)
 		: "a" (0), "D" (*src)
-		: "r8", "r9", "r10", "r11", "%rcx");
+		: "r8", "r9", "r10", "r11", "%rcx", "memory");
 	return msg;
 }
 
