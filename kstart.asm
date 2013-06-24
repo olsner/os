@@ -3368,11 +3368,35 @@ syscall_map:
 	mov	rdx, [rax + proc.r9]
 	call	unmap_range
 
-	; 2. Make new mapping at virtual address
-
 	pop	rbx
+
+	; region = null (in case we skip the allocating region bit because we're mapping a handle)
+	zero	esi
+	cmp	qword [rbx + proc.rdi], byte 0
+	jnz	.has_handle
+	; Handle is null:
+	; * ANON flag = anon-map freshly allocated physical page
+	; * no ANON flag = map specific page of physical memory
+	; (TODO Remove these backdoors, and give exactly one process a preset
+	; mapping of all physical memory.)
+
+	test	byte [rbx + proc.rsi], MAPFLAG_ANON
+	jnz	.has_handle
+
+	; Not anonymous mapping, allocate a region
+	call	allocate_frame ; TODO allocate region, not whole page :)
+	mov	rcx, [rbx + proc.r8] ; offset in object == phys addr
+	mov	[rax + region.paddr], rcx
+	; Since the paddr is now offset in region, undo the reg_offset we're
+	; about to put in the mapping.
+	mov	qword [rbx + proc.r8], 0
+	mov	rcx, [rbx + proc.r9] ; size of mapping
+	mov	[rax + region.size], rcx
+	mov	rsi, rax
+
+	; 2. Make new mapping at virtual address
+.has_handle:
 	mov	rdi, [rbx + proc.aspace]
-	zero	esi ; region
 	mov	edx, [rbx + proc.rdx]
 	mov	ecx, [rbx + proc.r9]
 	call	map_region
