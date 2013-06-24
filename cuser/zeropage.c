@@ -3,22 +3,9 @@
 /* Silly little service that'll give you read-only (and execute) access to any
  * number of pages filled with zeroes. */
 
-enum prot {
-	PROT_EXECUTE = 1,
-	PROT_WRITE = 2,
-	PROT_READ = 4,
-	PROT_RWX = 7,
-	MAP_ANON = 16,
-};
-
 static const uintptr_t ALLOWED_FLAGS = PROT_READ | PROT_EXECUTE;
 
 static const char zeropage[4096] __attribute__((aligned(4096)));
-
-static void map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
-	syscall5(MSG_MAP,
-		handle, prot, (uintptr_t)local_addr, offset, size);
-}
 
 void start() {
 	const uintptr_t fresh = 256;

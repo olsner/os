@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 typedef uint64_t u64;
+typedef uintptr_t size_t;
 
 // FIXME This causes 'start' to follow various silly calling conventions - such
 // as saving callee-save registers. Find some way to get rid of that...
@@ -170,4 +171,16 @@ static void puts(const char* str) {
 
 static void hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
 	syscall3(MSG_HMOD, h, rename, copy);
+}
+
+enum prot {
+	PROT_EXECUTE = 1,
+	PROT_WRITE = 2,
+	PROT_READ = 4,
+	PROT_RWX = 7,
+	MAP_ANON = 16,
+};
+static void map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
+	syscall5(MSG_MAP,
+		handle, prot, (uintptr_t)local_addr, offset, size);
 }
