@@ -24,7 +24,8 @@ void AcpiOsVprintf(const char *fmt, va_list ap)
 
 UINT64 AcpiOsGetThreadId()
 {
-	return 0;
+	// Note: 0 is an invalid thread ID according to AcpiUtCreateThreadState
+	return 1;
 }
 
 #ifdef ACPI_SINGLE_THREADED
