@@ -198,7 +198,9 @@ void start() {
 	printf("ACPICA: start\n");
     ACPI_FUNCTION_NAME (Examples-main);
 
-	map(0, PROT_READ | PROT_WRITE, (void*)ACPI_PHYS_BASE, 0, 16 * 1024 * 1024);
+	// NB! Must be at least as large as physical memory - the ACPI tables could
+	// be anywhere. (Could be handled by AcpiOsMapMemory though.)
+	map(0, PROT_READ | PROT_WRITE, (void*)ACPI_PHYS_BASE, 0, 32 * 1024 * 1024);
 	char* p = ((char*)ACPI_PHYS_BASE) + 0x100000;
 	printf("%p (0x100000): %x\n", p, *(u64*)p);
 
