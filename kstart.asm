@@ -1853,7 +1853,7 @@ add_pte:
 %macro index_table 4 ; source, shift, base, target for address
 	mov	rcx, %1
 	shr	rcx, %2 - 3
-	and	cx, 0xff8 ; Then 'and' away the boring bits
+	and	ecx, 0xff8 ; Then 'and' away the boring bits
 	lea	%4, [%3 + rcx]
 %endmacro
 
@@ -1921,8 +1921,7 @@ mapping_page_to_frame equ _STR
 	ret
 
 .panic:
-	cli
-	hlt
+	PANIC
 
 ; rax is already saved, and now points to the process base
 ; rbp is already saved (points to the gseg, but not used by this function)
