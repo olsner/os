@@ -2524,14 +2524,26 @@ syscall_portio:
 	je	.inb
 	cmp	esi, 0x11
 	je	.outb
-	ret
+	cmp	esi, 0x2
+	je	.inw
+	cmp	esi, 0x12
+	je	.outw
+	PANIC
 
 .inb:
 	in	al, dx
 	ret
 
+.inw:
+	in	ax, dx
+	ret
+
 .outb:
 	out	dx, al
+	ret
+
+.outw:
+	out	dx, ax
 	ret
 
 syscall_gettime:

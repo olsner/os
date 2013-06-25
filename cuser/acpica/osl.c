@@ -160,7 +160,9 @@ AcpiOsWritePort (
     UINT32                  Value,
     UINT32                  Width)
 {
+	Width >>= 3;
 	printf("WritePort %x value %x width %x\n", Address, Value, Width);
+	portio(Address, Width | 0x10, Value);
     return (AE_OK);
 }
 
@@ -173,7 +175,8 @@ AcpiOsReadPort (
 	// Width is in bits! Our APIs expect bytes.
 	Width >>= 3;
 	printf("ReadPort %x width %x\n", Address, Width);
-	*Value = 0;
+	*Value = portio(Address, Width, 0);
+	printf("ReadPort %x width %x ==> %x\n", Address, Width, *Value);
     return (AE_OK);
 }
 

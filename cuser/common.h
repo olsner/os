@@ -3,6 +3,8 @@
 #include <stdarg.h>
 
 typedef uint64_t u64;
+typedef uint16_t u16;
+typedef uint8_t u8;
 typedef uintptr_t size_t;
 
 // FIXME This causes 'start' to follow various silly calling conventions - such
@@ -26,6 +28,14 @@ enum syscalls_builtins {
 	MSG_UNMAP,
 	MSG_HMOD,
 	SYSCALL_WRITE = 6,
+	// arg0 (dst) = port
+	// arg1 = flags (i/o) and data size:
+	//  0x10 = write (or with data size)
+	//  0x01 = byte
+	//  0x02 = word
+	//  0x04 = dword
+	// arg2 (if applicable) = data for output
+	SYSCALL_IO = 7, // Backdoor!
 	MSG_USER = 16,
 };
 
@@ -216,3 +226,6 @@ static void map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t of
 extern void printf(const char* fmt, ...);
 extern void vprintf(const char* fmt, va_list ap);
 
+static u64 portio(u16 port, u64 flags, u64 data) {
+	return syscall3(SYSCALL_IO, port, flags, data);
+}
