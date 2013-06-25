@@ -3396,8 +3396,8 @@ syscall_map:
 	; 2. Make new mapping at virtual address
 .has_handle:
 	mov	rdi, [rbx + proc.aspace]
-	mov	edx, [rbx + proc.rdx]
-	mov	ecx, [rbx + proc.r9]
+	mov	rdx, [rbx + proc.rdx]
+	mov	rcx, [rbx + proc.r9]
 	call	map_region
 	mov	cl, [rbx + proc.rsi]
 	and	cl, 0x1f ; allowed flags
