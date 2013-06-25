@@ -18,6 +18,7 @@
 %define log_hmod 0
 %define log_find_senders 0
 %define log_mappings 0
+%define log_add_pte 0
 %define log_waiters 0
 %define log_messages 0
 %define log_irq 0
@@ -1910,7 +1911,7 @@ lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	pop	rdx
 	pop	rsi
 	mov	[r12], rsi
-%if log_mappings
+%if (log_mappings || log_add_pte)
 lodstr	rdi, 'Mapping %p to %p (at %p)!', 10
 mapping_page_to_frame equ _STR
 	mov	rcx, r12
