@@ -127,7 +127,7 @@ static ACPI_STATUS InitializeFullAcpi (void)
  *
  *****************************************************************************/
 
-static void
+static ACPI_STATUS
 ExecuteOSI (void)
 {
     ACPI_STATUS             Status;
@@ -156,7 +156,7 @@ ExecuteOSI (void)
     if (ACPI_FAILURE (Status))
     {
         ACPI_EXCEPTION ((AE_INFO, Status, "While executing _OSI"));
-        return;
+        return Status;
     }
 
     /* Ensure that the return object is large enough */
@@ -165,7 +165,7 @@ ExecuteOSI (void)
     {
         AcpiOsPrintf ("Return value from _OSI method too small, %.8X\n",
             ReturnValue.Length);
-        return;
+        return AE_ERROR;
     }
 
     /* Expect an integer return value from execution of _OSI */
@@ -174,11 +174,12 @@ ExecuteOSI (void)
     if (Object->Type != ACPI_TYPE_INTEGER)
     {
         AcpiOsPrintf ("Invalid return type from _OSI, %.2X\n", Object->Type);
+		Status = AE_ERROR;
     }
 
-    ACPI_INFO ((AE_INFO, "_OSI returned 0x%8.8X", (UINT32) Object->Integer.Value));
+    printf("_OSI returned %x\n", (UINT64) Object->Integer.Value);
     AcpiOsFree (Object);
-    return;
+    return Status;
 }
 
 // FIXME Workaround for the fact that anonymous mappings can only span a single
@@ -214,7 +215,7 @@ void start() {
 
     ACPI_DEBUG_INITIALIZE (); /* For debug version only */
 	status = InitializeFullAcpi ();
-	if (status != AE_OK) {
+	if (ACPI_FAILURE(status)) {
 		goto failed;
 	}
 
@@ -231,8 +232,16 @@ void start() {
     ACPI_ERROR       ((AE_INFO, "ACPICA example error message"));
     ACPI_EXCEPTION   ((AE_INFO, AE_AML_OPERAND_TYPE, "Example exception message"));
 
-    ExecuteOSI ();
-	AcpiTerminate();
+    status = ExecuteOSI ();
+	if (ACPI_FAILURE(status)) {
+		goto failed;
+	}
+	printf("OSI executed successfullly, now terminating.\n");
+	status = AcpiTerminate();
+	if (ACPI_FAILURE(status)) {
+		goto failed;
+	}
+	printf("Acpi terminated... Halting.\n");
 	for (;;);
 
 failed:
