@@ -8,8 +8,16 @@ void init_heap() {
 	heap_end = heap;
 }
 
+#if 0
+#define xprintf printf
+#else
+#define xprintf(...) (void)0
+#endif
+
+// The crummiest malloc in the west
+
 void* malloc(size_t size) {
-	printf("malloc %x\n", size);
+	xprintf("malloc %x\n", size);
 	size = (size + 2 * sizeof(size) - 1) & ~(sizeof(size) - 1);
 	char* new_heap_end = heap_end + size;
 	if (new_heap_end >= heap + sizeof(heap)) {
@@ -19,7 +27,7 @@ void* malloc(size_t size) {
 		void* res = heap_end;
 		((size_t*)new_heap_end)[-1] = size;
 		heap_end = new_heap_end;
-		printf("malloc %x => %x\n", size, res);
+		xprintf("malloc %x => %x\n", size, res);
 		return res;
 	}
 }
@@ -33,7 +41,7 @@ void free(void* ptr) {
 	if (ptr == start_of_tail) {
 		heap_end = start_of_tail;
 	} else {
-		printf("free leaves hole at %x (< %x < %x)\n", ptr, start_of_tail, heap_end);
+		xprintf("free leaves hole at %x (< %x < %x)\n", ptr, start_of_tail, heap_end);
 		// What?
 	}
 }
