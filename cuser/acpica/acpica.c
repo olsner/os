@@ -181,6 +181,17 @@ ExecuteOSI (void)
     return;
 }
 
+// FIXME Workaround for the fact that anonymous mappings can only span a single
+// page (currently).
+static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
+	uintptr_t i = 0;
+	while (i < size) {
+		syscall5(MSG_MAP,
+			0, MAP_ANON | prot, (uintptr_t)local_addr + i, 0, 0x1000);
+		i += 0x1000;
+	}
+}
+
 void start() {
 	ACPI_STATUS status = AE_OK;
 
@@ -191,7 +202,7 @@ void start() {
 	char* p = ((char*)ACPI_PHYS_BASE) + 0x100000;
 	printf("%p (0x100000): %x\n", p, *(u64*)p);
 
-	map(0, MAP_ANON | PROT_READ | PROT_WRITE, __bss_start, 0, __bss_end - __bss_start);
+	mapAnonPages(PROT_READ | PROT_WRITE, __bss_start, __bss_end - __bss_start);
 	printf("mapped bss %x..%x\n", __bss_start, __bss_end);
 	// Copy __data_size bytes from __data_lma to __data_vma.
 	printf("Copying initialized data...\n");
