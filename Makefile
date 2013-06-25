@@ -2,9 +2,11 @@
 
 .PHONY: all clean install commit
 
-BXIMAGE=/opt/bochs/bin/bximage
-DD=dd 2>/dev/null
 CP=cp
+
+CC := ccache gcc
+CXX := ccache g++
+export CC CXX
 
 SYSTEM := $(shell uname -s)
 
@@ -19,6 +21,8 @@ HUSH_ASM_DEP=@
 HUSH_CC= @echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 HUSH_LD= @echo ' [LD]\t'$@;
+
+export HUSH_LD HUSH_CC
 endif
 
 OUTDIR       := out
@@ -29,7 +33,7 @@ MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
-MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod)
+MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod) $(GRUBDIR)/cuser/acpica.mod
 DEPFILES     := $(ASMFILES:%.asm=$(OUTDIR)/%.d) $(MOD_OFILES:.o=.d)
 ASMOUTS      := \
 	$(GRUBDIR)/kstart.b \
@@ -92,6 +96,18 @@ $(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
 	$(HUSH_LD) $(LD) -o $@ -T $^ -Map $(OUTDIR)/$*.map
 
 $(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
+
+$(GRUBDIR)/cuser/acpica.mod: $(OUTDIR)/cuser/acpica/acpica.mod
+	@mkdir -p $(@D)
+	@$(CP) $< $@
+
+$(OUTDIR)/cuser/acpica/acpica.mod: acpica
+	@
+
+.PHONY: acpica
+
+acpica: $(OUTDIR)/cuser/printf.o
+	$(MAKE) -C cuser/acpica OUTDIR=../../$(OUTDIR)/cuser/acpica
 
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm
 	$(YASM) -f elf64 $< -o $@ -L nasm

@@ -1,12 +1,24 @@
 #include <stdint.h>
+#include <stddef.h>
+#include <stdarg.h>
 
 typedef uint64_t u64;
+typedef uint16_t u16;
+typedef uint8_t u8;
 typedef uintptr_t size_t;
 
 // FIXME This causes 'start' to follow various silly calling conventions - such
 // as saving callee-save registers. Find some way to get rid of that...
 // Or wait for http://gcc.gnu.org/bugzilla/show_bug.cgi?id=38534 to be fixed.
 void start() __attribute__((noreturn,section(".start")));
+
+// Symbols exposed by the linker script
+extern char __bss_start[1];
+extern char __bss_end[1];
+extern char __data_lma[1];
+extern char __data_lma_end[1];
+extern char __data_size[1];
+extern char __data_vma[1];
 
 enum syscalls_builtins {
 	MSG_NONE = 0,
@@ -16,6 +28,20 @@ enum syscalls_builtins {
 	MSG_UNMAP,
 	MSG_HMOD,
 	SYSCALL_WRITE = 6,
+	// arg0 (dst) = port
+	// arg1 = flags (i/o) and data size:
+	//  0x10 = write (or with data size)
+	//  0x01 = byte
+	//  0x02 = word
+	//  0x04 = dword
+	// arg2 (if applicable) = data for output
+	SYSCALL_IO = 7, // Backdoor!
+	MSG_USER = 16,
+};
+
+enum msg_con {
+	MSG_CON_WRITE = MSG_USER,
+	MSG_CON_READ,
 };
 
 enum msg_kind {
@@ -151,6 +177,18 @@ static inline uintptr_t recv2(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)
 	return msg;
 }
 
+static inline uintptr_t ipc1(uintptr_t msg, uintptr_t* src, uintptr_t* arg1)
+{
+	__asm__ __volatile__ ("syscall"
+		:	/* return value(s) */
+			"=a" (msg),
+			/* in/outputs */
+			"=D" (*src), "=S" (*arg1)
+		: "a" (msg), "D" (*src), "S" (*arg1)
+		: "r8", "r9", "r10", "r11", "%rcx", "%rdx", "memory");
+	return msg;
+}
+
 static inline uintptr_t recv0(uintptr_t src)
 {
 	return syscall1(0, src);
@@ -183,4 +221,11 @@ enum prot {
 static void map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
 	syscall5(MSG_MAP,
 		handle, prot, (uintptr_t)local_addr, offset, size);
+}
+
+extern void printf(const char* fmt, ...);
+extern void vprintf(const char* fmt, va_list ap);
+
+static u64 portio(u16 port, u64 flags, u64 data) {
+	return syscall3(SYSCALL_IO, port, flags, data);
 }

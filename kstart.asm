@@ -18,6 +18,7 @@
 %define log_hmod 0
 %define log_find_senders 0
 %define log_mappings 0
+%define log_add_pte 0
 %define log_waiters 0
 %define log_messages 0
 %define log_irq 0
@@ -1853,7 +1854,7 @@ add_pte:
 %macro index_table 4 ; source, shift, base, target for address
 	mov	rcx, %1
 	shr	rcx, %2 - 3
-	and	cx, 0xff8 ; Then 'and' away the boring bits
+	and	ecx, 0xff8 ; Then 'and' away the boring bits
 	lea	%4, [%3 + rcx]
 %endmacro
 
@@ -1910,7 +1911,7 @@ lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	pop	rdx
 	pop	rsi
 	mov	[r12], rsi
-%if log_mappings
+%if (log_mappings || log_add_pte)
 lodstr	rdi, 'Mapping %p to %p (at %p)!', 10
 mapping_page_to_frame equ _STR
 	mov	rcx, r12
@@ -1921,8 +1922,7 @@ mapping_page_to_frame equ _STR
 	ret
 
 .panic:
-	cli
-	hlt
+	PANIC
 
 ; rax is already saved, and now points to the process base
 ; rbp is already saved (points to the gseg, but not used by this function)
@@ -2524,14 +2524,26 @@ syscall_portio:
 	je	.inb
 	cmp	esi, 0x11
 	je	.outb
-	ret
+	cmp	esi, 0x2
+	je	.inw
+	cmp	esi, 0x12
+	je	.outw
+	PANIC
 
 .inb:
 	in	al, dx
 	ret
 
+.inw:
+	in	ax, dx
+	ret
+
 .outb:
 	out	dx, al
+	ret
+
+.outw:
+	out	dx, ax
 	ret
 
 syscall_gettime:
@@ -3397,8 +3409,8 @@ syscall_map:
 	; 2. Make new mapping at virtual address
 .has_handle:
 	mov	rdi, [rbx + proc.aspace]
-	mov	edx, [rbx + proc.rdx]
-	mov	ecx, [rbx + proc.r9]
+	mov	rdx, [rbx + proc.rdx]
+	mov	rcx, [rbx + proc.r9]
 	call	map_region
 	mov	cl, [rbx + proc.rsi]
 	and	cl, 0x1f ; allowed flags
