@@ -4,8 +4,6 @@
 
 static const uintptr_t ALLOWED_FLAGS = PROT_READ | PROT_EXECUTE;
 
-extern void printf(const char* fmt, ...);
-
 void inspect(const char* p, const char* end) {
 	printf("Inspecting %x..%x\n", p, end);
 	size_t n = 0;
