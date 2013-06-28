@@ -82,7 +82,8 @@ ACPI_SRCS := \
 
 ACPI_OBJS := $(ACPI_SRCS:$(ACPICA)/%.c=$(ACPICA_OUT)/%.o)
 SRCS := acpica.c osl.c malloc.c
-OBJS := $(SRCS:%.c=$(OUTDIR)/%.o) ../../out/cuser/printf.o
+OBJS := $(SRCS:%.c=$(OUTDIR)/%.o)
+OBJS += $(OUTDIR)/printf.o
 
 DEPS := $(OBJS:.o=.d) $(ACPI_OBJS:.o=.d)
 -include $(DEPS)
@@ -101,6 +102,10 @@ $(ACPICA_OUT)/%.o: $(ACPICA)/%.c
 $(OUTDIR)/%.o: %.c
 	@mkdir -p $(@D)
 	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
+
+$(OUTDIR)/%.o: %.cpp
+	@mkdir -p $(@D)
+	$(HUSH_CC) $(CXX) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
 
 LDFLAGS := --check-sections --warn-section-align 
 

@@ -2,6 +2,10 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef uint64_t u64;
 typedef uint16_t u16;
 typedef uint8_t u8;
@@ -45,10 +49,9 @@ enum msg_con {
 };
 
 enum msg_kind {
-	MSG_KIND_RECV = 0,
-	MSG_KIND_SEND = 1,
-	MSG_KIND_CALL = 2,
-	//MSG_KIND_REPLYWAIT = 3
+	MSG_KIND_SEND = 0,
+	MSG_KIND_CALL = 1,
+	//MSG_KIND_REPLYWAIT = 2
 };
 
 static uintptr_t msg_set_kind(uintptr_t msg, enum msg_kind kind) {
@@ -199,8 +202,15 @@ static inline uintptr_t send2(uintptr_t msg, uintptr_t dst, uintptr_t arg1, uint
 	return ipc2(msg_send(msg), &dst, &arg1, &arg2);
 }
 
+static inline uintptr_t send1(uintptr_t msg, uintptr_t dst, uintptr_t arg1)
+{
+	return ipc1(msg_send(msg), &dst, &arg1);
+}
+
+static const u64 CONSOLE_HANDLE = 3; /* Hardcode galore */
+
 static void putchar(char c) {
-	syscall1(SYSCALL_WRITE, c);
+	send1(MSG_CON_WRITE, CONSOLE_HANDLE, c);
 }
 
 static void puts(const char* str) {
@@ -229,3 +239,13 @@ extern void vprintf(const char* fmt, va_list ap);
 static u64 portio(u16 port, u64 flags, u64 data) {
 	return syscall3(SYSCALL_IO, port, flags, data);
 }
+
+static char* strchr(const char* s, char c) {
+	while (*s && *s != c) s++;
+	return *s ? (char*)s : NULL;
+}
+
+#ifdef __cplusplus
+}
+#endif
+

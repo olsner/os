@@ -5,23 +5,6 @@
 extern void* malloc(size_t size);
 extern void free(void* p);
 
-void AcpiOsVprintf(const char *fmt, va_list ap)
-{
-	char c;
-	while ((c = *fmt++)) {
-		/*if (c == '%') {
-			c = *fmt++;
-		} else {
-			goto normal;
-		}*/
-		switch (c) {
-		default:
-		//normal:
-			putchar(c);
-		}
-	}
-}
-
 UINT64 AcpiOsGetThreadId()
 {
 	// Note: 0 is an invalid thread ID according to AcpiUtCreateThreadState

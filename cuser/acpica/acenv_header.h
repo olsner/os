@@ -22,3 +22,5 @@
 
 #include <stdint.h>
 #include <stdarg.h>
+#define AcpiOsPrintf printf
+#define AcpiOsVprintf vprintf
