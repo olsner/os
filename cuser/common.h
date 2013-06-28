@@ -60,6 +60,9 @@ static uintptr_t msg_set_kind(uintptr_t msg, enum msg_kind kind) {
 static uintptr_t msg_send(uintptr_t msg) {
 	return msg_set_kind(msg, MSG_KIND_SEND);
 }
+static uintptr_t msg_call(uintptr_t msg) {
+	return msg_set_kind(msg, MSG_KIND_CALL);
+}
 
 /*
  * Tries to fit into the SysV syscall ABI for x86-64.
@@ -207,10 +210,21 @@ static inline uintptr_t send1(uintptr_t msg, uintptr_t dst, uintptr_t arg1)
 	return ipc1(msg_send(msg), &dst, &arg1);
 }
 
+static inline uintptr_t sendrcv1(uintptr_t msg, uintptr_t dst, uintptr_t* arg1)
+{
+	return ipc1(msg_call(msg), &dst, arg1);
+}
+
 static const u64 CONSOLE_HANDLE = 3; /* Hardcode galore */
 
 static void putchar(char c) {
 	send1(MSG_CON_WRITE, CONSOLE_HANDLE, c);
+}
+
+static char getchar() {
+	uintptr_t c = 0;
+	sendrcv1(MSG_CON_READ, CONSOLE_HANDLE, &c);
+	return c;
 }
 
 static void puts(const char* str) {

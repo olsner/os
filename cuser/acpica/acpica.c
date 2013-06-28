@@ -1,6 +1,7 @@
 #include "common.h"
 #include "acpi.h"
 #include "accommon.h"
+#include "acdebug.h"
 
 extern void init_heap(void);
 
@@ -182,6 +183,8 @@ ExecuteOSI (void)
     return Status;
 }
 
+#define CHECK_STATUS() do { if (ACPI_FAILURE(status)) { goto failed; } } while(0)
+
 // FIXME Workaround for the fact that anonymous mappings can only span a single
 // page (currently).
 static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
@@ -215,9 +218,7 @@ void start() {
 
     ACPI_DEBUG_INITIALIZE (); /* For debug version only */
 	status = InitializeFullAcpi ();
-	if (ACPI_FAILURE(status)) {
-		goto failed;
-	}
+	CHECK_STATUS();
 
     /* Enable debug output, example debug print */
 
@@ -233,16 +234,15 @@ void start() {
     ACPI_EXCEPTION   ((AE_INFO, AE_AML_OPERAND_TYPE, "Example exception message"));
 
     status = ExecuteOSI ();
-	if (ACPI_FAILURE(status)) {
-		goto failed;
+	CHECK_STATUS();
+	printf("OSI executed successfullly, now initializing debugger.\n");
+	for (;;) {
+        status = AcpiDbUserCommands (ACPI_DEBUGGER_COMMAND_PROMPT, NULL);
+		CHECK_STATUS();
 	}
-	printf("OSI executed successfullly, now terminating.\n");
 	status = AcpiTerminate();
-	if (ACPI_FAILURE(status)) {
-		goto failed;
-	}
+	CHECK_STATUS();
 	printf("Acpi terminated... Halting.\n");
-	for (;;);
 
 failed:
 	printf("ACPI failed :( (status %x)\n", status);

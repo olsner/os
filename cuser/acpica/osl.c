@@ -192,15 +192,6 @@ AcpiOsSleep (
 	printf("AcpiOsSleep: %xms\n", milliseconds);
 }
 
-static const u64 con_handle = 3;
-
-char getchar() {
-	uintptr_t c = 0;
-	uintptr_t handle = con_handle;
-	ipc1(MSG_CON_READ, &handle, &c);
-	return c;
-}
-
 ACPI_STATUS
 AcpiOsGetLine (
     char                    *Buffer,
@@ -218,6 +209,7 @@ AcpiOsGetLine (
         }
 
         Temp = getchar ();
+		putchar(Temp);
         if (!Temp || Temp == '\n')
         {
             break;

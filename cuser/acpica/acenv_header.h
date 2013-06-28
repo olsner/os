@@ -7,7 +7,8 @@
 #define ACPI_USE_NATIVE_DIVIDE
 
 // Depends on threading support
-//#define ACPI_DEBUGGER
+#define ACPI_DEBUGGER
+#define DEBUGGER_THREADING DEBUGGER_SINGLE_THREADED
 // Depends on debugger support
 //#define ACPI_DBG_TRACK_ALLOCATIONS
 
