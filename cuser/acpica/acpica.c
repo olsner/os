@@ -185,6 +185,81 @@ ExecuteOSI (void)
 
 #define CHECK_STATUS() do { if (ACPI_FAILURE(status)) { goto failed; } } while(0)
 
+#pragma pack(1)
+typedef union acpi_apic_struct
+{
+	struct {
+		UINT8 Type;
+		UINT8 Length;
+	};
+	ACPI_MADT_LOCAL_APIC LocalApic;
+	ACPI_MADT_IO_APIC IOApic;
+	ACPI_MADT_INTERRUPT_OVERRIDE InterruptOverride;
+	ACPI_MADT_LOCAL_APIC_NMI LocalApicNMI;
+} ACPI_APIC_STRUCT;
+#pragma pack()
+
+
+static ACPI_STATUS PrintAPICTable() {
+	ACPI_TABLE_MADT* table = NULL;
+	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
+	CHECK_STATUS();
+
+	printf("Found APIC table: %p\n", table);
+	printf("Address of Local APIC: %#x\n", table->Address);
+	printf("Flags: %#x\n", table->Flags);
+	char* endOfTable = (char*)table + table->Header.Length;
+	char* p = (char*)(table + 1);
+	int n = 0;
+	while (p < endOfTable) {
+		ACPI_APIC_STRUCT* apic = (ACPI_APIC_STRUCT*)p;
+		p += apic->Length;
+		n++;
+		switch (apic->Type)
+		{
+		case ACPI_MADT_TYPE_LOCAL_APIC:
+			printf("%d: Local APIC. Processor ID %#x APIC ID %#x En=%d (%#x)\n", n,
+				(int)apic->LocalApic.ProcessorId,
+				(int)apic->LocalApic.Id,
+				apic->LocalApic.LapicFlags & 1,
+				apic->LocalApic.LapicFlags);
+			break;
+		case ACPI_MADT_TYPE_IO_APIC:
+			printf("%d: I/O APIC. ID %#x Addr %#x GSI base %#x\n", n,
+				(int)apic->IOApic.Id,
+				apic->IOApic.Address,
+				apic->IOApic.GlobalIrqBase);
+			break;
+		case ACPI_MADT_TYPE_INTERRUPT_OVERRIDE:
+		{
+			UINT32 flags = apic->InterruptOverride.IntiFlags;
+			printf("%d: Interrupt Override. Source %#x GSI %#x Pol=%d Trigger=%d\n", n,
+				apic->InterruptOverride.SourceIrq,
+				apic->InterruptOverride.GlobalIrq,
+				flags & 3, (flags >> 2) & 3);
+			break;
+		}
+		case ACPI_MADT_TYPE_LOCAL_APIC_NMI:
+		{
+			UINT32 flags = apic->InterruptOverride.IntiFlags;
+			printf("%d: Local APIC NMI. Processor ID %#x Pol=%d Trigger=%d LINT# %#x\n", n,
+				apic->LocalApicNMI.ProcessorId,
+				flags & 3, (flags >> 2) & 3,
+				apic->LocalApicNMI.Lint);
+			break;
+		}
+		default:
+			printf("%d: Unknown APIC type %d\n", n, apic->Type);
+			break;
+		}
+	}
+
+	return status;
+failed:
+	printf("APIC table error %x\n", status);
+	return status;
+}
+
 // FIXME Workaround for the fact that anonymous mappings can only span a single
 // page (currently).
 static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
@@ -235,6 +310,19 @@ void start() {
 
     status = ExecuteOSI ();
 	CHECK_STATUS();
+	// Tables we get in Bochs:
+	// * DSDT: All the AML code
+	// * FACS
+	// * FACP
+	// * APIC (= MADT)
+	// * SSDT: Secondary System Description Table
+	//   Contains more AML code loaded automatically by ACPICA
+	// More tables on qemu:
+	// * Another SSDT (Loaded by ACPICA)
+	// * HPET table
+//	PrintFACSTable();
+//	PrintFACPTable();
+	PrintAPICTable();
 	printf("OSI executed successfullly, now initializing debugger.\n");
 	for (;;) {
         status = AcpiDbUserCommands (ACPI_DEBUGGER_COMMAND_PROMPT, NULL);
