@@ -126,7 +126,7 @@ void * AcpiOsMapMemory (
     ACPI_PHYSICAL_ADDRESS   Where,
     ACPI_SIZE               Length)
 {
-	printf("mapping %x size %x => %x\n", Where, Length, ((char*)ACPI_PHYS_BASE) + Where);
+	//printf("mapping %x size %x => %x\n", Where, Length, ((char*)ACPI_PHYS_BASE) + Where);
 	return ((char*)ACPI_PHYS_BASE) + Where;
 }
 
@@ -134,7 +134,7 @@ void AcpiOsUnmapMemory (
     void                    *Where,
     ACPI_SIZE               Length)
 {
-	printf("Unmapping %p\n", Where, Length);
+	//printf("Unmapping %p\n", Where, Length);
 }
 
 ACPI_STATUS
@@ -144,7 +144,7 @@ AcpiOsWritePort (
     UINT32                  Width)
 {
 	Width >>= 3;
-	printf("WritePort %x value %x width %x\n", Address, Value, Width);
+//	printf("WritePort %#x value %#lx width %#x\n", Address, (UINT64)Value, Width);
 	portio(Address, Width | 0x10, Value);
     return (AE_OK);
 }
@@ -157,9 +157,9 @@ AcpiOsReadPort (
 {
 	// Width is in bits! Our APIs expect bytes.
 	Width >>= 3;
-	printf("ReadPort %x width %x\n", Address, Width);
+//	printf("ReadPort %x width %x\n", Address, Width);
 	*Value = portio(Address, Width, 0);
-	printf("ReadPort %x width %x ==> %x\n", Address, Width, *Value);
+//	printf("ReadPort %x width %x ==> %x\n", Address, Width, *Value);
     return (AE_OK);
 }
 
@@ -182,14 +182,14 @@ void AcpiOsWaitEventsComplete(void)
 void AcpiOsStall (
     UINT32                  microseconds)
 {
-	printf("AcpiOsStall: %xus\n", microseconds);
+	printf("AcpiOsStall: %lu us\n", microseconds);
 }
 
 void
 AcpiOsSleep (
     UINT64                  milliseconds)
 {
-	printf("AcpiOsSleep: %xms\n", milliseconds);
+	printf("AcpiOsSleep: %lu ms\n", milliseconds);
 }
 
 ACPI_STATUS
@@ -303,7 +303,7 @@ AcpiOsReadMemory (
     UINT64                  *Value,
     UINT32                  Width)
 {
-
+	printf("AcpiOsReadMemory %p width %d\n", Address, Width);
     switch (Width)
     {
     case 8:
@@ -337,6 +337,19 @@ AcpiOsReadMemory (
  *
  *****************************************************************************/
 
+UINT32 PciReadWord(UINT32 Addr)
+{
+	AcpiOsWritePort(0xcf8, Addr, 32);
+	UINT32 Temp = 0;
+	AcpiOsReadPort(0xcfc, &Temp, 32);
+	return Temp;
+}
+
+UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register)
+{
+	return 0x80000000 | (PciId->Bus << 16) | (PciId->Device << 11) | (PciId->Function << 8) | (Register & 0xfc);
+}
+
 ACPI_STATUS
 AcpiOsReadPciConfiguration (
     ACPI_PCI_ID             *PciId,
@@ -344,7 +357,19 @@ AcpiOsReadPciConfiguration (
     UINT64                  *Value,
     UINT32                  Width)
 {
-	printf("AcpiOsReadPciConfiguration %x %x\n", *(u64*)PciId, Register);
+	printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width);
+	UINT32 Addr = AddrFromPciId(PciId, Register);
+	AcpiOsWritePort(0xcf8, Addr, 32);
+	UINT32 Temp;
+	AcpiOsReadPort(0xcfc + (Register & 3), &Temp, Width);
+	if (Width <= 32)
+	{
+		*Value = Temp;
+	}
+	else if (Width == 64)
+	{
+		*Value = (UINT64)Temp << 32 | PciReadWord(Addr + 4);
+	}
     return (AE_OK);
 }
 
@@ -371,7 +396,13 @@ AcpiOsWritePciConfiguration (
     UINT64                  Value,
     UINT32                  Width)
 {
-	printf("AcpiOsWritePciConfiguration %x %x\n", *(u64*)PciId, Register);
+	printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d := %lx\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width, Value);
+	if (Width == 64) {
+		AcpiOsWritePciConfiguration(PciId, Register + 4, Value >> 32, 32);
+		Width = 32;
+	}
+	AcpiOsWritePort(0xcf8, AddrFromPciId(PciId, Register), 32);
+	AcpiOsWritePort(0xcfc + (Register & 3), Value, Width);
     return (AE_OK);
 }
 
@@ -390,6 +421,7 @@ AcpiOsRemoveInterruptHandler (
     UINT32                  InterruptNumber,
     ACPI_OSD_HANDLER        ServiceRoutine)
 {
+	printf("AcpiOsRemoveInterruptHandler %x\n", InterruptNumber);
     return (AE_OK);
 }
 
@@ -403,7 +435,7 @@ AcpiOsSignal (
     switch (Function)
     {
     case ACPI_SIGNAL_FATAL:
-		printf("ACPI breakpoint: %x %x %x\n",
+		printf("ACPI fatal signal: %x %x %x\n",
 				FatalInfo->Type,
 				FatalInfo->Code,
 				FatalInfo->Argument);
@@ -411,11 +443,11 @@ AcpiOsSignal (
         break;
 
     case ACPI_SIGNAL_BREAKPOINT:
-		printf("ACPI breakpoint: %s\n", Info);
+		printf("ACPI breakpoint signal: %s\n", Info);
         break;
 
     default:
-
+		printf("ACPI other signal (%x)\n", Function);
         break;
     }
 
