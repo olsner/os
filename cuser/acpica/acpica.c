@@ -178,7 +178,7 @@ ExecuteOSI (void)
 		Status = AE_ERROR;
     }
 
-    printf("_OSI returned %x\n", (UINT64) Object->Integer.Value);
+    printf("_OSI returned %#lx\n", Object->Integer.Value);
     AcpiOsFree (Object);
     return Status;
 }
@@ -275,7 +275,6 @@ void start() {
 	ACPI_STATUS status = AE_OK;
 
 	printf("ACPICA: start\n");
-    ACPI_FUNCTION_NAME (Examples-main);
 
 	// NB! Must be at least as large as physical memory - the ACPI tables could
 	// be anywhere. (Could be handled by AcpiOsMapMemory though.)
@@ -297,16 +296,8 @@ void start() {
 
     /* Enable debug output, example debug print */
 
-    AcpiDbgLayer = ACPI_EXAMPLE;
-    AcpiDbgLevel = ACPI_LV_INIT;
-    ACPI_DEBUG_PRINT ((ACPI_DB_INIT, "Example Debug output\n"));
-
-    /* Example warning and error output */
-
-    ACPI_INFO        ((AE_INFO, "ACPICA example info message"));
-    ACPI_WARNING     ((AE_INFO, "ACPICA example warning message"));
-    ACPI_ERROR       ((AE_INFO, "ACPICA example error message"));
-    ACPI_EXCEPTION   ((AE_INFO, AE_AML_OPERAND_TYPE, "Example exception message"));
+    AcpiDbgLayer = ACPI_EXAMPLE; //ACPI_ALL_COMPONENTS;
+    AcpiDbgLevel = ACPI_LV_ALL_EXCEPTIONS | ACPI_LV_INTERRUPTS;
 
     status = ExecuteOSI ();
 	CHECK_STATUS();
