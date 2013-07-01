@@ -2461,7 +2461,7 @@ lodstr	rsi, 27, '[44m'
 %if bochs_con
 	out	0xe9, al
 	mov	edx, 0xe9
-	mov	ecx, 5
+	mov	ecx, 4
 lodstr	rsi, 27, '[0m'
 	rep outsb
 %endif
