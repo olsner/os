@@ -81,7 +81,7 @@ ACPI_SRCS := \
 	$(RS_SRCS:%=$(ACPICA_RESOURCES)/rs%.c) \
 
 ACPI_OBJS := $(ACPI_SRCS:$(ACPICA)/%.c=$(ACPICA_OUT)/%.o)
-SRCS := acpica.c osl.c malloc.c
+SRCS := acpica.c osl.c malloc.c pci.c
 OBJS := $(SRCS:%.c=$(OUTDIR)/%.o)
 OBJS += $(OUTDIR)/printf.o
 

@@ -271,6 +271,8 @@ static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
 	}
 }
 
+void EnumeratePCI();
+
 void start() {
 	ACPI_STATUS status = AE_OK;
 
@@ -314,6 +316,7 @@ void start() {
 //	PrintFACSTable();
 //	PrintFACPTable();
 	PrintAPICTable();
+	EnumeratePCI();
 	printf("OSI executed successfullly, now initializing debugger.\n");
 	for (;;) {
         status = AcpiDbUserCommands (ACPI_DEBUGGER_COMMAND_PROMPT, NULL);
