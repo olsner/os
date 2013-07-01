@@ -21,6 +21,8 @@
 		## __VA_ARGS__)
 #endif
 
+#define ACPI_GET_FUNCTION_NAME __FUNCTION__
+
 #include <stdint.h>
 #include <stdarg.h>
 #define AcpiOsPrintf printf
