@@ -33,6 +33,9 @@ void* malloc(size_t size) {
 }
 
 void free(void* ptr) {
+	if (!ptr) {
+		return;
+	}
 	if ((char*)ptr < heap || (char*)ptr >= heap_end) {
 		printf("Invalid pointer freed!\n");
 		return;

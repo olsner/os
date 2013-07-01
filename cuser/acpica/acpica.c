@@ -260,6 +260,47 @@ failed:
 	return status;
 }
 
+ACPI_STATUS PrintDeviceCallback(ACPI_HANDLE Device, UINT32 Depth, void *Context, void** ReturnValue)
+{
+	printf("Found device %p\n", Device);
+	ACPI_STATUS status = AE_OK;
+	ACPI_BUFFER buffer = {0};
+	buffer.Length = ACPI_ALLOCATE_BUFFER;
+
+	ACPI_DEVICE_INFO* info = NULL;
+	status = AcpiGetObjectInfo(Device, &info);
+	CHECK_STATUS();
+	printf("Device flags %#x address %#x\n", info->Type, info->Flags, info->Address);
+
+	if (info->Flags & ACPI_PCI_ROOT_BRIDGE) {
+		status = AcpiGetIrqRoutingTable(Device, &buffer);
+		CHECK_STATUS();
+		printf("Got %u bytes of IRQ routing table\n", buffer.Length);
+	}
+
+failed:
+	ACPI_FREE_BUFFER(buffer);
+	ACPI_FREE(info);
+	return_ACPI_STATUS(status);
+}
+
+// PNP0C0F = PCI Interrupt Link Device
+// PNP0A03 = PCI Root Bridge
+ACPI_STATUS PrintDevices() {
+	ACPI_STATUS status = AE_OK;
+
+	printf("Searching for PNP0A03\n");
+	status = AcpiGetDevices("PNP0A03", PrintDeviceCallback, NULL, NULL);
+	CHECK_STATUS();
+
+	printf("Searching for PNP0C0F\n");
+	status = AcpiGetDevices("PNP0C0F", PrintDeviceCallback, NULL, NULL);
+	CHECK_STATUS();
+
+failed:
+	return_ACPI_STATUS(status);
+}
+
 // FIXME Workaround for the fact that anonymous mappings can only span a single
 // page (currently).
 static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
@@ -316,6 +357,7 @@ void start() {
 //	PrintFACSTable();
 //	PrintFACPTable();
 	PrintAPICTable();
+	PrintDevices();
 	EnumeratePCI();
 	printf("OSI executed successfullly, now initializing debugger.\n");
 	for (;;) {
