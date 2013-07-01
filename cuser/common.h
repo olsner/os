@@ -48,6 +48,12 @@ enum msg_con {
 	MSG_CON_READ,
 };
 
+enum msg_irq {
+	MSG_REG_IRQ = MSG_USER,
+	MSG_IRQ_T,
+	MSG_IRQ_ACK,
+};
+
 enum msg_kind {
 	MSG_KIND_SEND = 0,
 	MSG_KIND_CALL = 1,
@@ -193,6 +199,11 @@ static inline uintptr_t ipc1(uintptr_t msg, uintptr_t* src, uintptr_t* arg1)
 		: "a" (msg), "D" (*src), "S" (*arg1)
 		: "r8", "r9", "r10", "r11", "%rcx", "%rdx", "memory");
 	return msg;
+}
+
+static inline uintptr_t recv1(uintptr_t* src, uintptr_t* arg1)
+{
+	return ipc1(0, src, arg1);
 }
 
 static inline uintptr_t recv0(uintptr_t src)

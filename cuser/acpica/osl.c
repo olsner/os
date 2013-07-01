@@ -357,7 +357,7 @@ AcpiOsReadPciConfiguration (
     UINT64                  *Value,
     UINT32                  Width)
 {
-	printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width);
+	//printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width);
 	UINT32 Addr = AddrFromPciId(PciId, Register);
 	AcpiOsWritePort(0xcf8, Addr, 32);
 	UINT32 Temp;
@@ -396,7 +396,7 @@ AcpiOsWritePciConfiguration (
     UINT64                  Value,
     UINT32                  Width)
 {
-	printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d := %lx\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width, Value);
+	//printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d := %lx\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width, Value);
 	if (Width == 64) {
 		AcpiOsWritePciConfiguration(PciId, Register + 4, Value >> 32, 32);
 		Width = 32;
@@ -406,14 +406,37 @@ AcpiOsWritePciConfiguration (
     return (AE_OK);
 }
 
+static const uintptr_t pic_handle = 2;
+
+typedef struct irq_reg
+{
+	UINT32 InterruptNumber;
+	ACPI_OSD_HANDLER ServiceRoutine;
+	void* Context;
+	struct irq_reg* Next;
+} irq_reg;
+
+static irq_reg* irq_regs;
+
 UINT32
 AcpiOsInstallInterruptHandler (
     UINT32                  InterruptNumber,
     ACPI_OSD_HANDLER        ServiceRoutine,
     void                    *Context)
 {
-	printf("AcpiOsInstallInterruptHandler %x\n", InterruptNumber);
-    return (AE_OK);
+	printf("AcpiOsInstallInterruptHandler %#x\n", InterruptNumber);
+	irq_reg* reg = malloc(sizeof(irq_reg));
+	reg->InterruptNumber = InterruptNumber;
+	reg->ServiceRoutine = ServiceRoutine;
+	reg->Context = Context;
+	reg->Next = irq_regs;
+	irq_regs = reg;
+
+	hmod(pic_handle, pic_handle, (uintptr_t)reg);
+	uintptr_t irq = InterruptNumber;
+	uintptr_t msg = sendrcv1(MSG_REG_IRQ, (uintptr_t)reg, &irq);
+	printf("Registered IRQ %#x to %p/%p\n", InterruptNumber, ServiceRoutine, Context);
+	return (AE_OK);
 }
 
 ACPI_STATUS
@@ -421,7 +444,7 @@ AcpiOsRemoveInterruptHandler (
     UINT32                  InterruptNumber,
     ACPI_OSD_HANDLER        ServiceRoutine)
 {
-	printf("AcpiOsRemoveInterruptHandler %x\n", InterruptNumber);
+	printf("AcpiOsRemoveInterruptHandler %#x\n", InterruptNumber);
     return (AE_OK);
 }
 

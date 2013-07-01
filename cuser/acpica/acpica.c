@@ -360,9 +360,22 @@ void start() {
 	PrintDevices();
 	EnumeratePCI();
 	printf("OSI executed successfullly, now initializing debugger.\n");
+	//status = AcpiDbUserCommands (ACPI_DEBUGGER_COMMAND_PROMPT, NULL);
+	//CHECK_STATUS();
+
+	AcpiWriteBitRegister(ACPI_BITREG_SCI_ENABLE, 1);
+	AcpiWriteBitRegister(ACPI_BITREG_POWER_BUTTON_ENABLE, 1);
+
+	printf("Waiting for SCI interrupts...\n");
 	for (;;) {
-        status = AcpiDbUserCommands (ACPI_DEBUGGER_COMMAND_PROMPT, NULL);
-		CHECK_STATUS();
+		// Do some kind of trick with AcpiOsGetLine and the debugger to let us
+		// loop around here, processing interrupts and what-not, then calling
+		// into the debugger when we have received a full line.
+		uintptr_t rcpt = 0;
+		uintptr_t arg = 0;
+		uintptr_t msg = recv1(&rcpt, &arg);
+		printf("Received %#lx from %#lx: %#lx\n", msg, rcpt, arg);
+		// TODO Receive from anything, respond to interrupts
 	}
 	status = AcpiTerminate();
 	CHECK_STATUS();
