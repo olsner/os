@@ -12,7 +12,7 @@ PIC_IRQ_BASE	equ	0x20
 ; Base where we map incoming IRQs. (handles to rawIRQ process)
 IN_IRQ_BASE	equ	0x30
 
-fresh_handle	equ	2
+fresh_handle	equ	0x100
 
 boot:
 	; Input: IRQ driver in rdi
