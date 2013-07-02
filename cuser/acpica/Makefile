@@ -109,7 +109,7 @@ $(OUTDIR)/%.o: %.cpp
 	@mkdir -p $(@D)
 	$(HUSH_CC) $(CXX) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
 
-LDFLAGS := --check-sections --warn-section-align 
+LDFLAGS := --check-sections
 LDFLAGS += --gc-sections
 
 $(ACPICA_OUT)/acpica.mod: ../linker.ld $(OBJS) $(ACPI_OBJS)
