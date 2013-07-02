@@ -22,6 +22,8 @@
 %define log_waiters 0
 %define log_messages 0
 %define log_irq 0
+%define verbose_procstate 0
+%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
 %define builtin_keyboard 0
 %define builtin_timer 1
@@ -29,7 +31,6 @@
 
 %define debug_tcalls 0
 
-%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
 CR0_PE		equ	0x00000001
 CR0_MP		equ	0x00000002
@@ -957,7 +958,7 @@ lodstr	rdi, 'runqueue_append %p', 10
 	lea	rdi, [rbp + gseg.runqueue]
 	call	dlist_append
 .ret:
-%if log_runqueue
+%if log_runqueue && verbose_procstate
 	call	print_procstate
 %endif
 	ret
@@ -969,7 +970,7 @@ lodstr	rdi, 'queueing blocked %p (%x)', 10
 	mov	rsi, rdi
 lodstr	rdi, 'queueing already running %p (%x)', 10
 .panic:
-%if log_runqueue_panic
+%if verbose_procstate
 	call	print_proc
 	call	print_procstate
 %else
@@ -1022,7 +1023,9 @@ switch_next:
 	mov	r13, rdx
 lodstr	rdi, 'switch_next', 10
 	call	printf
+%if verbose_procstate
 	call	print_procstate
+%endif
 	mov	rax, r12
 	mov	rdx, r13
 %endif
@@ -1032,7 +1035,7 @@ lodstr	rdi, 'switch_next', 10
 	jz	idle
 	tcall	switch_to
 
-%if need_print_procstate
+%if verbose_procstate
 print_proc:
 	; rdi = format
 	; rsi = process
@@ -1111,7 +1114,17 @@ lodstr	rdi,	'    Runqueue_last: %p', 10, 0
 	call	printf
 	pop	rbx
 	ret
-%endif ;need_print_procstate
+%elif need_print_procstate
+print_proc:
+	; rdi = format
+	; rsi = process
+	zero	edx
+	test	rsi, rsi
+	jz	.no_proc
+	mov	rdx, [rsi + proc.flags]
+.no_proc:
+	tcall	printf
+%endif ; verbose_procstate
 
 ; Takes process-pointer in rax, never "returns" to the caller (just jmp to it)
 ; Requires gseg-pointer in rbp
