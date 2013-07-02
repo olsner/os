@@ -36,7 +36,7 @@ lodstr	rdi, 'PIC booting...', 10
 	; For now - assume PICs are mapped to 0x20..0x2f and all interrupts are
 	; masked (this is what start32.inc does).
 
-	mov	ebx, 2
+	mov	ebx, 16
 .reg_loop:
 	; Duplicate IRQ handler -> 0x30..0x3f (incoming IRQ)
 	mov	rdi, [rsp]
