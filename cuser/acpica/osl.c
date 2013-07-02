@@ -448,6 +448,26 @@ AcpiOsRemoveInterruptHandler (
     return (AE_OK);
 }
 
+void HandleIrq(irq_reg* irq, uintptr_t num) {
+	printf("IRQ %#lx: Calling %p/%p (registered for %#x)\n", num,
+			irq->ServiceRoutine, irq->Context, irq->InterruptNumber);
+	irq->ServiceRoutine(irq->Context);
+}
+
+int AcpiOsCheckInterrupt(uintptr_t rcpt, uintptr_t arg)
+{
+	irq_reg* irq = irq_regs;
+	while (irq) {
+		if ((uintptr_t)irq == rcpt) {
+			HandleIrq(irq, arg);
+			send1(MSG_IRQ_ACK, rcpt, arg);
+			return 1;
+		}
+		irq = irq->Next;
+	}
+	return 0;
+}
+
 ACPI_STATUS
 AcpiOsSignal (
     UINT32                  Function,

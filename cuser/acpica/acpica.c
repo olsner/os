@@ -374,8 +374,12 @@ void start() {
 		uintptr_t rcpt = 0;
 		uintptr_t arg = 0;
 		uintptr_t msg = recv1(&rcpt, &arg);
-		printf("Received %#lx from %#lx: %#lx\n", msg, rcpt, arg);
-		// TODO Receive from anything, respond to interrupts
+		printf("acpica: Received %#lx from %#lx: %#lx\n", msg, rcpt, arg);
+		if (msg == MSG_IRQ_T && AcpiOsCheckInterrupt(rcpt, arg)) {
+			// It was an IRQ, handled by ACPICA
+			continue;
+		}
+		// TODO Handle other stuff.
 	}
 	status = AcpiTerminate();
 	CHECK_STATUS();
