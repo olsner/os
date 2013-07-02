@@ -994,17 +994,22 @@ lodstr	rdi, 'Idle: proc=%p', 10
 	mov	rsi, [rbp + gseg.process]
 	call	printf
 %endif
-	cmp	qword [rbp + gseg.process], 0
-	jnz	.panic
+	mov	qword [rbp + gseg.process], 0
 	; Fun things to do while idle: check how soon the first timer wants to
 	; run, make sure the APIC timer doesn't trigger before then.
 	swapgs
 	sti
 	hlt
-.panic:
 	; We should never get here: the interrupt handler(s) will return through
 	; the scheduler which will just re-idle if needed.
-	PANIC
+	; It might be possible for hlt to fall through without an interrupt
+	; happening. It looks like the SMM code ran after an SMI can decide
+	; whether to resume or abort the hlt instruction.
+%if log_idle
+lodstr	rdi,	'Idle: hlt fell through?', 10
+	call	printf
+%endif
+	jmp idle
 
 block_and_switch:
 	btr	dword [rdi + proc.flags], PROC_RUNNING_BIT
