@@ -1,0 +1,20 @@
+Configuration required for Bochs:
+
+Required:
+--enable-x86-64 --enable-acpi  --enable-pci
+
+Recommended:
+* debugger
+* "x86 debugger" (not sure what the difference is)
+
+--enable-debugger --enable-x86-debugger
+
+Optimization flags:
+--enable-all-optimizations
+CFLAGS='-fomit-frame-pointer -O2 -march=native'
+CXXFLAGS='-fomit-frame-pointer -O2 -march=native'
+--enable-trace-cache --enable-repeat-speedups
+
+
+Whole shebang:
+'./configure'  '-C' '--prefix=/opt/bochs' '--enable-debugger' '--enable-x86-64' '--enable-all-optimizations' --enable-acpi CFLAGS='-fomit-frame-pointer -O2 -march=native'  CXXFLAGS='-fomit-frame-pointer -O2 -march=native' --enable-trace-cache --enable-repeat-speedups --enable-x86-debugger --enable-pci
