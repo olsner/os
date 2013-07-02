@@ -41,7 +41,7 @@ boot:
 %endif
 
 %if log
-lodstr	rdi,	'rawIRQ: boot complete.', 10
+lodstr	edi,	'rawIRQ: boot complete.', 10
 	call	puts
 %endif
 
@@ -63,11 +63,19 @@ irq:
 	; (rdx = number of times interrupt was triggered before we responded)
 
 	bt	dword [rsp], esi
+%if log
+	jc	.registered
+lodstr	edi,	"rawIRQ: %x triggered but I'm not listening", 10
+	call	printf
+	jmp	rcv_loop
+%else
 	jnc	rcv_loop
+%endif
+.registered:
 
 %if log
 	push	rsi
-lodstr	rdi,	'rawIRQ: %x triggered', 10
+lodstr	edi,	'rawIRQ: %x triggered', 10
 	call	printf
 
 	pop	rdi
@@ -96,7 +104,7 @@ reg_irq:
 	syscall
 
 %if log
-lodstr	rdi, 'rawIRQ: %x registered', 10
+lodstr	edi, 'rawIRQ: %x registered', 10
 	mov	rsi, [rsp]
 	call	printf
 %endif
