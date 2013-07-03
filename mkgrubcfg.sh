@@ -18,6 +18,16 @@ menuentry "irq+pic+console+shell" {
     boot
 }
 
+menuentry "ACPICA+e1000" {
+    multiboot (cd)/kstart.b
+    module (cd)/kern/irq.mod
+    module (cd)/kern/pic.mod
+    module (cd)/kern/console.mod
+    module (cd)/cuser/acpica.mod
+    module (cd)/cuser/e1000.mod
+    boot
+}
+
 menuentry "ACPICA" {
     multiboot (cd)/kstart.b
     module (cd)/kern/irq.mod
