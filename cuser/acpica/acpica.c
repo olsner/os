@@ -306,10 +306,16 @@ static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE
 		// There are more attributes here, e.g. triggering, polarity and
 		// shareability. Since we're still in PIC mode, we already require
 		// that all this is defaulty.
-		printf("Extended IRQ: %d interrupt, first one %#x.\n",
+		printf("Extended IRQ: %d interrupts, first one %#x.\n",
 			resource->Data.ExtendedIrq.InterruptCount,
 			resource->Data.ExtendedIrq.Interrupts[0]);
 		data->gsi = resource->Data.ExtendedIrq.Interrupts[0];
+		break;
+	case ACPI_RESOURCE_TYPE_IRQ:
+		printf("IRQ: %d interrupts, first one %#x.\n",
+			resource->Data.Irq.InterruptCount,
+			resource->Data.Irq.Interrupts[0]);
+		data->gsi = resource->Data.Irq.Interrupts[0];
 		break;
 	default:
 		status = AE_BAD_DATA;
@@ -547,6 +553,8 @@ void start() {
 //	PrintFACSTable();
 //	PrintFACPTable();
 	PrintAPICTable();
+	// TODO Do something like PrintDevices to disable all pci interrupt link
+	// devices (call _DIS). Then we'll enable them as we go along.
 	PrintDevices();
 	EnumeratePCI();
 	ACPI_PCI_ID temp;
