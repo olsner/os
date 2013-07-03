@@ -516,3 +516,35 @@ AcpiOsPredefinedOverride (
     return (AE_OK);
 }
 
+// 1 = pending bit
+// 2 = owned bit
+
+uint32_t AcpiOsReleaseGlobalLock(ACPI_TABLE_FACS* facs)
+{
+	uint32_t* lock = ACPI_CAST32(ACPI_PHYS_BASE + facs->GlobalLock);
+	uint32_t new, old;
+	do {
+		old = *lock;
+		new = old & ~3;
+	} while (!__sync_bool_compare_and_swap(lock, old, new));
+	printf("Released global lock. Pending was %d\n", old & 1);
+	return old & 1;
+}
+
+uint32_t AcpiOsAcquireGlobalLock(ACPI_TABLE_FACS* facs)
+{
+	uint32_t* lock = ACPI_CAST32(ACPI_PHYS_BASE + facs->GlobalLock);
+	uint32_t new, old;
+	do
+	{
+		old = *lock;
+		// if owned: we want to set it to owned and pending
+		// if not owned: we want to set it to owned not pending
+		// ignore previous pending-bit
+		new = (old & ~1) | ((old & 2) >> 1) | 2;
+	} while (!__sync_bool_compare_and_swap(lock, old, new));
+	// Return true if acquired. We set the pending-bit if we started waiting.
+	printf("Acquired global lock: pending=%d\n", new&1);
+	return !(new & 1);
+}
+

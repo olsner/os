@@ -27,3 +27,11 @@
 #include <stdarg.h>
 #define AcpiOsPrintf printf
 #define AcpiOsVprintf vprintf
+
+struct acpi_table_facs;
+uint32_t AcpiOsReleaseGlobalLock(struct acpi_table_facs* facs);
+uint32_t AcpiOsAcquireGlobalLock(struct acpi_table_facs* facs);
+
+#define ACPI_ACQUIRE_GLOBAL_LOCK(GLptr, Acquired) Acquired = AcpiOsAcquireGlobalLock(GLptr)
+#define ACPI_RELEASE_GLOBAL_LOCK(GLptr, Pending) Pending = AcpiOsReleaseGlobalLock(GLptr)
+
