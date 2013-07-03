@@ -461,6 +461,49 @@ static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
 	}
 }
 
+// reserve some virtual memory space (never touched) to keep track pci device
+// handles.
+static const char pci_device_handles[65536];
+
+static void MsgFindPci(uintptr_t rcpt, uintptr_t arg)
+{
+	ACPI_PCI_ID temp = {0};
+	u16 vendor = arg >> 16;
+	u16 device = arg;
+	printf("acpica: find pci %#x:%#x.\n", vendor, device);
+	ACPI_STATUS status = FindPCIDevByVendor(vendor, device, &temp);
+	send1(MSG_ACPI_FIND_PCI, rcpt, temp.Bus << 16 | temp.Device << 3 | temp.Function);
+}
+
+static void MsgClaimPci(uintptr_t rcpt, uintptr_t addr, uintptr_t pins)
+{
+	addr &= 0xffff;
+	ACPI_PCI_ID id = { 0, (addr >> 8) & 0xff, (addr >> 3) & 31, addr & 7 };
+	printf("acpica: claim pci %02x:%02x.%x\n", id.Bus, id.Device, id.Function);
+
+	// Set up whatever stuff to track PCI device drivers in general
+
+	int irqs[4] = {0};
+	for (int pin = 0; pin < 4; pin++) {
+		if (!(pins & (1 << pin))) continue;
+
+		ACPI_STATUS status = RouteIRQ(&id, 0, &irqs[pin]);
+		CHECK_STATUS();
+		printf("acpica: %02x:%02x.%x pin %d routed to IRQ %#x\n",
+			id.Bus, id.Device, id.Function,
+			pin, irqs[pin]);
+	}
+
+	pins = irqs[3] << 24 | irqs[2] << 16 | irqs[1] << 8 | irqs[0];
+
+	send2(MSG_ACPI_CLAIM_PCI, rcpt, addr, pins);
+	hmod(rcpt, (uintptr_t)pci_device_handles + addr, 0);
+	return;
+
+failed:
+	send2(MSG_ACPI_CLAIM_PCI, rcpt, 0, 0);
+}
+
 void start() {
 	ACPI_STATUS status = AE_OK;
 
@@ -525,15 +568,30 @@ void start() {
 		// Do some kind of trick with AcpiOsGetLine and the debugger to let us
 		// loop around here, processing interrupts and what-not, then calling
 		// into the debugger when we have received a full line.
-		uintptr_t rcpt = 0;
+		uintptr_t rcpt = 0x100;
 		uintptr_t arg = 0;
-		uintptr_t msg = recv1(&rcpt, &arg);
-		printf("acpica: Received %#lx from %#lx: %#lx\n", msg, rcpt, arg);
+		uintptr_t arg2 = 0;
+		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
+		printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
 		if (msg == MSG_IRQ_T && AcpiOsCheckInterrupt(rcpt, arg)) {
+			printf("acpica: Handled interrupt.\n", msg, rcpt, arg);
 			// It was an IRQ, handled by ACPICA
 			continue;
 		}
+		switch (msg & 0xff)
+		{
+		case MSG_ACPI_FIND_PCI:
+			MsgFindPci(rcpt, arg);
+			break;
+		case MSG_ACPI_CLAIM_PCI:
+			MsgClaimPci(rcpt, arg, arg2);
+			break;
+		}
 		// TODO Handle other stuff.
+		if (rcpt == 0x100)
+		{
+			hmod(rcpt, 0, 0);
+		}
 	}
 	status = AcpiTerminate();
 	CHECK_STATUS();

@@ -96,6 +96,7 @@ $(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
 	$(HUSH_LD) $(LD) -o $@ -T $^ -Map $(OUTDIR)/$*.map
 
 $(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
+$(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/printf.o
 
 $(GRUBDIR)/cuser/acpica.mod: $(OUTDIR)/cuser/acpica/acpica.mod
 	@mkdir -p $(@D)

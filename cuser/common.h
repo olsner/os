@@ -84,6 +84,11 @@ enum msg_kind {
 	//MSG_KIND_REPLYWAIT = 2
 };
 
+enum msg_masks {
+	MSG_CODE_MASK = 0x0ff,
+	MSG_KIND_MASK = 0x300
+};
+
 static uintptr_t msg_set_kind(uintptr_t msg, enum msg_kind kind) {
 	return msg | (kind << 8);
 }
@@ -92,6 +97,9 @@ static uintptr_t msg_send(uintptr_t msg) {
 }
 static uintptr_t msg_call(uintptr_t msg) {
 	return msg_set_kind(msg, MSG_KIND_CALL);
+}
+static u8 msg_code(uintptr_t msg) {
+	return msg & MSG_CODE_MASK;
 }
 
 /*
@@ -198,6 +206,11 @@ static inline uintptr_t ipc2(uintptr_t msg, uintptr_t* src, uintptr_t* arg1, uin
 		: "a" (msg), "D" (*src), "S" (*arg1), "d" (*arg2)
 		: "r8", "r9", "r10", "r11", "%rcx", "memory");
 	return msg;
+}
+
+static inline uintptr_t sendrcv2(uintptr_t msg, uintptr_t dst, uintptr_t* arg1, uintptr_t* arg2)
+{
+	return ipc2(msg_call(msg), &dst, arg1, arg2);
 }
 
 static inline uintptr_t recv2(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)

@@ -88,7 +88,7 @@ OBJS += $(OUTDIR)/printf.o
 DEPS := $(OBJS:.o=.d) $(ACPI_OBJS:.o=.d)
 -include $(DEPS)
 
-USER_CFLAGS = -ffreestanding -Os -W -Wall -Wextra -march=native
+USER_CFLAGS = -ffreestanding -Os -W -Wall -Wextra -march=native -std=gnu99
 USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
 USER_CFLAGS += -I.. -I. -I$(ACPICA_INCLUDE)
 USER_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
