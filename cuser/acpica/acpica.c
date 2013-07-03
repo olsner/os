@@ -1,12 +1,5 @@
 #include "common.h"
-#include "acpi.h"
-#include "accommon.h"
-#include "acdebug.h"
-
 #include "acpica.h"
-
-#define _COMPONENT          ACPI_EXAMPLE
-        ACPI_MODULE_NAME    ("acpica")
 
 /******************************************************************************
  *
@@ -112,22 +105,6 @@ static ACPI_STATUS InitializeFullAcpi (void)
 }
 
 
-/******************************************************************************
- *
- * Example control method execution.
- *
- * _OSI is a predefined method that is implemented internally within ACPICA.
- *
- * Shows the following elements:
- *
- * 1) How to setup a control method argument and argument list
- * 2) How to setup the return value object
- * 3) How to invoke AcpiEvaluateObject
- * 4) How to check the returned ACPI_STATUS
- * 5) How to analyze the return value
- *
- *****************************************************************************/
-
 static ACPI_STATUS
 ExecuteOSI (void)
 {
@@ -138,47 +115,33 @@ ExecuteOSI (void)
     ACPI_OBJECT             *Object;
 
 
-    ACPI_INFO ((AE_INFO, "Executing OSI method"));
-
     /* Setup input argument */
 
     ArgList.Count = 1;
     ArgList.Pointer = Arg;
 
-    Arg[0].Type = ACPI_TYPE_STRING;
-    Arg[0].String.Pointer = "Windows 2001";
-    Arg[0].String.Length = sizeof("Windows 2001") - 1;
+    Arg[0].Type = ACPI_TYPE_INTEGER;
+    Arg[0].Integer.Value = 0; // 1 = APIC mode. We're still in PIC dark ages :)
+
+    ACPI_INFO ((AE_INFO, "Executing _PIC(%d)", Arg[0].Integer.Value));
 
     /* Ask ACPICA to allocate space for the return object */
 
     ReturnValue.Length = ACPI_ALLOCATE_BUFFER;
 
-    Status = AcpiEvaluateObject (NULL, "\\_OSI", &ArgList, &ReturnValue);
+    Status = AcpiEvaluateObject (NULL, "\\_PIC", &ArgList, &ReturnValue);
+	if (Status == AE_NOT_FOUND)
+	{
+		printf("\\_PIC was not found. Assuming that's ok.\n");
+		return AE_OK;
+	}
     if (ACPI_FAILURE (Status))
     {
-        ACPI_EXCEPTION ((AE_INFO, Status, "While executing _OSI"));
+        ACPI_EXCEPTION ((AE_INFO, Status, "While executing _PIC"));
         return Status;
     }
 
-    /* Ensure that the return object is large enough */
-
-    if (ReturnValue.Length < sizeof (ACPI_OBJECT))
-    {
-        AcpiOsPrintf ("Return value from _OSI method too small, %.8X\n",
-            ReturnValue.Length);
-        return AE_ERROR;
-    }
-
-    /* Expect an integer return value from execution of _OSI */
-
-    Object = ReturnValue.Pointer;
-    if (Object->Type != ACPI_TYPE_INTEGER)
-    {
-        AcpiOsPrintf ("Invalid return type from _OSI, %.2X\n", Object->Type);
-		Status = AE_ERROR;
-    }
-
-    printf("_OSI returned %#lx\n", Object->Integer.Value);
+    printf("_PIC returned.\n");
     AcpiOsFree (Object);
     return Status;
 }
@@ -306,6 +269,187 @@ failed:
 	return_ACPI_STATUS(status);
 }
 
+typedef struct IRQRouteData
+{
+	ACPI_PCI_ID pci;
+	unsigned pin;
+	// Need more data than this: is this on the PIC or an I/O APIC, link to the
+	// relevant APIC information from the other table, etc.
+	// For now: gsi is an IRQ number on the PIC
+	int gsi;
+	BOOLEAN found;
+} IRQRouteData;
+
+static void ResetBuffer(ACPI_BUFFER* buffer) {
+	ACPI_FREE_BUFFER((*buffer));
+	buffer->Pointer = 0;
+	buffer->Length = ACPI_ALLOCATE_BUFFER;
+}
+
+static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE* found, IRQRouteData* data) {
+	ACPI_STATUS status = AE_OK;
+	ACPI_HANDLE LinkDevice = NULL;
+	ACPI_BUFFER buffer = {0};
+
+	printf("Routing IRQ Link device %s\n", found->Source);
+	status = AcpiGetHandle(Device, found->Source, &LinkDevice);
+	CHECK_STATUS();
+
+	ResetBuffer(&buffer);
+	status = AcpiGetCurrentResources(LinkDevice, &buffer);
+	CHECK_STATUS();
+	printf("Got %lu bytes of current resources\n", buffer.Length);
+	ACPI_RESOURCE* resource = (ACPI_RESOURCE*)buffer.Pointer;
+	printf("Got resource %p (status %#x), type %d\n", resource, status, resource->Type);
+	switch (resource->Type) {
+	case ACPI_RESOURCE_TYPE_EXTENDED_IRQ:
+		// There are more attributes here, e.g. triggering, polarity and
+		// shareability. Since we're still in PIC mode, we already require
+		// that all this is defaulty.
+		printf("Extended IRQ: %d interrupt, first one %#x.\n",
+			resource->Data.ExtendedIrq.InterruptCount,
+			resource->Data.ExtendedIrq.Interrupts[0]);
+		data->gsi = resource->Data.ExtendedIrq.Interrupts[0];
+		break;
+	default:
+		status = AE_BAD_DATA;
+		goto failed;
+	}
+	status = AcpiSetCurrentResources(LinkDevice, &buffer);
+	CHECK_STATUS();
+
+failed:
+	ACPI_FREE_BUFFER(buffer);
+	return_ACPI_STATUS(status);
+}
+
+static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Context, void** ReturnValue)
+{
+	IRQRouteData* data = (IRQRouteData*)Context;
+	ACPI_STATUS status = AE_OK;
+	ACPI_RESOURCE* resource = NULL;
+	ACPI_BUFFER buffer = {0};
+	buffer.Length = ACPI_ALLOCATE_BUFFER;
+	ACPI_PCI_ROUTING_TABLE* found = NULL;
+
+	ACPI_DEVICE_INFO* info = NULL;
+	status = AcpiGetObjectInfo(Device, &info);
+	CHECK_STATUS();
+
+	if (!(info->Flags & ACPI_PCI_ROOT_BRIDGE)) {
+		goto failed;
+	}
+
+	printf("Root bridge with address %#x:\n", info->Address);
+	int rootBus = -1;
+
+	// Get _CRS, parse, check if the bus number range includes the one in
+	// data->pci.Bus - then we've found the right *root* PCI bridge.
+	// Though this might actually be a lot more complicated if we allow for
+	// multiple root pci bridges.
+	status = AcpiGetCurrentResources(Device, &buffer);
+	CHECK_STATUS();
+	printf("Got %lu bytes of current resources\n", buffer.Length);
+	//status = AcpiBufferToResource(buffer.Pointer, buffer.Length, &resource);
+	resource = (ACPI_RESOURCE*)buffer.Pointer;
+	printf("Got resources %p (status %#x)\n", resource, status);
+	CHECK_STATUS();
+	while (resource->Type != ACPI_RESOURCE_TYPE_END_TAG) {
+		printf("Got resource type %d\n", resource->Type);
+		ACPI_RESOURCE_ADDRESS64 addr64;
+		ACPI_STATUS status = AcpiResourceToAddress64(resource, &addr64);
+		if (status == AE_OK && addr64.ResourceType == ACPI_BUS_NUMBER_RANGE)
+		{
+			printf("Root bridge bus range %#x..%#x\n",
+					addr64.Minimum,
+					addr64.Maximum);
+			if (data->pci.Bus < addr64.Minimum ||
+				data->pci.Bus > addr64.Maximum)
+			{
+				// This is not the root bridge we're looking for...
+				goto failed;
+			}
+			rootBus = addr64.Minimum;
+			break;
+		}
+		resource = ACPI_NEXT_RESOURCE(resource);
+	}
+	// dunno!
+	if (rootBus == -1)
+	{
+		printf("Couldn't figure out the bus number for root bridge %#x\n",
+				info->Address);
+		goto failed;
+	}
+	// This requires us to walk the chain of pci-pci bridges between the
+	// root bridge and the device. Unimplemented.
+	if (rootBus != data->pci.Bus)
+	{
+		printf("Unimplemented! Device on bus %#x, but root is %#x\n",
+				data->pci.Bus, rootBus);
+		goto failed;
+	}
+
+	ResetBuffer(&buffer);
+	status = AcpiGetIrqRoutingTable(Device, &buffer);
+	CHECK_STATUS();
+	printf("Got %u bytes of IRQ routing table\n", buffer.Length);
+	ACPI_PCI_ROUTING_TABLE* route = buffer.Pointer;
+	ACPI_PCI_ROUTING_TABLE* const end = buffer.Pointer + buffer.Length;
+	printf("Routing table: %p..%p\n", route, end);
+	UINT64 pciAddr = data->pci.Device;
+	while (route < end && route->Length) {
+		if ((route->Address >> 16) == pciAddr && route->Pin == data->pin) {
+			found = route;
+			break;
+		}
+		route = (ACPI_PCI_ROUTING_TABLE*)((char*)route + route->Length);
+	}
+	if (!found) {
+		goto failed;
+	}
+
+	printf("Found route: %#x pin %d -> %s:%d\n",
+		found->Address >> 16,
+		found->Pin,
+		found->Source[0] ? found->Source : NULL,
+		found->SourceIndex);
+
+	if (found->Source[0]) {
+		status = RouteIRQLinkDevice(Device, found, data);
+		printf("status %#x irq %#x\n", status, data->gsi);
+		CHECK_STATUS();
+	} else {
+		data->gsi = found->SourceIndex;
+	}
+	data->found = TRUE;
+	status = AE_CTRL_TERMINATE;
+
+failed:
+	ACPI_FREE_BUFFER(buffer);
+	ACPI_FREE(info);
+	return_ACPI_STATUS(status);
+}
+
+static ACPI_STATUS RouteIRQ(ACPI_PCI_ID* device, int pin, int* irq) {
+	IRQRouteData data = { *device, pin, 0, FALSE };
+	ACPI_STATUS status = AE_OK;
+
+	status = AcpiGetDevices("PNP0A03", RouteIRQCallback, &data, NULL);
+	if (status == AE_OK)
+	{
+		if (data.found)
+		{
+			*irq = data.gsi;
+		}
+		else
+		{
+			status = AE_NOT_FOUND;
+		}
+	}
+	return_ACPI_STATUS(status);
+}
+
 // FIXME Workaround for the fact that anonymous mappings can only span a single
 // page (currently).
 static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
@@ -362,6 +506,13 @@ void start() {
 	PrintAPICTable();
 	PrintDevices();
 	EnumeratePCI();
+	ACPI_PCI_ID temp;
+	status = FindPCIDevByVendor(0x8086, 0x100e, &temp);
+	CHECK_STATUS();
+	int irq;
+	status = RouteIRQ(&temp, 0, &irq);
+	CHECK_STATUS();
+	printf("e1000 pin 0 got routed to %#x\n", irq);
 	printf("OSI executed successfullly, now initializing debugger.\n");
 	//status = AcpiDbUserCommands (ACPI_DEBUGGER_COMMAND_PROMPT, NULL);
 	//CHECK_STATUS();

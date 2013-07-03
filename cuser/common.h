@@ -54,6 +54,30 @@ enum msg_irq {
 	MSG_IRQ_ACK,
 };
 
+enum msg_acpi {
+	/* Find (unclaimed) PCI device.
+	 *
+	 * arg1: pci vendor/device
+	 * arg2: index (0..)
+	 * Returns:
+	 * arg1: pci bus/device/function, or -1 if not found
+	 *
+	 * Iterate index upwards to find multiple matching PCI devices until -1 is
+	 * returned.
+	 */
+	MSG_ACPI_FIND_PCI = MSG_USER,
+	/* Wrappers around PCI IRQ routing (to PIC or I/O APIC) */
+	MSG_ACPI_IRQ_T = MSG_IRQ_T,
+	MSG_ACPI_IRQ_ACK = MSG_IRQ_ACK,
+	/* Claim a PCI device for the caller.
+	 *
+	 * arg1: pci bus/device/function
+	 * arg2: flags (etc)
+	 *   low 4 bits: mask of pins to route IRQs for
+	 */
+	MSG_ACPI_CLAIM_PCI,
+};
+
 enum msg_kind {
 	MSG_KIND_SEND = 0,
 	MSG_KIND_CALL = 1,
