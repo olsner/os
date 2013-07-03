@@ -1,9 +1,7 @@
 #include <stdarg.h>
 #include "common.h"
 #include "acpi.h"
-
-extern void* malloc(size_t size);
-extern void free(void* p);
+#include "acpica.h"
 
 UINT64 AcpiOsGetThreadId()
 {
@@ -337,7 +335,7 @@ AcpiOsReadMemory (
  *
  *****************************************************************************/
 
-UINT32 PciReadWord(UINT32 Addr)
+static UINT32 PciReadWord(UINT32 Addr)
 {
 	AcpiOsWritePort(0xcf8, Addr, 32);
 	UINT32 Temp = 0;
@@ -345,7 +343,7 @@ UINT32 PciReadWord(UINT32 Addr)
 	return Temp;
 }
 
-UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register)
+static UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register)
 {
 	return 0x80000000 | (PciId->Bus << 16) | (PciId->Device << 11) | (PciId->Function << 8) | (Register & 0xfc);
 }
@@ -448,7 +446,7 @@ AcpiOsRemoveInterruptHandler (
     return (AE_OK);
 }
 
-void HandleIrq(irq_reg* irq, uintptr_t num) {
+static void HandleIrq(irq_reg* irq, uintptr_t num) {
 	printf("IRQ %#lx: Calling %p/%p (registered for %#x)\n", num,
 			irq->ServiceRoutine, irq->Context, irq->InterruptNumber);
 	irq->ServiceRoutine(irq->Context);

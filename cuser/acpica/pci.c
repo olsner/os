@@ -1,5 +1,6 @@
 #include "common.h"
 #include "acpi.h"
+#include "acpica.h"
 
 static void EnumPCIDevice(u8 bus, u8 dev);
 
@@ -18,7 +19,7 @@ static UINT32 getPCIConfig(u8 bus, u8 dev, u8 func, u8 offset, UINT32 width)
 #define getBaseClass(b,d,f) getPCIConfig(b,d,f, 11, 8)
 #define getSecondaryBus(b,d,f) getPCIConfig(b,d,f, 0x19, 8)
 
-void EnumPCIBus(u8 bus) {
+static void EnumPCIBus(u8 bus) {
 	u8 dev = 0;
 	printf("Enumerating bus %02x...\n", bus);
 	for (; dev < 32; dev++) {
@@ -61,7 +62,7 @@ static void EnumPCIDevice(u8 bus, u8 dev) {
 	}
 }
 
-void EnumeratePCI() {
+void EnumeratePCI(void) {
 	EnumPCIBus(0);
 }
 

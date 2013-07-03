@@ -1,9 +1,10 @@
 #include "common.h"
+#include "acpica.h"
 
 static char heap[1048576];
 static char* heap_end;
 
-void init_heap() {
+void init_heap(void) {
 	printf("init_heap: %x..%x\n", heap, heap + sizeof(heap));
 	heap_end = heap;
 }

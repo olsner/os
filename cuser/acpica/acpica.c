@@ -3,7 +3,7 @@
 #include "accommon.h"
 #include "acdebug.h"
 
-extern void init_heap(void);
+#include "acpica.h"
 
 #define _COMPONENT          ACPI_EXAMPLE
         ACPI_MODULE_NAME    ("acpica")
@@ -14,7 +14,7 @@ extern void init_heap(void);
  *
  *****************************************************************************/
 
-void NotifyHandler (
+static void NotifyHandler (
     ACPI_HANDLE                 Device,
     UINT32                      Value,
     void                        *Context)
@@ -200,7 +200,7 @@ typedef union acpi_apic_struct
 #pragma pack()
 
 
-static ACPI_STATUS PrintAPICTable() {
+static ACPI_STATUS PrintAPICTable(void) {
 	ACPI_TABLE_MADT* table = NULL;
 	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
 	CHECK_STATUS();
@@ -260,7 +260,7 @@ failed:
 	return status;
 }
 
-ACPI_STATUS PrintDeviceCallback(ACPI_HANDLE Device, UINT32 Depth, void *Context, void** ReturnValue)
+ACPI_STATUS PrintAcpiDevice(ACPI_HANDLE Device)
 {
 	printf("Found device %p\n", Device);
 	ACPI_STATUS status = AE_OK;
@@ -284,9 +284,14 @@ failed:
 	return_ACPI_STATUS(status);
 }
 
+static ACPI_STATUS PrintDeviceCallback(ACPI_HANDLE Device, UINT32 Depth, void *Context, void** ReturnValue)
+{
+	return PrintAcpiDevice(Device);
+}
+
 // PNP0C0F = PCI Interrupt Link Device
 // PNP0A03 = PCI Root Bridge
-ACPI_STATUS PrintDevices() {
+static ACPI_STATUS PrintDevices(void) {
 	ACPI_STATUS status = AE_OK;
 
 	printf("Searching for PNP0A03\n");
@@ -311,8 +316,6 @@ static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
 		i += 0x1000;
 	}
 }
-
-void EnumeratePCI();
 
 void start() {
 	ACPI_STATUS status = AE_OK;

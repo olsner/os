@@ -232,7 +232,7 @@ static void putchar(char c) {
 	send1(MSG_CON_WRITE, CONSOLE_HANDLE, c);
 }
 
-static char getchar() {
+static char getchar(void) {
 	uintptr_t c = 0;
 	sendrcv1(MSG_CON_READ, CONSOLE_HANDLE, &c);
 	return c;
@@ -258,9 +258,6 @@ static void map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t of
 		handle, prot, (uintptr_t)local_addr, offset, size);
 }
 
-extern void printf(const char* fmt, ...);
-extern void vprintf(const char* fmt, va_list ap);
-
 static u64 portio(u16 port, u64 flags, u64 data) {
 	return syscall3(SYSCALL_IO, port, flags, data);
 }
@@ -269,6 +266,12 @@ static char* strchr(const char* s, char c) {
 	while (*s && *s != c) s++;
 	return *s ? (char*)s : NULL;
 }
+
+/* Not all of these are implemented, depending on what you link against. */
+extern void printf(const char* fmt, ...);
+extern void vprintf(const char* fmt, va_list ap);
+extern void* malloc(size_t size);
+extern void free(void* p);
 
 #ifdef __cplusplus
 }
