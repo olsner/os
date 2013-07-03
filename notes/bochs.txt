@@ -1,20 +1,19 @@
-Configuration required for Bochs:
+Configuration required for Bochs (2.6.2):
 
 Required:
---enable-x86-64 --enable-acpi  --enable-pci
+--enable-x86-64 --enable-pci --enable-clgd54xx --enable-e1000
 
 Recommended:
 * debugger
 * "x86 debugger" (not sure what the difference is)
+* readline!
 
 --enable-debugger --enable-x86-debugger
+--enable-disasm --enable-idle-hack
+--enable-readline
 
 Optimization flags:
 --enable-all-optimizations
-CFLAGS='-fomit-frame-pointer -O2 -march=native'
-CXXFLAGS='-fomit-frame-pointer -O2 -march=native'
---enable-trace-cache --enable-repeat-speedups
-
 
 Whole shebang:
-'./configure'  '-C' '--prefix=/opt/bochs' '--enable-debugger' '--enable-x86-64' '--enable-all-optimizations' --enable-acpi CFLAGS='-fomit-frame-pointer -O2 -march=native'  CXXFLAGS='-fomit-frame-pointer -O2 -march=native' --enable-trace-cache --enable-repeat-speedups --enable-x86-debugger --enable-pci
+./configure  -C --prefix=/opt/bochs --enable-debugger --enable-x86-debugger --enable-x86-64 --enable-all-optimizations --enable-pci --enable-readline --enable-clgd54xx --enable-disasm --enable-idle-hack --enable-ne2000 --enable-e1000
