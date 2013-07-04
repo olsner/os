@@ -335,7 +335,7 @@ AcpiOsReadMemory (
  *
  *****************************************************************************/
 
-static UINT32 PciReadWord(UINT32 Addr)
+UINT32 PciReadWord(UINT32 Addr)
 {
 	AcpiOsWritePort(0xcf8, Addr, 32);
 	UINT32 Temp = 0;
@@ -343,7 +343,7 @@ static UINT32 PciReadWord(UINT32 Addr)
 	return Temp;
 }
 
-static UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register)
+UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register)
 {
 	return 0x80000000 | (PciId->Bus << 16) | (PciId->Device << 11) | (PciId->Function << 8) | (Register & 0xfc);
 }

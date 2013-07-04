@@ -469,7 +469,7 @@ static void mapAnonPages(enum prot prot, void *local_addr, uintptr_t size) {
 
 // reserve some virtual memory space (never touched) to keep track pci device
 // handles.
-static const char pci_device_handles[65536];
+static const char pci_device_handles[65536] PLACEHOLDER_SECTION;
 
 static void MsgFindPci(uintptr_t rcpt, uintptr_t arg)
 {
@@ -593,6 +593,12 @@ void start() {
 			break;
 		case MSG_ACPI_CLAIM_PCI:
 			MsgClaimPci(rcpt, arg, arg2);
+			break;
+		// This feels a bit wrong, but as long as we use PIO access to PCI
+		// configuration space, we need to serialize all accesses.
+		case MSG_ACPI_READ_PCI:
+			arg = PciReadWord((arg & 0x7ffffffc) | 0x80000000);
+			send1(MSG_ACPI_READ_PCI, rcpt, arg);
 			break;
 		}
 		// TODO Handle other stuff.

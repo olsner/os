@@ -33,6 +33,7 @@ MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
+MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
 MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod) $(GRUBDIR)/cuser/acpica.mod
 DEPFILES     := $(ASMFILES:%.asm=$(OUTDIR)/%.d) $(MOD_OFILES:.o=.d)
 ASMOUTS      := \
@@ -43,6 +44,7 @@ ASMOUTS      := \
 	$(DEPFILES)
 
 all: cpuid rflags $(OUTDIR)/grub.iso
+all: $(MOD_ELFS)
 
 .SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_OFILES)
 
@@ -94,6 +96,11 @@ $(OUTDIR)/cuser/%.o: cuser/%.c
 $(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) -o $@ -T $^ -Map $(OUTDIR)/$*.map
+
+$(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o $(OUTDIR)/cuser/printf.o
+	@mkdir -p $(@D)
+	$(HUSH_LD) $(LD) --oformat elf64-x86-64 -o $@ $(LDFLAGS) -T $^
+
 
 $(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
 $(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/printf.o

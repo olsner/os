@@ -30,6 +30,9 @@ SECTIONS
 	}
 	PROVIDE(__bss_end = ALIGN(4096));
 	PROVIDE(__data_size = SIZEOF(.data));
+	.placeholder (NOLOAD) : {
+		*(.placeholder*);
+	}
 	/DISCARD/ : {
 		*(.eh_frame);
 		*(.comment);

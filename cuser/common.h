@@ -7,6 +7,7 @@ extern "C" {
 #endif
 
 typedef uint64_t u64;
+typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
 typedef uintptr_t size_t;
@@ -23,6 +24,10 @@ extern char __data_lma[1];
 extern char __data_lma_end[1];
 extern char __data_size[1];
 extern char __data_vma[1];
+
+// Attribute for putting variable in a special placeholder section. Useful for
+// reserving virtual memory space or dummy memory space for handles.
+#define PLACEHOLDER_SECTION __attribute__((section(".placeholder")));
 
 enum syscalls_builtins {
 	MSG_NONE = 0,
@@ -76,6 +81,7 @@ enum msg_acpi {
 	 *   low 4 bits: mask of pins to route IRQs for
 	 */
 	MSG_ACPI_CLAIM_PCI,
+	MSG_ACPI_READ_PCI,
 };
 
 enum msg_kind {
@@ -309,6 +315,12 @@ extern void printf(const char* fmt, ...);
 extern void vprintf(const char* fmt, va_list ap);
 extern void* malloc(size_t size);
 extern void free(void* p);
+
+enum pci_regs
+{
+	PCI_BAR_0 = 0x10,
+	PCI_BAR_1 = 0x14,
+};
 
 #ifdef __cplusplus
 }
