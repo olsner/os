@@ -88,10 +88,12 @@ OBJS += $(OUTDIR)/printf.o
 DEPS := $(OBJS:.o=.d) $(ACPI_OBJS:.o=.d)
 -include $(DEPS)
 
-USER_CFLAGS = -ffreestanding -Os -W -Wall -Wextra -march=native -std=gnu99
+USER_CFLAGS = -ffreestanding -g -Os -W -Wall -Wextra -march=native -std=gnu99
 USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
+USER_CFLAGS += -ffunction-sections -fdata-sections
 USER_CFLAGS += -I.. -I. -I$(ACPICA_INCLUDE)
 USER_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
+USER_CFLAGS += -DACPI_FULL_DEBUG
 
 all: $(ACPICA_OUT)/acpica.mod $(ACPICA_OUT)/acpica.elf
 
@@ -108,6 +110,7 @@ $(OUTDIR)/%.o: %.cpp
 	$(HUSH_CC) $(CXX) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
 
 LDFLAGS := --check-sections --warn-section-align 
+LDFLAGS += --gc-sections
 
 $(ACPICA_OUT)/acpica.mod: ../linker.ld $(OBJS) $(ACPI_OBJS)
 	@mkdir -p $(@D)
