@@ -1179,17 +1179,13 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 	mov	cr3, rcx
 .no_set_cr3:
 
-	mov	rbx, [rax + proc.flags]
-	bt	rbx, PROC_KERNEL_BIT
-	jc	.kernel_exit
-
 .user_exit:
 	; If we stop disabling interrupts above, this will be wildly unsafe.
 	; For now, we rely on the flags-restoring part below to atomically
 	; restore flags and go to user mode. The risk is if we switch "from
 	; kernel" while having the user GS loaded!
 	swapgs
-	bt	rbx, PROC_FASTRET_BIT
+	bt	dword [rax + proc.flags], PROC_FASTRET_BIT
 	jc	fastret
 
 	bt	qword [rax + proc.rflags], RFLAGS_IF_BIT
@@ -1232,17 +1228,6 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 	mov	rax, [rsi-proc.endregs+proc.rax]
 	mov	rsi, [rsi-proc.endregs+proc.rsi]
 	iretq
-
-.kernel_exit:
-	hlt
-	; Exit to kernel thread
-	; If we don't need to switch rsp this should be easier - restore all
-	; regs, rflags, push new rip and do a near return
-	push	data64_seg
-	push	qword [rbx+proc.rsp]
-	push	qword [rbx+proc.rflags]
-	push	code64_seg
-	jmp	.restore_and_iretq
 
 .ret_no_intrs:
 	PANIC

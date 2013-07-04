@@ -73,11 +73,8 @@ defbit	PROC_IN_RECV,	2
 ; When a process starts a send, until it becomes properly blocked on some
 ; process or finishes the operation, it will be both RUNNING and IN_SEND.
 defbit	PROC_IN_SEND,	3
-; Jump to CPL 0 instead of CPL 3. In reality unused. May be required for
-; device drivers? Untested!
-defbit	PROC_KERNEL,	4
 ; Is the currently running process
-defbit	PROC_RUNNING,	5
+defbit	PROC_RUNNING,	4
 ; Process has had a page fault that requires a response from a backer.
 ; proc.fault_mapping is a pointer to the mapping that faulted.
-defbit	PROC_PFAULT,	6
+defbit	PROC_PFAULT,	5
