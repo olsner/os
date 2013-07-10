@@ -1399,9 +1399,18 @@ handle.key equ handle.dnode + dict_node.key
 ; A region is a sequential range of pages that can be mapped into various
 ; address spaces. Not all pages need to be backed by actual frames, e.g. for
 ; memory-mapped objects.
+; Sizing notes:
+; * 32 bits of PFN allows 16TB of physical memory.
+; * At 64 bits each, pfn + count + size + mappings = 40 bytes = 1% overhead
+; * Linux: 56 bytes per struct page on x86-64
+;   (according to http://halobates.de/memorywaste.pdf)
+; * Random observation: all free pages should be used for cache, so optimizing
+;   for unused pages is not useful.
 struc region
-	.count	resq 1
 	.paddr	resq 1
+	.count	resq 1
+	; This is problematic, since we don't have a list-of-pages, a region
+	; has to be contiguous in RAM
 	.size	resq 1
 	; Arbitrary mapping, if there are any
 	.mappings restruc dlist
@@ -1415,6 +1424,8 @@ MAPFLAG_W	equ 2
 MAPFLAG_R	equ 4
 MAPFLAG_RWX	equ 7 ; All/any of the R/W/X flags
 MAPFLAG_ANON	equ 16 ; Anonymous page: allocate frame and region on first read
+
+MAPFLAG_DMA	equ 32 ; Backdoor flag: return the *physical* address of the mapping
 
 ; "Special" flags are >= 0x10000
 MAPFLAG_HANDLE	equ 0x10000
@@ -2190,11 +2201,12 @@ handler_PF:
 	; Bit 16: ??
 
 %if log_page_fault
-lodstr	rdi,	'Page-fault: cr2=%p error=%x proc=%p', 10
+lodstr	rdi,	'Page-fault: cr2=%x error=%x proc=%p rip=%x', 10
 	mov	rsi, cr2
 	; Fault
 	mov	rdx, [rsp]
 	mov	rcx, rax
+	mov	r8, [rax + proc.rip]
 	call printf
 %endif
 
@@ -2211,8 +2223,7 @@ lodstr	r12,	'No mapping found!', 10
 	mov	rdi, r12
 	call	printf
 %endif
-	cli
-	hlt
+	PANIC
 .found:
 	lea	rdx, [rdi - mapping.as_node]
 	mov	rcx, [rdi + mapping.vaddr - mapping.as_node]
@@ -3407,6 +3418,18 @@ syscall_map:
 	; (TODO Remove these backdoors, and give exactly one process a preset
 	; mapping of all physical memory.)
 
+	; If this is a DMA region, allocate the memory immediately so that we
+	; can return its physical address to the caller.
+	; FIXME We don't leave a record of this anywhere, so we can't e.g.
+	; return the memory to the free list.
+	test	byte [rbx + proc.rsi], MAPFLAG_DMA
+	jz	.not_dma
+
+	call	allocate_frame
+	and	eax, ~kernel_base
+	mov	[rbx + proc.r8], rax
+
+.not_dma:
 	test	byte [rbx + proc.rsi], MAPFLAG_ANON
 	jnz	.has_handle
 
@@ -3435,7 +3458,13 @@ syscall_map:
 	mov	rcx, [rbx + proc.rdi]
 	mov	[rax + mapping.handle], rcx
 
-	zero	rax
+	test	byte [rbx + proc.rsi], MAPFLAG_DMA
+	jnz	.ret_dma
+	zero	eax
+	ret
+.ret_dma:
+	mov	rax, [rax + mapping.region]
+	mov	rax, [rax + region.paddr]
 	ret
 
 %include "printf.asm"
