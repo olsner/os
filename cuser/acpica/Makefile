@@ -118,7 +118,7 @@ $(ACPICA_OUT)/acpica.mod: ../linker.ld $(OBJS) $(ACPI_OBJS)
 
 $(ACPICA_OUT)/acpica.elf: ../linker.ld $(OBJS) $(ACPI_OBJS)
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) --oformat elf64-x86-64 -o $@ $(LDFLAGS) -T $^ -Map $(OUTDIR)/acpica.map
+	$(HUSH_LD) $(LD) --oformat elf64-x86-64 -o $@ $(LDFLAGS) -T $^
 
 .PHONY: clean
 clean:
