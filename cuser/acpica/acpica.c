@@ -227,22 +227,14 @@ ACPI_STATUS PrintAcpiDevice(ACPI_HANDLE Device)
 {
 	printf("Found device %p\n", Device);
 	ACPI_STATUS status = AE_OK;
-	ACPI_BUFFER buffer = {0};
-	buffer.Length = ACPI_ALLOCATE_BUFFER;
 
 	ACPI_DEVICE_INFO* info = NULL;
 	status = AcpiGetObjectInfo(Device, &info);
-	CHECK_STATUS();
-	printf("Device flags %#x address %#x\n", info->Type, info->Flags, info->Address);
-
-	if (info->Flags & ACPI_PCI_ROOT_BRIDGE) {
-		status = AcpiGetIrqRoutingTable(Device, &buffer);
-		CHECK_STATUS();
-		printf("Got %u bytes of IRQ routing table\n", buffer.Length);
+	if (ACPI_SUCCESS(status)) {
+		printf("Device flags %#x address %#x\n", info->Type, info->Flags, info->Address);
 	}
 
 failed:
-	ACPI_FREE_BUFFER(buffer);
 	ACPI_FREE(info);
 	return_ACPI_STATUS(status);
 }
@@ -355,10 +347,10 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 	// multiple root pci bridges.
 	status = AcpiGetCurrentResources(Device, &buffer);
 	CHECK_STATUS();
-	printf("Got %lu bytes of current resources\n", buffer.Length);
+	//printf("Got %lu bytes of current resources\n", buffer.Length);
 	//status = AcpiBufferToResource(buffer.Pointer, buffer.Length, &resource);
 	resource = (ACPI_RESOURCE*)buffer.Pointer;
-	printf("Got resources %p (status %#x)\n", resource, status);
+	//printf("Got resources %p (status %#x)\n", resource, status);
 	CHECK_STATUS();
 	while (resource->Type != ACPI_RESOURCE_TYPE_END_TAG) {
 		printf("Got resource type %d\n", resource->Type);
