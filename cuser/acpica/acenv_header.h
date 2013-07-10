@@ -12,7 +12,7 @@
 
 // Depends on threading support
 #define ACPI_DEBUGGER
-#define ACPI_DBG_TRACK_ALLOCATIONS
+//#define ACPI_DBG_TRACK_ALLOCATIONS
 
 #define ACPI_GET_FUNCTION_NAME __FUNCTION__
 #else
