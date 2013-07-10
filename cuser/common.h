@@ -27,7 +27,9 @@ extern char __data_vma[1];
 
 // Attribute for putting variable in a special placeholder section. Useful for
 // reserving virtual memory space or dummy memory space for handles.
-#define PLACEHOLDER_SECTION __attribute__((section(".placeholder")));
+#define S__(x) #x
+#define S_(x) S__(x)
+#define PLACEHOLDER_SECTION __attribute__((section(".placeholder." __FILE__ "." S_(__LINE__))))
 
 enum syscalls_builtins {
 	MSG_NONE = 0,
@@ -295,9 +297,10 @@ enum prot {
 	PROT_READ = 4,
 	PROT_RWX = 7,
 	MAP_ANON = 16,
+	MAP_DMA = 32,
 };
-static void map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
-	syscall5(MSG_MAP,
+static void* map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
+	return (void*)syscall5(MSG_MAP,
 		handle, prot, (uintptr_t)local_addr, offset, size);
 }
 
@@ -342,6 +345,14 @@ static char* strchr(const char* s, char c) {
 	while (*s && *s != c) s++;
 	return *s ? (char*)s : NULL;
 }
+
+static void abort(void) __attribute__((noreturn));
+static void abort(void)
+{
+	for (;;) recv0(-1);
+}
+
+#define assert(X) if ((X)); else { printf("%s:%d: ASSERT FAILED (%s)\n", __FILE__, __LINE__, #X); abort(); }
 
 /* Not all of these are implemented, depending on what you link against. */
 extern void printf(const char* fmt, ...);

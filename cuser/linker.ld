@@ -31,7 +31,7 @@ SECTIONS
 	PROVIDE(__bss_end = ALIGN(4096));
 	PROVIDE(__data_size = SIZEOF(.data));
 	.placeholder (NOLOAD) : {
-		*(.placeholder*);
+		*(SORT_BY_ALIGNMENT(.placeholder*));
 	}
 	/DISCARD/ : {
 		*(.eh_frame);
