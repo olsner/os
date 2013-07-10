@@ -34,7 +34,7 @@ clock: sync=both, time0=local, rtc_sync=1
 # no loader
 log: -
 logprefix: %t%e%d
-debug: action=ignore
+debug: action=ignore, E1000=report
 info: action=report
 error: action=report
 panic: action=ask
@@ -46,4 +46,4 @@ com1: enabled=1, mode=null, dev=none
 com2: enabled=0
 com3: enabled=0
 com4: enabled=0
-e1000: enabled=1, mac=fe:fd:de:ad:be:ef, ethmod=vnet, ethdev="xl0", script=none, bootrom=none
+e1000: enabled=1, mac=fe:fd:de:ad:be:ef, ethmod=tuntap, ethdev="/dev/net/tun:tap0", script=none, bootrom=none
