@@ -86,10 +86,15 @@ GRUB_MODULES = --modules="boot multiboot"
 
 GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
-USER_CFLAGS = -ffreestanding -Os -W -Wall -Wextra -march=native
-USER_CFLAGS += -Wno-unused-function
+USER_CFLAGS = -ffreestanding -g -Os -W -Wall -Wextra -march=native -std=gnu99
+USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
+USER_CFLAGS += -ffunction-sections -fdata-sections
 
 $(OUTDIR)/cuser/%.o: cuser/%.c
+	@mkdir -p $(@D)
+	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
+
+$(OUTDIR)/cuser/%.o: cuser/%.cpp
 	@mkdir -p $(@D)
 	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
 
@@ -103,13 +108,15 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o $(OUTDIR)/cuser/printf.o
 
 
 $(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
-$(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/printf.o
+$(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 $(GRUBDIR)/cuser/acpica.mod: $(OUTDIR)/cuser/acpica/acpica.mod
 	@mkdir -p $(@D)
 	@$(CP) $< $@
 
 $(OUTDIR)/cuser/acpica/acpica.mod: acpica
+	@
+$(OUTDIR)/cuser/acpica/printf.o: acpica
 	@
 
 .PHONY: acpica
