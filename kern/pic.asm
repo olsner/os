@@ -146,14 +146,28 @@ lodstr	rdi, 'PIC: IRQ %x triggered', 10
 	sub	edi, IN_IRQ_BASE
 	push	rdi
 
-	; TODO Check for slave IRQs and handle them.
-	; Also check for spurious IRQs for 7 and 15
+	cmp	edi, 0x8
+	jb	.only_master
 
+	; Slave IRQ. Mask the slave irq and EOI the slave PIC.
+	lea	esi, [edi - 8]
+	mov	edi, PIC2_DATA
+	call	pic_mask
+
+	mov	edi, PIC2_CMD
+	mov	esi, PIC_EOI
+	call	outb
+
+	jmp	.skip_mask
+
+.only_master:
+	; TODO Check for spurious IRQs for 7 (and 15)
 	; Mask interrupt (ignore it until the driver has responded back to us)
 	mov	esi, edi
 	mov	edi, PIC1_DATA
 	call	pic_mask
 
+.skip_mask:
 	; Since we use the mask to control exactly which IRQs get delivered, we
 	; can use non-specific EOI (and we do it right away so that another IRQ
 	; can get delivered ASAP).
