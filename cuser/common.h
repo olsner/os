@@ -313,6 +313,20 @@ static void map_anon(int prot, void *local_addr, uintptr_t size) {
 	}
 }
 
+static void memcpy(void* dest, const void* src, size_t sz) {
+	asm("rep movsb": : "D"(dest), "S"(src), "c"(sz) : "memory");
+}
+
+static void memset(void* dest, int c, size_t n) {
+	asm("rep stosb": : "D"(dest), "a"(c), "c"(n) : "memory");
+}
+
+static size_t strlen(const char* s) {
+	size_t res = 0;
+	while (*s++) res++;
+	return res;
+}
+
 static u64 portio(u16 port, u64 flags, u64 data) {
 	return syscall3(SYSCALL_IO, port, flags, data);
 }

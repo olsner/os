@@ -8,9 +8,10 @@ extern "C" {
 #define fputc_unlocked(x, file) putchar(x)
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
 #define flockfile(file) (void)0
-#define memset AcpiUtMemset
-#define strlen AcpiUtStrlen
-#define isdigit ACPI_IS_DIGIT
+
+static int isdigit(int c) {
+	return c >= '0' && c <= '9';
+}
 
 static void putchars(const char* buf, size_t n) {
 	while (n--) {
@@ -19,6 +20,7 @@ static void putchars(const char* buf, size_t n) {
 }
 
 static long int strtol(const char* p, char** end, int base) {
+	// FIXME This is the last of the ACPICA dependencies. plzfix.
 	return AcpiUtStrtoul(p, end, base);
 }
 
