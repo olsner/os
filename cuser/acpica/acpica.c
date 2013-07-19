@@ -112,7 +112,6 @@ ExecuteOSI (void)
     ACPI_OBJECT_LIST        ArgList;
     ACPI_OBJECT             Arg[1];
     ACPI_BUFFER             ReturnValue;
-    ACPI_OBJECT             *Object;
 
 
     /* Setup input argument */
@@ -130,6 +129,7 @@ ExecuteOSI (void)
     ReturnValue.Length = ACPI_ALLOCATE_BUFFER;
 
     Status = AcpiEvaluateObject (NULL, "\\_PIC", &ArgList, &ReturnValue);
+	ACPI_FREE_BUFFER(ReturnValue);
 	if (Status == AE_NOT_FOUND)
 	{
 		printf("\\_PIC was not found. Assuming that's ok.\n");
@@ -142,7 +142,6 @@ ExecuteOSI (void)
     }
 
     printf("_PIC returned.\n");
-    AcpiOsFree (Object);
     return Status;
 }
 
@@ -234,7 +233,6 @@ ACPI_STATUS PrintAcpiDevice(ACPI_HANDLE Device)
 		printf("Device flags %#x address %#x\n", info->Type, info->Flags, info->Address);
 	}
 
-failed:
 	ACPI_FREE(info);
 	return_ACPI_STATUS(status);
 }
@@ -457,9 +455,13 @@ static void MsgFindPci(uintptr_t rcpt, uintptr_t arg)
 	ACPI_PCI_ID temp = {0};
 	u16 vendor = arg >> 16;
 	u16 device = arg;
+	uintptr_t addr = -1;
 	printf("acpica: find pci %#x:%#x.\n", vendor, device);
 	ACPI_STATUS status = FindPCIDevByVendor(vendor, device, &temp);
-	send1(MSG_ACPI_FIND_PCI, rcpt, temp.Bus << 16 | temp.Device << 3 | temp.Function);
+	if (ACPI_SUCCESS(status)) {
+		addr = temp.Bus << 16 | temp.Device << 3 | temp.Function;
+	}
+	send1(MSG_ACPI_FIND_PCI, rcpt, addr);
 }
 
 static void MsgClaimPci(uintptr_t rcpt, uintptr_t addr, uintptr_t pins)
