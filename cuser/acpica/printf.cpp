@@ -24,16 +24,8 @@ static long int strtol(const char* p, char** end, int base) {
 	return AcpiUtStrtoul(p, end, base);
 }
 
-template <typename T>
-void format_num(int width, bool leading_zero, bool sign, int base, bool show_base, T num)
+static void format_num(int width, bool leading_zero, int base, bool show_base, uintmax_t num)
 {
-	// Warns about num < 0 for unsigned T
-	if (sign && num < 0)
-	{
-		// FIXME Doesn't work for the most negative value of T :/
-		num = -num;
-		fputc_unlocked('-', file);
-	}
 	if (show_base)
 	{
 		assert(base == 16);
@@ -62,6 +54,16 @@ void format_num(int width, bool leading_zero, bool sign, int base, bool show_bas
 	{
 		fputc_unlocked(buf[len], file);
 	}
+}
+
+static void format_num(int width, bool leading_zero, int64_t num)
+{
+	if (num < 0)
+	{
+		num = -num;
+		fputc_unlocked('-', file);
+	}
+	format_num(width, leading_zero, 10, false, num);
 }
 
 static const char* read_width(const char* fmt, int* width)
@@ -137,16 +139,18 @@ void vprintf(const char* fmt, va_list ap)
 			case 'u':
 				sign = false;
 			case 'd':
-#define format_num_type(type) format_num(width, leading_zero, sign, base, show_base, va_arg(ap, type))
+#define format_signed(type) format_num(width, leading_zero, va_arg(ap, type))
+#define format_unsigned(type) format_num(width, leading_zero, base, show_base, va_arg(ap, type))
+#define format_num_type(type) sign ? format_signed(type) : format_unsigned(unsigned type)
 				if (is_long)
-					sign ? format_num_type(long) : format_num_type(unsigned long);
+					format_num_type(long);
 				else if (is_size)
-					format_num_type(size_t);
+					format_unsigned(size_t);
 				else
-					sign ? format_num_type(int) : format_num_type(unsigned);
+					format_num_type(int);
 				break;
 			case 'p':
-				format_num(0, false, false, 16, true, (uintptr_t)va_arg(ap, void*));
+				format_num(0, false, 16, true, (uintptr_t)va_arg(ap, void*));
 				break;
 			case 'l':
 				is_long = true;
