@@ -1,8 +1,6 @@
 #include "common.h"
-extern "C" {
 #include "acpi.h"
 #include "accommon.h"
-}
 
 #define fputc_unlocked(x, file) putchar(x)
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
@@ -55,7 +53,7 @@ static void format_num(int width, bool leading_zero, int base, bool show_base, u
 	}
 }
 
-static void format_num(int width, bool leading_zero, int64_t num)
+static void format_snum(int width, bool leading_zero, int64_t num)
 {
 	if (num < 0)
 	{
@@ -138,7 +136,7 @@ void vprintf(const char* fmt, va_list ap)
 			case 'u':
 				sign = false;
 			case 'd':
-#define format_signed(type) format_num(width, leading_zero, va_arg(ap, type))
+#define format_signed(type) format_snum(width, leading_zero, va_arg(ap, type))
 #define format_unsigned(type) format_num(width, leading_zero, base, show_base, va_arg(ap, type))
 #define format_num_type(type) sign ? format_signed(type) : format_unsigned(unsigned type)
 				if (is_long)
