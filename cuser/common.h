@@ -334,7 +334,7 @@ static void __default_section_init(void) {
 	if (__bss_start < __bss_end) {
 		map_anon(PROT_READ | PROT_WRITE, __bss_start, __bss_end - __bss_start);
 	}
-	if (__data_size > 0) memcpy(__data_vma, __data_lma, (uint64_t)&__data_size);
+	memcpy(__data_vma, __data_lma, (uintptr_t)&__data_size);
 }
 
 static u64 portio(u16 port, u64 flags, u64 data) {
