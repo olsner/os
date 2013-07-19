@@ -4,7 +4,6 @@ extern "C" {
 #include "accommon.h"
 }
 
-#define assert(x) (void)0
 #define fputc_unlocked(x, file) putchar(x)
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
 #define flockfile(file) (void)0
