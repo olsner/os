@@ -412,7 +412,7 @@ test_alloc:
 	zero	ebx
 	zero	r12
 .loop:
-	call	allocate_frame
+	call	allocate_frame.nopanic
 	test	rax,rax
 	jz	.done
 	inc	rbx
@@ -744,27 +744,51 @@ lodstr	rdi,	'Loading module %p..%p', 10
 	call	new_proc
 	mov	rbx, rax ; save away created process in callee-save register
 
-	; Map module at 1MB
-	call	allocate_frame ; TODO allocate region, not whole page :)
-	; vaddr, vsize
-	mov	rcx, r13 ; end of module (phys.)
-	sub	rcx, r12 ; substract start => length of module
-	mov	[rax + region.paddr], r12 ; start of module (phys.)
-	mov	[rax + region.size], rcx
-	mov	edx, 1 << 20 ; vaddr
-	mov	rdi, [rbx + proc.aspace]
-	mov	rsi, rax
-	call	map_region
-	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_X
+	; Memory map for new process:
+	; 1MB - 4k: (stack)
+	; anon, RW (no X)
+	; 1MB..end: (module/"text")
+	; phys, RX, -> paddr (r12) - 1MB (*offset*)
+	; end: null
+	; (three "cards")
+	; for a direct physical mapping, paddr = .vaddr + .offset
+	; (vaddr = 1MB, paddr = r12, offset = r12 - 1MB)
 
-	; Map the user stack as an allocate-on-use ("anon") page, located just
-	; below the module start, where we pointed rsp.
+	; r12 = phys start
+	; r13 = phys end
+	sub	r13, r12
+	mov	eax, (1 << 20)
+	add	r13, rax
+	; r13 = 1MB + length (= vaddr of end)
+	push	r13
+	push	0 ; end-vaddr -> no access
+
+	; 1 MB -> paddr
+	push	rax
+	; r12 = offset from 1MB to phys start (= paddr - 1MB)
+	sub	r12, rax
+	or	r12, MAPFLAG_PHYS | MAPFLAG_R | MAPFLAG_X
+	push	r12
+	mov	eax, (1 << 20) - 4096
+	push	rax
+	; null offset, anon, RW
+	push	byte MAPFLAG_ANON | MAPFLAG_R | MAPFLAG_W
+
+	; stack: in pop order: offset, then vaddr of things to map
+.map:
+	zero	rcx ; handle = 0
+	pop	rdx ; offset + access
+	; r12: save so we can check later if we've reached the end
+	mov	r12, rdx
+	pop	rsi ; rsi = vaddr
 	mov	rdi, [rbx + proc.aspace]
-	zero	esi
-	mov	edx, (1 << 20) - 0x1000
-	mov	ecx, 0x1000 ; stack size
-	call	map_region
-	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
+; rdi: aspace
+; rsi: vaddr
+; rdx: offset + flags
+; rcx: handle
+	call	mapcard_set
+	test	r12, r12
+	jnz	.map
 
 	mov	rdi, rbx
 	push	rdi
@@ -1278,6 +1302,14 @@ fastret:
 ; mapping area. Subtract kernel_base (eugh, wrong name) to get the actual
 ; physical address.
 allocate_frame:
+	call	allocate_frame.nopanic
+	test	rax,rax
+	jz	.panic
+	ret
+.panic:
+	PANIC
+
+.nopanic:
 	mov	rax, [rbp + gseg.free_frame]
 	test	rax, rax
 	; If local stack is out of frames, steal from global stack
@@ -1396,71 +1428,80 @@ struc handle
 endstruc
 handle.key equ handle.dnode + dict_node.key
 
-; A region is a sequential range of pages that can be mapped into various
-; address spaces. Not all pages need to be backed by actual frames, e.g. for
-; memory-mapped objects.
-; Sizing notes:
-; * 32 bits of PFN allows 16TB of physical memory.
-; * At 64 bits each, pfn + count + size + mappings = 40 bytes = 1% overhead
-; * Linux: 56 bytes per struct page on x86-64
-;   (according to http://halobates.de/memorywaste.pdf)
-; * Random observation: all free pages should be used for cache, so optimizing
-;   for unused pages is not useful.
-struc region
-	.paddr	resq 1
-	.count	resq 1
-	; This is problematic, since we don't have a list-of-pages, a region
-	; has to be contiguous in RAM
-	.size	resq 1
-	; Arbitrary mapping, if there are any
-	.mappings restruc dlist
-	; Links in the global list of regions
-	;.node restruc dlist_node
-endstruc
-
 ; Ordinary and boring flags
 MAPFLAG_X	equ 1
 MAPFLAG_W	equ 2
 MAPFLAG_R	equ 4
 MAPFLAG_RWX	equ 7 ; All/any of the R/W/X flags
-MAPFLAG_ANON	equ 16 ; Anonymous page: allocate frame and region on first read
 
-MAPFLAG_DMA	equ 32 ; Backdoor flag: return the *physical* address of the mapping
+; Anonymous page: allocate frame on first read
+MAPFLAG_ANON	equ 8
+; Backdoor flag for physical memory mapping. handle is 0, .offset is (paddr -
+; vaddr).
+MAPFLAG_PHYS	equ 16
+; Mix: automatically allocated page that is "locked" (really it only differs in
+; that it's allocated at map time and the physical address is returned to the
+; user).
+MAPFLAG_DMA	equ (MAPFLAG_PHYS | MAPFLAG_ANON)
+MAPFLAG_USER_ALLOWED equ MAPFLAG_PHYS | (MAPFLAG_PHYS - 1)
 
-; "Special" flags are >= 0x10000
-MAPFLAG_HANDLE	equ 0x10000
-
-; A mapping is a mapped virtual memory range, sometimes backed by a region,
-; other times -just a placeholder for virtual memory that may become a region by
-; allocating/loading-from-disk/whatever the frames that would be required.-
-;
-; other times either backed by a handle+offset that hasn't yet been faulted from
-; the remote process, or backed by a remote mapping that has been faulted from
-; the first process but hasn't been faulted further. There may be a chain of
-; such recursive mappings, eventually a fault must reach a region-backed mapping
-; or fail.
-;
-; New:
-; * duplicate r/w/x into requested and actual r/w/x
-; * remove cow/anon (those will be the responsibility of the mapped thing)
-; * add required metadata for mapping -> backer/other mapping:
-;   * handle (in local addr space)
-;   * offset for handle
-;   * other-mapping (if backed by some mapping in handle's process)
-;   * linked list of re-mappings?
-
-struc mapping
-	.region	resq 1
+; mapcard: the handle, offset and flags for the range of virtual addresses until
+; the next card.
+; 5 words:
+; - 3 for dict_node w/ vaddr
+; - 1 handle
+; - 1 offset+flags
+;   (since offsets must be page aligned we have 12 left-over bits)
+; This structure is completely unrelated to the physical pages backing virtual
+; memory - it represents each process' wishful thinking about how their memory
+; should look. backings and sharings control physical memory.
+struc mapcard
+	.as_node restruc dict_node
+	.vaddr	equ .as_node
 	.handle	resq 1
-	.flags	resq 1
-	; Offset into region/handle that corresponds to the first page mapped
-	.reg_offset resq 1
-	.vaddr	resq 1
-	.size	resq 1
-	; Links for region.mappings
-	.reg_node	restruc dlist_node
-	; Links for aspace.mappings
-	.as_node	restruc dlist_node
+	; .vaddr + .offset = handle-offset to be sent to backer on fault
+	; For a direct physical mapping, paddr = .vaddr + .offset
+	; .offset = handle-offset - vaddr
+	; .offset = paddr - .vaddr
+	.offset	resq 1
+	.flags	equ .offset ; low byte (12 bits?) of offset is flags
+endstruc
+
+; backing: mapping *one page* to the place that page came from.
+; Indexed by vaddr for the process that maps it. The vaddr includes flags, so
+; look up by vaddr|0xfff.
+; This is likely to exist once per physical page per process. Should be
+; minimized.
+; 6 words:
+; - 3 words for dict_node w/ vaddr
+; - 1 word for parent
+; - 2 words for child-list links
+;
+; Could be reduced to 4 words: flags, parent, child-list links, if moving to
+; an external dictionary. 32 bytes per page gives 128 entries in the last-level
+; table. Flags could indicate how many levels that are required, and e.g. a
+; very small process could have only one level, and map 128 pages at 0..512kB.
+struc backing
+	.as_node restruc dict_node
+	.vaddr	equ .as_node
+	; Flags stored in low bits of vaddr!
+	.flags	equ .vaddr
+	; Pointer to parent sharing. Needed to unlink self when unmapping.
+	; Could have room for flags (e.g. to let it be a paddr when we don't
+	; need the parent - we might have a direct physical address mapping)
+	.parent	resq 1
+	; Space to participate in parent's list of remappings.
+	.child_node restruc dlist_node
+endstruc
+
+; sharing: mapping one page to every place it's been shared to
+; 7 words!
+struc sharing
+	.as_node restruc dict_node
+	.vaddr	equ .as_node
+	.paddr	resq 1
+	.aspace	resq 1
+	.children restruc dlist
 endstruc
 
 struc aspace
@@ -1473,8 +1514,11 @@ struc aspace
 	; Do we need a list of processes that share an address space?
 	; (That would remove the need for .count, I think.)
 	;.procs	resq 1
-	.mappings	restruc dlist
 	.handles	restruc dict
+
+	.mapcards	restruc dict
+	.backings	restruc dict
+	.sharings	restruc dict
 endstruc
 
 section .text
@@ -1553,111 +1597,131 @@ dlist_remove:
 	mov	rax, rsi
 	ret
 
-; rdi: address space to unmap from
-; rsi: starting virtual address
-; rdx: size of the mapping
-unmap_range:
-	add	rdx, rsi
-	; rdx == end of mapping instead
-%if log_unmap
-	push	rdi
-	push	rsi
-	push	rdx
-	mov	rcx, rdi
-	; rsi == start
-	; rdx already == end
-	; rcx = aspace
-lodstr	rdi, 'Unmap %x..%x in aspace %p', 10
-	call	printf
-	pop	rdx
-	pop	rsi
-	pop	rdi
-%endif
-
-	; Find all mappings that overlaps start..end, remove some piece of them
-	; and if they end up empty, remove the mapping.
-
-	mov	rdi, [rdi + aspace.mappings + dlist.head]
-.test_mapping:
-	test	rdi, rdi
-	jz	.done
-	push	rdi
-	push	rdx
-	push	rsi
-	mov	rsi, rdi
-	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
-	mov	rcx, [rdi + mapping.size - mapping.as_node]
-	mov	r8, [rdi + dlist_node.prev]
-	mov	r9, [rdi + dlist_node.next]
-%if log_unmap
-lodstr	rdi, 'Map %p: %p sz %x (%p<-->%p) vaddr %x..%x', 10
-	call	printf
-%endif
-	pop	rsi
-	pop	rdx
-	pop	rdi
-
-	; TODO Fix these tests, then actually implement the unmap bit!
-	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
-	cmp	rsi, rax
-	jb	.next_mapping
-	add	rax, [rdi + mapping.size - mapping.as_node]
-	cmp	rsi, rax
-	jb	.done
-	; vaddr <= cr2 < vaddr+size
-.next_mapping:
-	mov	rdi, [rdi + dlist_node.next]
-	jmp	.test_mapping
-.done:
-	ret
-
-; rdi: the process (address space!) being mapped into
-; rsi: the region or kernel object to map
-; rdx: the virtual address to map the region at
-; rcx: the size of the virtual mapping
-; Returns:
-; rax: Newly allocated mapping object
-map_region:
-	push	rdi
-	push	rsi
+; rdi: aspace
+; rsi: vaddr
+; rdx: offset + flags
+; rcx: handle
+mapcard_set:
 	push	rdx
 	push	rcx
-	call	allocate_frame ; TODO mappings are small: kmalloc (or slab)
-	pop	rcx
-	pop	rdx
+	push	rdi
+	push	rsi
+	call	aspace_find_mapcard
+	test	rax, rax
+	jz	.add_new
+	mov	rsi, [rsp]
+	cmp	[rax + mapcard.vaddr], rsi
+	jne	.add_new
 	pop	rsi
 	pop	rdi
-	test	eax,eax
-	jz	.oom
-
-	mov	[rax + mapping.vaddr], rdx
-	mov	[rax + mapping.size], rcx
-
-	;mov	r9, rdi
-	mov	r10, rsi
-	lea	rdi, [rdi + aspace.mappings]
-	lea	rsi, [rax + mapping.as_node]
-	call	dlist_append
-	mov	rdi, rax ; Mapping
-	mov	rsi, r10 ; Region
-
-.add:
-	mov	[rdi + mapping.region], rsi
-	mov	rax, rdi
-
-	test	rsi, rsi
-	jz	.no_region
-	lea	rsi, [rsi + region.mappings]
-	lea	rdi, [rdi + mapping.reg_node]
-	xchg	rsi, rdi
-	call	dlist_append
-
-	inc	dword [rsi + region.count]
-.no_region:
-
-.oom:
+	je	.set_and_ret
+.add_new:
+	call	allocate_frame
+	pop	qword [rax + mapcard.vaddr]
+	mov	rsi, rax
+	pop	rdi
+	add	rdi, aspace.mapcards
+	call	dict_insert
+.set_and_ret:
+	pop	qword [rax + mapcard.handle]
+	pop	qword [rax + mapcard.offset]
 	ret
-map_add_region equ .add
+
+; rdi: the address space being mapped into
+; rsi: the virtual address to map the region at
+; rdx: the end of the virtual mapping
+; rcx: handle to map
+; r8: offset + flags
+map_range:
+	push	r8
+	push	rcx
+	push	rdx
+	push	rdi
+	push	rsi
+
+	; Get mapcard for end address
+	; Must get before inserting at vaddr (may be covered by a card that
+	; lies before vaddr).
+	mov	rsi, rdx
+	call	aspace_find_mapcard
+	test	rax, rax
+	zero	edx
+	jz	.no_end_mapcard
+	mov	rcx, [rax + mapcard.handle]
+	mov	rdx, [rax + mapcard.offset]
+.no_end_mapcard:
+
+	cmp	rdx, [rsp + 32]
+	jne	.change_end
+	cmp	rcx, [rsp + 24]
+	je	.no_change_end
+
+	; Insert (overwriting) the start and end cards.
+	;if endcard != card {
+	;	self.mappings.insert(end, endcard);
+	;}
+.change_end:
+	mov	rdi, [rsp + 8]
+	mov	rsi, [rsp + 16] ; end address
+	; rdx = offset of old end-of-range card
+	; rcx = handle
+	call	mapcard_set
+	jmp	.set_start
+.no_change_end:
+	;remove end card, it's equivalent to the start-card we're adding
+	mov	rdi, [rsp + 8]
+	mov	rsi, [rsp + 16]
+	lea	rdi, [rdi + aspace.mapcards]
+	call	dict_remove
+.set_start:
+	;self.mappings.insert(vaddr, card);
+	mov	rdi, [rsp + 8]
+	mov	rsi, [rsp] ; start address
+	mov	rdx, [rsp + 32]
+	mov	rcx, [rsp + 24]
+	call	mapcard_set
+
+%if log_mappings
+lodstr	rdi, 'map_range: removing old range', 10
+	call	printf
+%endif
+
+	; Find all cards vaddr < key < end and remove them.
+.delete:
+	mov	rdi, [rsp + 8] ; aspace
+	mov	rsi, [rsp] ; start address
+	mov	rdx, [rsp + 16] ; end address
+	lea	rdi, [rdi + aspace.mapcards]
+	call	dict_remove_range_exclusive
+	test	rax, rax
+	jz	.ret
+	push	rax
+
+%if log_mappings
+lodstr	rdi, 'map_range: removing %p', 10
+	mov	rsi, rax
+	call	printf
+%endif
+
+	pop	rdi
+	call	free_frame
+	jmp	.delete
+
+.ret:
+%if log_find_mapping
+lodstr	rdi, 'map_range done?', 10
+	call	printf
+	mov	rdi, [rsp + 8] ; aspace
+	mov	rsi, [rsp] ; start address
+	call	aspace_find_mapcard
+	mov	rdi, [rsp + 8]
+	mov	rsi, [rsp + 16] ; end address
+	call	aspace_find_mapcard
+lodstr	rdi, 'map_range done.', 10
+	call	printf
+%endif
+	add	rsp, 40
+	ret
 
 ; rdi: the address space being searched
 ; rsi: the local address (key) of a handle
@@ -1731,6 +1795,29 @@ dict_lookup:
 .done:
 	ret
 
+; rdi: dictionary to find in
+; rsi: key to find
+; =>
+; rax: entry with largest key <= rsi, or null if no entries found
+dict_find_lessthan:
+	mov	rdi, [rdi + dict.root]
+	zero	eax
+	zero	ecx
+.loop:
+	test	rdi, rdi
+	jz	.done
+	cmp	[rdi + dict_node.key], rcx
+	jb	.no_match
+	cmp	[rdi + dict_node.key], rsi
+	ja	.no_match
+	mov	rax, rdi
+	mov	rcx, [rdi + dict_node.key]
+.no_match:
+	mov	rdi, [rdi + dict_node.right]
+	jmp	.loop
+.done:
+	ret
+
 dict_remove:
 	lea	rdx, [rdi + dict.root - dict_node.right]
 .loop:
@@ -1744,6 +1831,30 @@ dict_remove:
 .done_found:
 	mov	rcx, [rax + dict_node.right]
 	mov	[rdx + dict_node.right], rcx
+.done_end:
+	; rax == removed node (if any)
+	ret
+
+; rdi: dict
+; rsi: lower key
+; rdx: upper key
+; Remove all items with keys between rsi and rdx exclusive.
+dict_remove_range_exclusive:
+	lea	rcx, [rdi + dict.root - dict_node.right]
+.loop:
+	mov	rax, [rcx + dict_node.right]
+	test	rax, rax
+	jz	.done_end
+	cmp	[rax + dict_node.key], rsi
+	jbe	.dont_delete
+	cmp	[rax + dict_node.key], rdx
+	jb	.done_found
+.dont_delete:
+	mov	rcx, rax
+	jmp	.loop
+.done_found:
+	mov	rdx, [rax + dict_node.right]
+	mov	[rcx + dict_node.right], rdx
 .done_end:
 	; rax == removed node (if any)
 	ret
@@ -2124,57 +2235,74 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 
 ; rdi = aspace
 ; rsi = virtual address
-; Return mapping in rax if successful
-aspace_find_mapping:
-%if log_find_mapping
-	push	rbp
-	push	rdi
+aspace_find_mapcard:
+	add	rdi, aspace.mapcards
+%if log_find_mapping == 0
+	tcall	dict_find_lessthan
+%else
 	push	rsi
-	mov	rdx, rdi
-lodstr	rdi, 'Map find %x in aspace %p', 10
-	call	printf
+	call	dict_find_lessthan
+	push	rax
+lodstr	rdi,	'find_mapcard: %p -> %x.. +%x (%x)', 10
+	pop	rax ; mapcard
 	pop	rsi
-	pop	rdi
-	pop	rbp
-%endif
-	mov	rdi, [rdi + aspace.mappings + dlist.head]
-.test_mapping:
-	test	rdi, rdi
-	jz	.no_match
-	push	rdi
-	push	rsi
-	mov	rsi, rdi
-	mov	rdx, [rdi + mapping.vaddr - mapping.as_node]
-	mov	rcx, [rdi + mapping.size - mapping.as_node]
-	mov	r8, [rdi + dlist_node.prev]
-	mov	r9, [rdi + dlist_node.next]
-%if log_find_mapping
-lodstr	rdi, 'Map %p: %p sz %x (%p<-->%p) vaddr %x', 10
+	zero	rdx
+	zero	rcx
+	zero	r8
+	test	rax, rax
+	jz	.nothing
+	mov	rdx, [rax + mapcard.vaddr]
+	mov	rcx, [rax + mapcard.offset]
+	mov	r8, rsi
+	and	r8w, ~0xfff
+	add	r8, rcx
+.nothing:
+	push	rax
 	call	printf
-%endif
-	pop	rsi
-	pop	rdi
-	mov	rax, [rdi + mapping.vaddr - mapping.as_node]
-	cmp	rsi, rax
-	je	.found
-	jb	.next_mapping
-	add	rax, [rdi + mapping.size - mapping.as_node]
-	cmp	rsi, rax
-	jb	.found
-	; vaddr <= cr2 < vaddr+size
-.next_mapping:
-	mov	rdi, [rdi + dlist_node.next]
-	jmp	.test_mapping
-.no_match:
-	zero	eax
+	pop	rax
 	ret
-.found:
-	lea	rax, [rdi - mapping.as_node]
+%endif
+
+aspace_find_backing:
+	push	rsi
+	or	si, 0xfff
+	add	rdi, aspace.backings
+	call	dict_find_lessthan
+	test	rax, rax
+	pop	rsi
+	jz	.ret
+	and	si, ~0xfff
+	cmp	[rax + backing.vaddr], rsi
+	; if backing.vaddr < rsi (vpage), then we found the wrong page.
+	jae	.ret
+	zero	eax
+.ret:
 	ret
 
+; rdi = aspace
+; rsi = backing
+aspace_insert_backing:
+	lea	rdi, [rdi + aspace.backings]
+	tcall	dict_insert
+
+not_hosed_yet:
+	PANIC
+kernel_fault:
+	PANIC
+hosed:
+	cli
+	hlt
+	mov	al,0xe
+
 handler_PF:
+	; TODO Put the kernel stack in virtual memory so we can add a sentinel
+	; page.
+	cmp	rsp, phys_vaddr(pages.kernel_stack + 0xf00)
+	jle	not_hosed_yet
+	cmp	rsp, phys_vaddr(pages.kernel_stack + 0x200)
+	jle	hosed
 	test	byte [rsp], 0x4
-	jz	.kernel_fault
+	jz	kernel_fault
 
 	push	rax
 	push	rbp
@@ -2213,10 +2341,19 @@ lodstr	rdi,	'Page-fault: cr2=%x error=%x proc=%p rip=%x', 10
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
 	mov	rsi, cr2
-	call aspace_find_mapping
+	mov	[rdi + proc.fault_addr], rsi
+	call	aspace_find_backing
 	test	rax, rax
-	jnz	.found
-.no_match:
+	jnz	.found_backing
+
+.no_backing:
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
+	mov	rsi, cr2
+	call	aspace_find_mapcard
+	test	rax, rax
+	jnz	.found_mapcard
+
 lodstr	r12,	'No mapping found!', 10
 .invalid_match:
 %if log_page_fault
@@ -2224,86 +2361,49 @@ lodstr	r12,	'No mapping found!', 10
 	call	printf
 %endif
 	PANIC
-.found:
-	lea	rdx, [rdi - mapping.as_node]
-	mov	rcx, [rdi + mapping.vaddr - mapping.as_node]
-	mov	r12, rdx
+
+.found_backing:
+	; rax+backing.vaddr has flags - check if we have enough access for the
+	; fault. If not jump to .no_backing.
+	mov	r12, rax
 %if log_mappings
-lodstr	rdi,	'Mapping found:', 10, 'cr2=%p map=%p vaddr=%p', 10
+lodstr	rdi,	'Backing found:', 10, 'cr2=%p map=%p vaddr=%p', 10
+	mov	rsi, cr2
+	mov	rdx, rax
+	mov	rcx, [rax + backing.vaddr]
 	call	printf
 %endif
 
 	; rsi is fault address (though we already know which mapping we're
 	; dealing with)
 	mov	rsi, cr2
-	mov	rdi, r12 ; Doesn't need offsetting by mapping.as_node anymore
+	mov	rdi, r12
 
-	mov	eax, [rdi + mapping.flags]
+	mov	eax, [rdi + backing.vaddr]
 	mov	esi, eax
 	test	eax, MAPFLAG_RWX
-lodstr	r12, 'Access to page without access (%p)', 10
-	jz	.invalid_match ; We had none of the read/write/execute permissions
+	; We had no permissions at all, must fault the page in
+	jz	.no_backing
 	; Was the access a write access? (bit 1: set == write)
 	test	byte [rsp], 0x2
 	jz	.not_a_write
 	; Write to a read-only page: fault
 	test	eax, MAPFLAG_W
-lodstr	r12, 'Write access to read-only page', 10
-	jz	.invalid_match
-	; If page is "writeable" but also CoW, we need more handling here
+	jz	.no_backing
 .not_a_write:
 	; TODO Check for access-during-instruction-fetch for a present NX page
 
+.have_backing:
+	; rdi: backing that should be mapped
+	; look up the parent to get the paddr
+	; combine with flags from backing
+	mov	rsi, [rdi + backing.parent]
+	test	byte [rdi + backing.vaddr], MAPFLAG_PHYS
+	jnz	.parent_was_paddr
+	mov	rsi, [rsi + sharing.paddr]
+.parent_was_paddr:
 
-	; If a region has already been set up, use that region
-	cmp	qword [rdi + mapping.region], 0
-	jnz	.map_region
-
-	test	eax, MAPFLAG_ANON
-	jnz	.map_anon
-
-	cmp	qword [rdi + mapping.handle], 0
-	jnz	.user_pfault
-
-.map_anon:
-	mov	r12, rdi
-
-	; Anonymous mapping: allocate a fresh zero page, create a region for
-	; it, link the mapping to that region and fall through to adding the
-	; new region to the page table.
-	call	allocate_frame
-	lea	rbx, [rax - kernel_base]
-	call	allocate_frame
-	mov	[rax + region.paddr], rbx
-	mov	word [rax + region.size], 0x1000
-	mov	rdi, r12 ; mapping
-	mov	rsi, rax ; region
-	call	map_add_region
-
-	mov	rdi, r12 ; mapping
-
-.map_region:
-	; 1. The region has a physical page backing it already:
-	;   * Check that we are allowed to map it as it is (i.e. correct
-	;     permissions, no CoW required, etc)
-	;   * Add all required intermediate page table levels
-	;   * When reaching the bottom: add a mapping with the right parameters
-
-	mov	rsi, [rdi + mapping.region]
-	test	rsi, rsi
-lodstr	r12, 'Mapping something without a region', 10
-	jz	.invalid_match
-
-	mov	r9, cr2
-	and	r9w, ~0xfff
-	sub	r9, [rdi + mapping.vaddr]
-	mov	r8, [rsi + region.paddr]
-	add	r8, [rdi + mapping.reg_offset]
-	add	r8, r9
-	; r8: page frame to add to page table
-
-	mov	eax, [rdi + mapping.flags]
-	mov	rsi, r8
+	mov	eax, [rdi + backing.flags]
 	; Some notes on how to (eventually) set PTE flags according to region
 	; flags:
 	; - In general, region permissions from region.flags are what should be
@@ -2317,14 +2417,15 @@ lodstr	r12, 'Mapping something without a region', 10
 	;   take care of replacing it with a private null page and update the
 	;   permissions.
 	or	rsi, 5 ; Present, User-accessible
+	test	eax, MAPFLAG_X
+	jnz	.has_exec
+	; Set bit 63 to *disable* execute permission
+	;bts	rsi, 63
+.has_exec:
 	test	eax, MAPFLAG_W
 	jz	.no_write_access
 	or	rsi, 2
 .no_write_access:
-	; test	eax, MAPFLAG_X
-	; jnz	.has_exec
-	; bts	rsi, 63
-; .has_exec:
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
 	mov	rdx, cr2 ; Note: lower 12 bits will be ignored automatically
@@ -2336,6 +2437,17 @@ lodstr	r12, 'Mapping something without a region', 10
 	mov	rax, [rbp + gseg.process]
 	jmp	switch_to
 
+; mapcard in rax
+.found_mapcard:
+	mov	rdi, rax
+	mov	eax, [rax + mapcard.flags]
+lodstr	r12,	'Mapcard has no access', 10
+	test	eax, MAPFLAG_RWX
+	jz	.invalid_match
+
+	cmp	qword [rdi + mapcard.handle], 0
+	jz	.no_handle
+
 ; The mapping is a mapped handle that lacks a backing region. Set up a PFAULT
 ; IPC to the handle it came from, make this process wait for a response, switch
 ; to something else for a while.
@@ -2346,14 +2458,81 @@ lodstr	r12, 'Mapping something without a region', 10
 	or	[rax + proc.flags], byte PROC_PFAULT
 	PANIC
 
+.no_handle:
+lodstr	r12,	'null handle.', 10
+	test	eax, MAPFLAG_ANON | MAPFLAG_PHYS
+	jz	.invalid_match
+
+	mov	r12, rdi
+
+	mov	rdi, cr2
+	and	di, ~0xfff
+	; rdi = vaddr (vpage), rsi = paddr = vaddr + offset
+	mov	rsi, [r12 + mapcard.offset]
+	add	rsi, rdi
+	; Add flags to vaddr
+	and	ax, 0xfff
+	or	di, ax
+
+	mov	rdx, [rbp + gseg.process]
+	mov	rdx, [rdx + proc.aspace]
+
+	test	al, MAPFLAG_PHYS
+	jnz	.map_phys
+
+	mov	rsi, rdx
+	call	new_anon_backing
+
+	mov	rdi, rax
+	jmp	.have_backing
+
+.map_phys:
+	; eax is flags from the mapccard we started from
+	; rsi is the physical address
+	; rsi now vaddr + flags
+	; rdx is aspace
+	call	new_phys_backing
+
+	mov	rdi, rax
+	jmp	.have_backing
+
 .no_mappings:
-.kernel_fault:
-	cli
-	hlt
-	mov	al,0xe
+	jmp	not_hosed_yet
 
 .message_kp:
 	;db 'Oh noes, kernel panic! fault addr %p error %p', 10, 10, 0
+
+; rdi: flags and vaddr for new anon page
+; rsi: aspace
+; => rax is a backing backed by a new anonymous page
+new_anon_backing:
+	push	rsi
+	push	rdi
+	; Anonymous mapping: allocate a fresh zero page, create a backing and
+	; sharing for it, link it up and then go to the have_backing path.
+	call	allocate_frame
+	pop	rdi
+	lea	rsi, [rax - kernel_base]
+	pop	rdx
+	tcall	new_phys_backing
+
+; rdi: vaddr with flags
+; rsi: phys address to back
+; rdx: aspace
+; => rax is a new backing
+new_phys_backing:
+	push	rdx
+	push	rsi
+	or	di, MAPFLAG_PHYS
+	push	rdi
+	call	allocate_frame
+	pop	qword [rax + backing.vaddr]
+	pop	qword [rax + backing.parent]
+	pop	rdi
+	mov	rsi, rax
+	; rdi = aspace, rsi = backing
+	call	aspace_insert_backing
+	ret
 
 syscall_entry_compat:
 	ud2
@@ -2738,6 +2917,16 @@ syscall_newproc:
 	call	new_proc
 	mov	rbx, rax ; Save new process id
 
+	; The memory map for the child:
+	; 1MB - 4kB: stack
+	; 1MB: one page of code
+	; (TODO: share the memory from the parent properly. And/or rewrite the
+	; whole API.)
+	; 1MB + 4kB: end
+
+%if 1
+	PANIC
+%else
 	; Find mapping for source
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
@@ -2801,6 +2990,7 @@ lodstr	rdi, 'newproc %p at %x', 10
 	ret
 .panic:
 	PANIC
+%endif
 
 syscall_halt:
 	lodstr	rdi, '<<HALT>>'
@@ -3396,75 +3586,64 @@ syscall_map:
 	mov	rax, [rbp + gseg.process]
 	save_regs rdi,rsi,rdx,r8,r9
 
-	; TODO Look up handle (perhaps - need to decide whether to store the
-	; handle object, or just the key?)
+	mov	rbx, rax
+	; (Optionally) release any pages faulted-in in this range.
+	; mov	rdi, [rax + proc.aspace]
+	; mov	rsi, [rax + proc.rdx]
+	; mov	rdx, [rax + proc.r9]
+	; call	unback_range
 
-	; 1. Find previous mapping(s) and remove it/them
-	push	rax
-	mov	rdi, [rax + proc.aspace]
-	mov	rsi, [rax + proc.rdx]
-	mov	rdx, [rax + proc.r9]
-	call	unmap_range
-
-	pop	rbx
+	and	qword [rbx + proc.rsi], byte MAPFLAG_USER_ALLOWED
 
 	; region = null (in case we skip the allocating region bit because we're mapping a handle)
 	zero	esi
 	cmp	qword [rbx + proc.rdi], byte 0
-	jnz	.has_handle
-	; Handle is null:
-	; * ANON flag = anon-map freshly allocated physical page
-	; * no ANON flag = map specific page of physical memory
-	; (TODO Remove these backdoors, and give exactly one process a preset
-	; mapping of all physical memory.)
+	jnz	.not_dma
 
+	; With handle = 0, the flags can be:
+	; phys: raw physical memory mapping
+	; anon: anonymous memory mapped on use
+	; anon|phys: similar to anonymous, but the backing is allocated
+	; immediately, the memory is "locked" (actually all allocations are),
+	; and the phys. address of the memory (always a single page) is
+	; returned in rax.
+
+	test	byte [rbx + proc.rsi], MAPFLAG_PHYS
+	jz	.not_dma
+	; phys flag set => either raw phys or DMA mapping
+	test	byte [rbx + proc.rsi], MAPFLAG_ANON
+	jz	.not_dma
+	; Both phys and anon => DMA mapping
+
+.map_dma:
 	; If this is a DMA region, allocate the memory immediately so that we
 	; can return its physical address to the caller.
-	; FIXME We don't leave a record of this anywhere, so we can't e.g.
-	; return the memory to the free list.
-	test	byte [rbx + proc.rsi], MAPFLAG_DMA
-	jz	.not_dma
-
+	; TODO "Unback" the page first, if it is backed.
 	call	allocate_frame
-	and	eax, ~kernel_base
+	lea	rax, [rax - kernel_base]
 	mov	[rbx + proc.r8], rax
 
 .not_dma:
-	test	byte [rbx + proc.rsi], MAPFLAG_ANON
-	jnz	.has_handle
-
-	; Not anonymous mapping, allocate a region
-	call	allocate_frame ; TODO allocate region, not whole page :)
-	mov	rcx, [rbx + proc.r8] ; offset in object == phys addr
-	mov	[rax + region.paddr], rcx
-	; Since the paddr is now offset in region, undo the reg_offset we're
-	; about to put in the mapping.
-	mov	qword [rbx + proc.r8], 0
-	mov	rcx, [rbx + proc.r9] ; size of mapping
-	mov	[rax + region.size], rcx
-	mov	rsi, rax
-
-	; 2. Make new mapping at virtual address
-.has_handle:
 	mov	rdi, [rbx + proc.aspace]
-	mov	rdx, [rbx + proc.rdx]
-	mov	rcx, [rbx + proc.r9]
-	call	map_region
-	mov	cl, [rbx + proc.rsi]
-	and	cl, 0x1f ; allowed flags
-	or	byte [rax + mapping.flags], cl
-	mov	rcx, [rbx + proc.r8]
-	mov	[rax + mapping.reg_offset], rcx
+	; rsi/input rdx: starting (virtual) address
+	mov	rsi, [rbx + proc.rdx]
+	; rdx: end address
+	mov	rdx, rsi
+	add	rdx, [rbx + proc.r9] ; input r9 = size of mapping
+	; r8: flags (input rsi) | offset (input r8 - input rdx)
+	mov	r8, [rbx + proc.r8]
+	sub	r8, rsi
+	or	r8, [rbx + proc.rsi]
+	; rcx/input rdi: handle to map
 	mov	rcx, [rbx + proc.rdi]
-	mov	[rax + mapping.handle], rcx
+	call	map_range
 
-	test	byte [rbx + proc.rsi], MAPFLAG_DMA
-	jnz	.ret_dma
+	test	[rbx + proc.rsi], byte MAPFLAG_PHYS
+	jnz	.dma_ret
 	zero	eax
 	ret
-.ret_dma:
-	mov	rax, [rax + mapping.region]
-	mov	rax, [rax + region.paddr]
+.dma_ret:
+	mov	rax, [rbx + proc.r8]
 	ret
 
 %include "printf.asm"

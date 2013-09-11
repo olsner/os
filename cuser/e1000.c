@@ -242,8 +242,10 @@ void start() {
 		printf("BAR0 was 64-bit, adding %x:%x.\n", bar1, mmiobase);
 		mmiobase |= bar1 << 32;
 	}
+	printf("Mapping mmiospace %p to BAR %p\n", (void*)mmiospace, mmiobase);
 	// TODO Map unprefetchable!
-	map(0, PROT_READ | PROT_WRITE, (void*)mmiospace, mmiobase, sizeof(mmiospace));
+	map(0, MAP_PHYS | PROT_READ | PROT_WRITE,
+		(void*)mmiospace, mmiobase, sizeof(mmiospace));
 
 	u32 status = mmiospace[STATUS];
 	printf("Status: %x\n", status);

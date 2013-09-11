@@ -297,10 +297,12 @@ enum prot {
 	PROT_WRITE = 2,
 	PROT_READ = 4,
 	PROT_RWX = 7,
-	MAP_ANON = 16,
-	MAP_DMA = 32,
+	MAP_ANON = 8,
+	MAP_PHYS = 16,
+	MAP_DMA = MAP_PHYS | MAP_ANON,
 };
 static void* map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
+	if (size < 0x1000) { size = 0x1000; }
 	return (void*)syscall5(MSG_MAP,
 		handle, prot, (uintptr_t)local_addr, offset, size);
 }
@@ -309,12 +311,7 @@ static void* map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t o
 // page (currently).
 // FIXME Also uses a kernel backdoor API
 static void map_anon(int prot, void *local_addr, uintptr_t size) {
-	uintptr_t i = 0;
-	while (i < size) {
-		syscall5(MSG_MAP,
-			0, MAP_ANON | prot, (uintptr_t)local_addr + i, 0, 0x1000);
-		i += 0x1000;
-	}
+	map(0, MAP_ANON | prot, local_addr, 0, size);
 }
 
 static void memcpy(void* dest, const void* src, size_t sz) {
