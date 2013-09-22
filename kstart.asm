@@ -713,25 +713,18 @@ lodstr	rdi,	'%p:%x <-> %x:%p', 10
 	mov	[rdx + handle.other], rax
 	ret
 
-launch_user:
-lodstr	rdi,	'Loading module %p..%p', 10
-	mov	rsi, r13
-	mov	rdx, r14
-	call	printf
-
-	mov	rdi, r13
-	mov	rsi, r14
-
-; Set up a new process with some "sane" defaults for testing, and add it to the
-; run queue.
+; Set up a new process with some "sane" defaults.
 ;
-; rdi: user_entry (start of module)
+; rdi: entry point and first page of process
 ; rsi: end of module
+new_proc_simple:
+	push	rbx
+	; TODO Save more registers that we clobber below.
 
 	; Round up end-of-module
 	add	rsi, 0xfff
 	and	si, 0xf000
-	mov	r12, rdi
+	mov	r12, rdi ; FIXME r12,r13 = callee-save?
 	mov	r13, rsi
 	; Round down entry-point/start-of-module
 	and	r12w, 0xf000
@@ -790,8 +783,22 @@ lodstr	rdi,	'Loading module %p..%p', 10
 	test	r12, r12
 	jnz	.map
 
-	mov	rdi, rbx
-	push	rdi
+	mov	rax, rbx
+	pop	rbx
+	ret
+
+launch_user:
+lodstr	rdi,	'Loading module %p..%p', 10
+	mov	rsi, r13
+	mov	rdx, r14
+	call	printf
+
+	mov	rdi, r13
+	mov	rsi, r14
+	call	new_proc_simple
+
+	push	rax
+	mov	rdi, rax
 	call	runqueue_append
 	pop	rax
 	ret
@@ -1434,7 +1441,7 @@ MAPFLAG_W	equ 2
 MAPFLAG_R	equ 4
 MAPFLAG_RWX	equ 7 ; All/any of the R/W/X flags
 
-; Anonymous page: allocate frame on first read
+; Anonymous page: allocate frame on first use
 MAPFLAG_ANON	equ 8
 ; Backdoor flag for physical memory mapping. handle is 0, .offset is (paddr -
 ; vaddr).
@@ -2905,60 +2912,38 @@ syscall_newproc:
 	mov	r13, rdx ; end
 	mov	r14, rdi ; handle of child process
 
-	; changed some parameters, should redo register assignment here...
-	mov	rdi, rsi
-	mov	rsi, rdx
+	mov	r8, rdi
+lodstr	rdi, 'NEWPROC %p..%p -> %x', 10
+	call	printf
 
-	; stack in new process = 1MB
-	mov	esi, 0x100000
-	; entry-point in new process = 1MB + (entry & 0xfff)
-	and	edi, 0xfff
-	add	edi, esi
-	call	new_proc
-	mov	rbx, rax ; Save new process id
-
-	; The memory map for the child:
-	; 1MB - 4kB: stack
-	; 1MB: one page of code
-	; (TODO: share the memory from the parent properly. And/or rewrite the
-	; whole API.)
-	; 1MB + 4kB: end
-
-%if 1
-	PANIC
-%else
-	; Find mapping for source
+	; Find mapping for start..end, make sure they're all the same and a
+	; direct physical memory mapping. (That's the only one we support for
+	; making processes out of. So far.)
+	;
+	; (Note that we check the mappings here, not what those pages are
+	; backed by in the parent. No shared memory yet...)
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
 	mov	rsi, r12
-	call	aspace_find_mapping
+	call	aspace_find_mapcard
 	test	rax, rax
 	jz	.panic
-	; Set up to map the same region in the child process, at 1MB
-	mov	rdi, [rbx + proc.aspace]
-	mov	rsi, [rax + mapping.region]
-	mov	edx, 0x100000
-	; Set rcx to end, aligned up towards an even page
-	mov	rcx, r13
-	add	rcx, 0xfff
-	and	cx, 0xf000
-	; Then subtract start, and align upwards again
-	sub	rcx, r12
-	add	rcx, 0xfff
-	and	cx, 0xf000
-	; Check that we actually got a region
-	test	rsi, rsi
+	test	byte [rax + mapcard.flags], MAPFLAG_PHYS
 	jz	.panic
-	call	map_region
-	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_X
+	push	qword [rax + mapcard.offset]
+	and	word [rsp], ~0xfff
 
-	; Create new stack region for child
-	mov	rdi, [rbx + proc.aspace]
-	zero	esi
-	mov	edx, 0x100000 - 0x1000 ; 1MB - stack size
-	mov	ecx, 0x1000 ; stack size
-	call	map_region
-	mov	byte [rax + mapping.flags], MAPFLAG_R | MAPFLAG_W | MAPFLAG_ANON
+	; TODO Check that everything from start..end is the same!
+
+	; Translate entry-point/end by that physical memory mapping.
+	mov	rdi, r12
+	add	rdi, [rsp]
+	mov	rsi, r13
+	add	rsi, [rsp]
+	pop	rax
+
+	call	new_proc_simple
+	mov	rbx, rax
 
 	; Map handle to child in parent process
 	mov	rdi, [rbp + gseg.process]
@@ -2990,7 +2975,6 @@ lodstr	rdi, 'newproc %p at %x', 10
 	ret
 .panic:
 	PANIC
-%endif
 
 syscall_halt:
 	lodstr	rdi, '<<HALT>>'
