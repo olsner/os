@@ -26,6 +26,11 @@ SIZE_LD= @echo ' [LD]\t'$@: `stat -c %s $@` bytes
 endif
 
 OUTDIR       := out
+# Interesting experiment though it currently doesn't work :)
+# (The modules are in total about 10kB smaller in X32 mode.)
+ifeq ($(X32), YES)
+OUTDIR       := out/x32
+endif
 ACPICA_OUT   := $(OUTDIR)/cuser/acpica
 ACPICA       := acpica
 GRUBDIR      := $(OUTDIR)/grub
@@ -94,6 +99,17 @@ USER_CFLAGS += -ffunction-sections -fdata-sections
 
 LDFLAGS := --check-sections
 LDFLAGS += --gc-sections
+USER_LDFLAGS := $(LDFLAGS)
+
+LD_ELF_FORMAT := elf64-x86-64
+YASM_ELF_FORMAT := elf64
+
+ifeq ($(X32), YES)
+USER_CFLAGS += -mx32
+USER_LDFLAGS += -melf32_x86_64
+LD_ELF_FORMAT := elf32-x86-64
+YASM_ELF_FORMAT := elfx32
+endif
 
 $(OUTDIR)/cuser/%.o: cuser/%.c
 	@mkdir -p $(@D)
@@ -109,19 +125,19 @@ $(ACPICA_OUT)/%.o: $(ACPICA)/%.c
 
 $(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(LDFLAGS) -o $@ -T $^ -Map $(OUTDIR)/$*.map
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(OUTDIR)/$*.map
 	$(SIZE_LD)
 
 $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o $(OUTDIR)/cuser/printf.o
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(LDFLAGS) --oformat elf64-x86-64 -o $@ -T $^
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
 
 $(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
 $(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm
-	$(YASM) -f elf64 $< -o $@ -L nasm
+	$(YASM) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
 
 $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
@@ -211,10 +227,10 @@ $(ACPI_OBJS): USER_CFLAGS += $(ACPI_CFLAGS)
 
 $(GRUBDIR)/cuser/acpica.mod: cuser/linker.ld $(ACPI_OBJS)
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(LDFLAGS) -o $@ -T $^ -Map $(OUTDIR)/acpica.map
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(OUTDIR)/acpica.map
 	$(SIZE_LD)
 
 all: $(ACPICA_OUT)/acpica.elf
 $(ACPICA_OUT)/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(LDFLAGS) --oformat elf64-x86-64 -o $@ -T $^
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
