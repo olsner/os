@@ -769,7 +769,7 @@ new_proc_simple:
 
 	; stack: in pop order: offset, then vaddr of things to map
 .map:
-	zero	rcx ; handle = 0
+	zero	ecx ; handle = 0
 	pop	rdx ; offset + access
 	; r12: save so we can check later if we've reached the end
 	mov	r12, rdx
@@ -2253,8 +2253,8 @@ aspace_find_mapcard:
 lodstr	rdi,	'find_mapcard: %p -> %x.. +%x (%x)', 10
 	pop	rax ; mapcard
 	pop	rsi
-	zero	rdx
-	zero	rcx
+	zero	edx
+	zero	ecx
 	zero	r8
 	test	rax, rax
 	jz	.nothing
@@ -2931,7 +2931,7 @@ lodstr	rdi, 'NEWPROC %p..%p -> %x', 10
 	test	byte [rax + mapcard.flags], MAPFLAG_PHYS
 	jz	.panic
 	push	qword [rax + mapcard.offset]
-	and	word [rsp], ~0xfff
+	mov	byte [rsp], 0
 
 	; TODO Check that everything from start..end is the same!
 
