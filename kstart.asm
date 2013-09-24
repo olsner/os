@@ -994,19 +994,20 @@ lodstr	rdi, 'runqueue_append %p', 10
 %endif
 	ret
 .queueing_blocked:
+%if verbose_procstate
 	mov	rsi, rdi
 lodstr	rdi, 'queueing blocked %p (%x)', 10
-	jmp	.panic
+	call	print_proc
+	call	print_procstate
+%endif
+	PANIC
 .already_running:
+%if verbose_procstate
 	mov	rsi, rdi
 lodstr	rdi, 'queueing already running %p (%x)', 10
 .panic:
-%if verbose_procstate
 	call	print_proc
 	call	print_procstate
-%else
-	mov	rdx, [rsi + proc.flags]
-	call	printf
 %endif
 	PANIC
 
@@ -2448,7 +2449,9 @@ lodstr	rdi,	'Backing found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 .found_mapcard:
 	mov	rdi, rax
 	mov	eax, [rax + mapcard.flags]
+%if log_page_fault
 lodstr	r12,	'Mapcard has no access', 10
+%endif
 	test	eax, MAPFLAG_RWX
 	jz	.invalid_match
 
@@ -2466,7 +2469,9 @@ lodstr	r12,	'Mapcard has no access', 10
 	PANIC
 
 .no_handle:
+%if log_page_fault
 lodstr	r12,	'null handle.', 10
+%endif
 	test	eax, MAPFLAG_ANON | MAPFLAG_PHYS
 	jz	.invalid_match
 
@@ -2911,10 +2916,6 @@ syscall_newproc:
 	mov	r12, rsi ; entry-point/start
 	mov	r13, rdx ; end
 	mov	r14, rdi ; handle of child process
-
-	mov	r8, rdi
-lodstr	rdi, 'NEWPROC %p..%p -> %x', 10
-	call	printf
 
 	; Find mapping for start..end, make sure they're all the same and a
 	; direct physical memory mapping. (That's the only one we support for
