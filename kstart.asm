@@ -371,6 +371,7 @@ APIC_REG_TIMER_DIV	equ	0x3e0
 	mov	ecx, MSR_EFER
 	rdmsr
 	bts	eax, 0 ; Set SCE
+	bts	eax, 11 ; Set NXE
 	wrmsr
 
 	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
@@ -2428,7 +2429,7 @@ lodstr	rdi,	'Backing found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	test	eax, MAPFLAG_X
 	jnz	.has_exec
 	; Set bit 63 to *disable* execute permission
-	;bts	rsi, 63
+	bts	rsi, 63
 .has_exec:
 	test	eax, MAPFLAG_W
 	jz	.no_write_access
