@@ -135,6 +135,7 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o $(OUTDIR)/cuser/printf.o
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
 
 $(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
+$(GRUBDIR)/cuser/zeropage.mod: $(OUTDIR)/cuser/printf.o
 $(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 # TODO This is here because printf.c still depends on AcpiUtStrtoul

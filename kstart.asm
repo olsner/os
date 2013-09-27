@@ -2465,7 +2465,7 @@ lodstr	r12,	'Mapcard has no access', 10
 ; rdi = mapping
 .user_pfault:
 	mov	rax, [rbp + gseg.process]
-	mov	[rax + proc.fault_mapping], rdi
+	mov	[rax + proc.fault_addr], rdi ; FIXME Should be the vaddr, not the mapcard pointer
 	or	[rax + proc.flags], byte PROC_PFAULT
 	PANIC
 
@@ -2613,8 +2613,9 @@ syscall_entry:
 	jmp	fastret
 
 .invalid_syscall:
-lodstr	rdi, 'Invalid syscall %x!', 10
+lodstr	rdi, 'Invalid syscall %x! proc=%p', 10
 	mov	rsi, rbx
+	mov	rdx, [rbp + gseg.process]
 	call	printf
 	jmp	.ret_from_generic
 
@@ -2624,13 +2625,14 @@ lodstr	rdi, 'Invalid syscall %x!', 10
 .table:
 	sc recv
 	sc map
-	sc nosys ; PFAULT
+	sc pfault
 	sc nosys ; UNMAP
 	sc hmod
 	sc newproc
 	; ("temporary") backdoor syscalls
 	sc write
 	sc portio
+	;sc grant
 .end_table:
 N_SYSCALLS	equ (.end_table - .table) / 4
 
@@ -3631,6 +3633,42 @@ syscall_map:
 .dma_ret:
 	mov	rax, [rbx + proc.r8]
 	ret
+
+; rdi = 0
+; rsi = vaddr
+; rdx = flags
+syscall_pfault:
+	; limit flags appropriately
+	; set fault_addr to offset | flags
+	; set PROC_PFAULT flag
+	; look up mapping at offset
+	; * translate vaddr to offset
+	; * get handle
+	; do the equivalent of sendrcv with rdi=handle, rsi=offset, rdx=flags
+	PANIC
+
+; rdi = recipient handle
+; rsi = our vaddr
+; rdx = out flags
+syscall_grant:
+	; lookup handle, get process
+	; check that it has PROC_PFAULT set
+	; get the process' fault address, look up the mapping
+	; check that our handle's remote handle's key matched the one in the
+	; mapping
+	; check that our offset matches what it should? we'd need to pass on
+	; the offset that we thing we're granting, and compare that to the
+	; vaddr+offset on the recipient side....
+
+	; look up or create a sharing for vaddr
+	; look up recipient's backing for rcpt-vaddr, release it
+	; create new backing, link it into the sharing we made
+
+	; unset PROC_PFAULT
+	; if the process has PROC_IN_RECV, we got here from an explicit pfault,
+	; do a send to respond properly.
+	; unblock the process
+	PANIC
 
 %include "printf.asm"
 

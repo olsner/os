@@ -13,6 +13,8 @@ void start() {
 	/* Page is zeroed when we get it from pfalloc. PFALLOC gives one unique
 	 * page frame for each page faulted in from it. Until it runs out of
 	 * memory... */
+	/* Likewise from the kernel anonymous memory allocator, as long as we use
+	 * the backdoor... */
 
 	if (*zeropage) {
 		puts("zeropage: nonzero value in zero page!?\n");
@@ -31,7 +33,7 @@ void start() {
 		// PFAULT: source handle, offset, requested flags
 		switch (msg & 0xff) {
 		case MSG_PFAULT: {
-			puts("zeropage: pfault\n");
+			printf("zeropage: %x pfault %x %x\n", rcpt, arg1, arg2);
 			arg2 &= ALLOWED_FLAGS;
 			arg1 = (uintptr_t)zeropage;
 			send2(MSG_PFAULT, rcpt, arg1, arg2);

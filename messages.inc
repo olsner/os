@@ -26,46 +26,44 @@ MSG_NONE	equ	0
 ; access may result in faults getting sent to the named handle.
 MSG_MAP		equ	1
 
-; Received when a fault happens in a process that has mapped a page from you.
-; Can not be sent.
+; MSG_PFAULT: Received when a fault happens in a process that has mapped a page
+; from you, can also be sent to explicitly fault-in a page you've mapped.
 ;
 ; Parameters:
 ; * handle (in local address space) of mapped object
 ; * offset inside object
-; * requested local+remote access
-;   * for a read access, this will always be RO+RO
-;   * for an instruction fetch of an already paged-in frame, might say RX+RO
-;   * for a write access with locally R/W and remote R/O access, perform the
-;     necessary gyrations to copy the page for CoW (or fail)
-; (* length in bytes - or always exactly one page)
+; * requested access (r/w/x)
+; (* length in bytes - or always exactly one page - might be needed for the size
+; of the page though...)
 ;
-; Reply with MSG_PFAULT where:
+; For an explicit request to page-in memory, handle should be 0 and the offset
+; replaced with the virtual address.
+;
+; Reply with a MSG_GRANT.
+MSG_PFAULT	equ	2
+
+; MSG_GRANT: Reply to a MSG_PFAULT message.
+;
+; Parameters:
+; * handle (your handle to the mapper process)
 ; * offset is replaced with the local vaddr of the unfaulted page
 ;   this page will be shared with the receiving process:
 ;   * if currently mapped to a physical page, the same frame is reused
-;   * if mapped recursively to another object, that object will get to handle
-;     faults that are within the returned flags
+;   * if mapped recursively to another object, we will take a detour to fault
+;     the page in before forwarding the result to the caller.
 ;   (but flags may still limit access to that memory)
 ; * flags are the actual access the process should receive
-;   * all future access that doesn't violate these flags will either proceed
-;     and actually access/modify memory, or pfault recursively to an underlying
-;     virtual memory object
-;   * any future access that violates these flags will generate a new pfault
-;     to this process.
-;   * it's an error to try to provide more access than this process has to the
-;     underlying mapping
-;     note: this is the virtual access, not what's currently in the active
-;     page table. For example, you can hand out a R/W mapping to your own R/W
-;     mapping even if that's currently backed by a R/O frame that has not yet
-;     been CoW:ed.
-;
-; (Optimization: when all your access to a page is given to another process,
-; maybe the underlying memory can be mapped directly and the intermediate
-; object unmapped? That would allow some levels of indirection to be
-; removed...)
-;
-; TODO Revoking pages?
-MSG_PFAULT	equ	2
+;   * should be, but doesn't have to be, a subset of the flags that were
+;     requested (for example a read access to a page where RW access is
+;     allowed - we can send both to avoid a future page fault)
+;   * all access you hand out must be provided in the backing, this may cause
+;     a detour to e.g. CoW and whatever's needed to give you read/write access.
+;   * that seems to mean that for a potentially CoW page you should only give
+;     exactly the access that was asked for, but for a known backed page give
+;     all the access that is possible.
+;   * the X flag is ignored here: if you give Read access you also give execute
+;     access. It's up to the mapper's mapping whether it should be execute.
+MSG_GRANT	equ	8
 
 ; Unmap a virtual address range
 ; * object handle to unmap memory from (0 = unmap from self)
@@ -151,6 +149,7 @@ MSG_NEWPROC	equ	5
 ; backdoor call(s)
 MSG_SYSCALL_WRITE	equ	6
 MSG_SYSCALL_IO		equ	7
+;MSG_GRANT		equ	8
 
 ; Start of user-mapped message-type range
 MSG_USER	equ	16

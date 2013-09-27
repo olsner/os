@@ -32,10 +32,12 @@ struc	proc, -0x80
 	.cr3	resq 1
 	.aspace	resq 1
 	.count	resq 1
-	; When PROC_PFAULT is set, a pointer to the mapping that contains the
-	; faulted address. (TODO: remember whether it was a read, write or
-	; execute access - CoW wants to know.)
-	.fault_mapping	resq 1
+	; When PROC_PFAULT is set, the virtual address that faulted
+	; Note that we lose a lot of data about the mapping that we looked up
+	; in PFAULT, and have to look up again in GRANT. This is intentional,
+	; since we have to verify and match the GRANT to the correct page, we
+	; simply don't save anything that might be wrong.
+	; The lower bits are access flags for the fault/request.
 	.fault_addr	resq 1
 
 	align 16
@@ -75,6 +77,7 @@ defbit	PROC_IN_RECV,	2
 defbit	PROC_IN_SEND,	3
 ; Is the currently running process
 defbit	PROC_RUNNING,	4
-; Process has had a page fault that requires a response from a backer.
-; proc.fault_mapping is a pointer to the mapping that faulted.
+; Process has had a page fault that requires a response from a backer, or has
+; requested a page paged in.
+; proc.fault_addr is the address that faulted/was requested.
 defbit	PROC_PFAULT,	5
