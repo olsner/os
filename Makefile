@@ -4,6 +4,8 @@
 
 CP=cp
 
+# gold generates broken modules (and/or the linker script is broken)
+LD := ld.bfd
 CC := ccache gcc
 CXX := ccache g++
 export CC CXX
