@@ -1,7 +1,6 @@
 bits 64
 section .text
 global printf
-global AcpiOsPrintf
 
 %include "../macros.inc"
 %include "../syscalls.inc"
@@ -12,8 +11,6 @@ global AcpiOsPrintf
 %endmacro
 
 %include "../user/putchar.asm"
-; FIXME Assumes that the first symbol in printf.asm is printf
-AcpiOsPrintf:
 %include "../printf.asm"
 
 ; Inputs:
