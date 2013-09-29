@@ -16,7 +16,8 @@ void start() {
 	/* Likewise from the kernel anonymous memory allocator, as long as we use
 	 * the backdoor... */
 
-	if (*zeropage) {
+	printf("zeropage: page at %p\n", (void*)&zeropage);
+	if (*(volatile char*)zeropage) {
 		puts("zeropage: nonzero value in zero page!?\n");
 	} else {
 		puts("zeropage: zero page is indeed zero\n");
@@ -36,7 +37,7 @@ void start() {
 			printf("zeropage: %x pfault %x %x\n", rcpt, arg1, arg2);
 			arg2 &= ALLOWED_FLAGS;
 			arg1 = (uintptr_t)zeropage;
-			send2(MSG_PFAULT, rcpt, arg1, arg2);
+			ipc2(MSG_GRANT, &rcpt, &arg1, &arg2);
 			break;
 		}
 		}

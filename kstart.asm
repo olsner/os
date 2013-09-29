@@ -12,6 +12,7 @@
 %define log_timer_interrupt 0
 %define log_page_fault 0
 %define log_find_mapping 0
+%define log_find_backing 0
 %define log_unmap 0
 %define log_find_handle 0
 %define log_new_handle 0
@@ -2277,6 +2278,24 @@ aspace_find_backing:
 	or	si, 0xfff
 	add	rdi, aspace.backings
 	call	dict_find_lessthan
+%if log_find_backing
+	mov	rsi, [rsp]
+	push	rax
+	zero	edx
+	zero	ecx
+	test	rax, rax
+	jz	.no_backing
+	mov	rdx, [rax + backing.vaddr]
+	mov	rcx, [rax + backing.parent]
+	test	dl, MAPFLAG_PHYS
+	jnz	.parent_was_paddr
+	mov	rcx, [rcx + sharing.paddr]
+.parent_was_paddr:
+.no_backing:
+lodstr	rdi, 'find_backing: %p -> v %x p %x', 10
+	call	printf
+	pop	rax
+%endif
 	test	rax, rax
 	pop	rsi
 	jz	.ret
@@ -2291,6 +2310,49 @@ aspace_find_backing:
 ; rdi = aspace
 ; rsi = backing
 aspace_insert_backing:
+	lea	rdi, [rdi + aspace.backings]
+	tcall	dict_insert
+
+; rdi = aspace
+; rsi = vaddr
+; => rax = sharing, potentially a new one without paddr filled in.
+aspace_add_sharing:
+	push	rdi
+	lea	rdi, [rdi + aspace.sharings]
+	push	rsi
+	call	dict_lookup
+	test	rax, rax
+	jz	.no_sharing
+.ret:
+	pop	rsi
+	pop	rdi
+	ret
+
+.no_sharing:
+	call	allocate_frame
+	mov	rsi, rax
+	pop	qword [rax + sharing.vaddr]
+	pop	rdi
+	mov	[rax + sharing.aspace], rdi
+	lea	rdi, [rdi + aspace.sharings]
+	tcall	dict_insert
+
+; rdi = aspace
+; rsi = vaddr
+; rdx = sharing to add to
+aspace_add_shared_backing:
+	push	rdi
+	push	rsi
+	push	rdx
+	call	allocate_frame
+	pop	rdi
+	mov	[rax + backing.parent], rdi
+	pop	qword [rax + backing.vaddr]
+	lea	rdi, [rdi + sharing.children]
+	mov	rsi, rax
+	call	dlist_append
+	; dlist_append leaves the backing in rsi
+	pop	rdi
 	lea	rdi, [rdi + aspace.backings]
 	tcall	dict_insert
 
@@ -2632,7 +2694,7 @@ lodstr	rdi, 'Invalid syscall %x! proc=%p', 10
 	; ("temporary") backdoor syscalls
 	sc write
 	sc portio
-	;sc grant
+	sc grant
 .end_table:
 N_SYSCALLS	equ (.end_table - .table) / 4
 
@@ -2989,6 +3051,7 @@ syscall_send:
 	mov	rax, [rbp + gseg.process]
 	save_regs rdi,rsi,rdx,r8,r9,r10
 
+.from_other:
 	mov	rsi, rdi
 	mov	rdi, [rax + proc.aspace]
 	; rdi = address space
@@ -3126,6 +3189,7 @@ syscall_call:
 	; remaining: message params
 	save_regs rdi,rsi,rdx,r8,r9,r10
 
+.from_other:
 	mov	rdi, [rax + proc.aspace]
 	mov	rsi, [rax + proc.rdi]
 	call	find_handle
@@ -3177,9 +3241,9 @@ send_or_block:
 	; ( TODO for multiprocessing: lock recipient process struct. And sender?)
 	; 1. Check if the recipient can receive a message immediately
 	mov	edx, [rdi + proc.flags]
-	and	edx, PROC_IN_RECV | PROC_IN_SEND
-	; If it's both IN_SEND and IN_RECV, that means we should treat it as
-	; IN_SEND first (i.e. block)
+	and	edx, PROC_IN_RECV | PROC_IN_SEND | PROC_PFAULT
+	; If it's IN_RECV in combination with another status, that means we
+	; should treat it as IN_SEND/PFAULT first and block.
 	cmp	edx, byte PROC_IN_RECV
 	jne	.block_on_send
 
@@ -3639,35 +3703,134 @@ syscall_map:
 ; rdx = flags
 syscall_pfault:
 	; limit flags appropriately
+	and	edx, MAPFLAG_RWX
+	and	si, ~0xfff
 	; set fault_addr to offset | flags
-	; set PROC_PFAULT flag
+	mov	rax, [rbp + gseg.process]
+	mov	[rax + proc.fault_addr], rsi
+	mov	[rax + proc.rsi], rsi ; vaddr, but soon to become offset
+	mov	[rax + proc.rdx], rdx
 	; look up mapping at offset
-	; * translate vaddr to offset
-	; * get handle
+	mov	rdi, [rax + proc.aspace]
+	; rsi = vaddr already
+	call	aspace_find_mapcard
+	test	rax, rax
+	jz	.panic
+	mov	rcx, rax
+	mov	rsi, [rax + mapcard.offset]
+	mov	rax, [rbp + gseg.process]
+	; * translate vaddr to offset => proc.rsi
+	add	[rax + proc.rsi], rsi ; proc.rsi is now translated into offset
+	; * get handle => proc.rdi
+	mov	rsi, [rcx + mapcard.handle]
+	test	rsi, rsi
+	jz	.no_op_ret
+	mov	[rax + proc.rdi], rsi
+	; set PROC_PFAULT flag
+	or	byte [rax + proc.flags], PROC_PFAULT
 	; do the equivalent of sendrcv with rdi=handle, rsi=offset, rdx=flags
+	; (special calling convention: rax = process)
+	tcall	syscall_call.from_other
+.panic:
 	PANIC
+.no_op_ret:
+	zero	eax
+	ret
 
 ; rdi = recipient handle
 ; rsi = our vaddr
-; rdx = out flags
+; rdx = our flags
 syscall_grant:
+	mov	rax, [rbp + gseg.process]
+	and	edx, MAPFLAG_RWX
+	save_regs	rsi, rdi, rdx
 	; lookup handle, get process
+	mov	rdi, [rax + proc.aspace]
+	mov	rsi, [rax + proc.rdi]
+	call	find_handle
+	test	rax, rax
+	jz	.err_ret
+
+	mov	rbx, [rax + handle.proc]
+	test	rbx, rbx
+	jz	.err_ret
+	cmp	qword [rax + handle.other], 0
+	jz	.err_ret
 	; check that it has PROC_PFAULT set
+	test	byte [rbx + proc.flags], PROC_PFAULT
+	jz	.err_ret
 	; get the process' fault address, look up the mapping
+	push	rax
+	mov	rsi, [rbx + proc.fault_addr]
+	mov	rdi, [rbx + proc.aspace]
+	call	aspace_find_mapcard
 	; check that our handle's remote handle's key matched the one in the
 	; mapping
+	pop	rcx
+	mov	rdx, [rax + mapcard.handle]
+	mov	rcx, [rcx + handle.other]
+	cmp	rdx, [rcx + handle.key]
+	jne	.err_ret
+	mov	al, [rax + mapcard.flags]
+	and	al, MAPFLAG_RWX
+	mov	rsi, [rbp + gseg.process]
+	and	[rsi + proc.rdx], al
+
 	; check that our offset matches what it should? we'd need to pass on
-	; the offset that we thing we're granting, and compare that to the
+	; the offset that we think we're granting, and compare that to the
 	; vaddr+offset on the recipient side....
 
-	; look up or create a sharing for vaddr
-	; look up recipient's backing for rcpt-vaddr, release it
-	; create new backing, link it into the sharing we made
+	; proc.rdi = our handle
+	; proc.rsi = our vaddr
+	; proc.rdx = our flags (& MAPFLAG_RWX)
+	; rbx + proc.fault_addr = their vaddr (+ flags?)
 
-	; unset PROC_PFAULT
-	; if the process has PROC_IN_RECV, we got here from an explicit pfault,
+	; look up our backing for our-vaddr
+	mov	rdi, [rsi + proc.aspace]
+	mov	rsi, [rsi + proc.rsi]
+	call	aspace_find_backing
+	; extract the physical address or fault recursively
+	test	rax, rax
+	jz	.recursive_fault
+	mov	rsi, [rax + backing.parent]
+	test	byte [rax + backing.vaddr], MAPFLAG_PHYS
+	jnz	.parent_was_paddr
+	mov	rsi, [rsi + sharing.paddr]
+.parent_was_paddr:
+	push	rsi
+
+	; (look up recipient's backing for rcpt-vaddr, release it)
+	; look up or create a sharing for our-vaddr
+	mov	rsi, [rbp + gseg.process]
+	mov	rdi, [rsi + proc.aspace]
+	mov	rsi, [rsi + proc.rsi]
+	call	aspace_add_sharing
+	pop	qword [rax + sharing.paddr]
+	; create new backing, link it into the sharing we made
+	mov	rdi, [rbx + proc.aspace]
+	mov	rsi, [rbx + proc.fault_addr]
+	mov	rdx, rax
+	mov	rax, [rbp + gseg.process]
+	or	si, word [rax + proc.rdx]
+	; add flags (our flags & mapcard.flags) to rsi
+	call	aspace_add_shared_backing
+
+	btr	dword [rbx + proc.flags], PROC_PFAULT_BIT
+	test	byte [rbx + proc.flags], PROC_IN_RECV
+	jz	.unblock
+	; process has PROC_IN_RECV, we got here from an explicit pfault,
 	; do a send to respond properly.
+	mov	rax, [rbp + gseg.process]
+	mov	rdi, [rax + proc.rdi]
+	tcall	syscall_send.from_other
+.unblock
 	; unblock the process
+.err_ret:
+	zero	eax
+	;ret
+.recursive_fault:
+	; unimplemented...
+.panic:
 	PANIC
 
 %include "printf.asm"

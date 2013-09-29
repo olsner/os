@@ -5,32 +5,34 @@
 static const uintptr_t ALLOWED_FLAGS = PROT_READ | PROT_EXECUTE;
 static const uintptr_t zeropage = 4;
 
-void inspect(const char* p, const char* end) {
-	printf("Inspecting %x..%x\n", p, end);
+void inspect(const char* start, const char* end) {
+	printf("Inspecting %x..%x\n", start, end);
+	const u64* p = (u64*)start;
 	size_t n = 0;
-	while (p < end) {
-		uint64_t b = *(u64*)p;
+	while (p < (u64*)end) {
+		uint64_t b = *p;
 		if (b) {
 			printf("%x: %p\n", p, b);
 			n++;
 		}
-		p += 8;
+		p++;
 	}
-	printf("%x non-zero bytes in %x..%x\n", n, p, end);
+	printf("%x non-zero bytes in %x..%x\n", n, start, end);
 }
 
 void start() {
 	char* pointer = (char*)0x200000;
-	uintptr_t addr = 0x1efc000;
+	uintptr_t addr = 0x1234000;
 
-	uintptr_t arg1 = 0x12340001;
-	uintptr_t arg2 = 0x12340002;
-	uintptr_t rcpt = zeropage;
+	map(zeropage, PROT_READ, (void*)pointer, addr, 4096);
+
+	uintptr_t arg1 = (uintptr_t)pointer;
+	uintptr_t arg2 = PROT_READ;
+	uintptr_t rcpt = 0;
 	uintptr_t msg = ipc2(MSG_PFAULT, &rcpt, &arg1, &arg2);
 	printf("test_maps got %x: %p %p\n", msg, arg1, arg2);
 
 	/*while (addr < 32*1024*1024)*/ {
-		map(zeropage, PROT_READ, (void*)pointer, addr, 4096);
 		inspect(pointer, pointer + 4096);
 	}
 	for(;;);

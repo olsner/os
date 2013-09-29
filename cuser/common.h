@@ -48,6 +48,7 @@ enum syscalls_builtins {
 	//  0x04 = dword
 	// arg2 (if applicable) = data for output
 	SYSCALL_IO = 7, // Backdoor!
+	MSG_GRANT = 8,
 	MSG_USER = 16,
 };
 
