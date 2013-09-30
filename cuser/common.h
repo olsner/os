@@ -31,6 +31,7 @@ extern char __data_vma[1];
 #define S__(x) #x
 #define S_(x) S__(x)
 #define PLACEHOLDER_SECTION __attribute__((section(".placeholder." __FILE__ "." S_(__LINE__))))
+#define ALIGN(n) __attribute__((aligned(n)))
 
 enum syscalls_builtins {
 	MSG_NONE = 0,
@@ -86,6 +87,56 @@ enum msg_acpi {
 	 */
 	MSG_ACPI_CLAIM_PCI,
 	MSG_ACPI_READ_PCI,
+};
+
+enum msg_ethernet {
+	// registration of fresh handle
+	/**
+	 * Register an ethernet protocol. Use with a fresh handle, memory map pages
+	 * to read incoming packets and store outgoing packets.
+	 *
+	 * The number of receive pages is specified here, if the number is n, then
+	 * pages 0..n-1 are receive pages, and n.. are send pages. Any number of
+	 * send pages can be allocated on demand.
+	 *
+	 * arg1: protocol number
+	 * arg2: number of send and receive pages to allocate
+	 * arg2.byte0: number of receive pages
+	 * (arg2.byte1: number of send pages)
+	 * Returns:
+	 * arg1: MAC address of card
+	 */
+	MSG_ETHERNET_REG_PROTO = MSG_USER,
+	/**
+	 * ethernet -> protocol: A packet has been received.
+	 * protocol -> ethernet: Acknowledge a received packet and release the
+	 * buffer back for reception.
+	 *
+	 * The buffer contains the whole ethernet frame including headers, as it
+	 * came from the network. It may contain any type of frame, with or without
+	 * a VLAN header.
+	 *
+	 * ethernet -> protocol:
+	 * arg1: page number containing the received packet
+	 * arg2: packet length including headers
+	 * protocol -> ethernet:
+	 * arg1: page number of packet to release
+	 */
+	MSG_ETHERNET_RCVD,
+	/**
+	 * (protocol -> ethernet)
+	 * Send a packet. The given page number is owned by the ethernet driver
+	 * until delivered over the wire and the MSG_ETHERNET_SEND_ACK reply is
+	 * sent.
+	 *
+	 * arg1: destination MAC address
+	 * arg2: page number of buffer that contains data to send.
+	 * more? datagram length?
+	 * Returns:
+	 * arg1: page number of delivered packet - the page is no longer owned by
+	 * the driver.
+	 */
+	MSG_ETHERNET_SEND,
 };
 
 enum msg_kind {
@@ -293,6 +344,10 @@ static void hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
 	syscall3(MSG_HMOD, h, rename, copy);
 }
 
+static void hmod_delete(uintptr_t h) {
+	hmod(h, 0, 0);
+}
+
 enum prot {
 	PROT_EXECUTE = 1,
 	PROT_WRITE = 2,
@@ -313,6 +368,13 @@ static void* map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t o
 // FIXME Also uses a kernel backdoor API
 static void map_anon(int prot, void *local_addr, uintptr_t size) {
 	map(0, MAP_ANON | prot, local_addr, 0, size);
+}
+
+static void prefault(void* addr, int prot) {
+	uintptr_t arg1 = (uintptr_t)addr;
+	uintptr_t arg2 = prot;
+	uintptr_t rcpt = 0;
+	(void)ipc2(MSG_PFAULT, &rcpt, &arg1, &arg2);
 }
 
 static void memcpy(void* dest, const void* src, size_t sz) {
@@ -358,6 +420,17 @@ extern void printf(const char* fmt, ...);
 extern void vprintf(const char* fmt, va_list ap);
 extern void* malloc(size_t size);
 extern void free(void* p);
+
+static void hexdump(char* data, size_t length) {
+	size_t pos = 0;
+	while (pos < length) {
+		printf("\n%04x: ", pos);
+		for (int i = 0; i < 16 && pos < length; i++) {
+			printf("%02x ", (u8)data[pos++]);
+		}
+	}
+	printf("\n");
+}
 
 enum pci_regs
 {

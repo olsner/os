@@ -20,6 +20,17 @@ menuentry "ACPICA+e1000" {
     boot
 }
 
+menuentry "ACPICA+e1000+arping" {
+    multiboot (cd)/kstart.b
+    module (cd)/kern/irq.mod
+    module (cd)/kern/pic.mod
+    module (cd)/kern/console.mod
+    module (cd)/cuser/acpica.mod
+    module (cd)/cuser/e1000.mod
+    module (cd)/cuser/arping.mod
+    boot
+}
+
 menuentry "zeropage+test_maps" {
     multiboot (cd)/kstart.b
     module (cd)/kern/irq.mod

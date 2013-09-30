@@ -3,6 +3,7 @@
 static const uintptr_t acpi_handle = 4;
 static const uintptr_t pic_handle = 2;
 static const uintptr_t pin0_irq_handle = 0x100;
+static const uintptr_t fresh = 0x101;
 
 struct rdesc
 {
@@ -91,6 +92,20 @@ static char receive_buffers[N_DESC][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFE
 static int rdhead, rdtail;
 static uintptr_t gprc_total;
 
+// protocol pointer doubles as handle for the protocol process
+typedef struct protocol
+{
+	u16 ethertype;
+	char *receive_buffer;
+	char *send_buffer;
+	bool unacked_recv;
+	bool sending;
+} protocol;
+#define MAX_PROTO 10
+static protocol protocols[MAX_PROTO];
+static size_t free_protocol;
+static char proto_buffers[2 * MAX_PROTO][BUFFER_SIZE] ALIGN(BUFFER_SIZE);
+
 u32 readpci32(u32 addr, u8 reg)
 {
 	uintptr_t arg = addr << 8 | (reg & 0xfc);
@@ -113,7 +128,7 @@ int get_descriptor_status(int index)
 	for (int i = start; i != end; i = (i + 1) % N_DESC)
 
 // Return the first still-not-finished descriptor in start..end
-int check_recv(int start, int end)
+static int check_recv(int start, int end)
 {
 	for (int i = start; i != end; i = (i + 1) % N_DESC)
 	{
@@ -133,16 +148,46 @@ int check_recv(int start, int end)
 	return start;
 }
 
-void incoming_packet(int start, int end) {
-	size_t sum = 0;
+static u16 read_u16be(u8* p) {
+	return ((u16)p[0] << 8) | p[1];
+}
+
+static void copy_packet(void* dest, int start, int end) {
 	for (int i = start; i != end; i = (i + 1) % N_DESC)
 	{
 		size_t len = receive_descriptors[i].length;
-		printf("Desc %d: %ld bytes\n", i, len);
-		// TODO Print a nice hex dump of the contents
+		memcpy(dest, receive_buffers[i], len);
+		dest = (char*)dest + len;
+	}
+}
+
+static protocol* find_proto_ethtype(u16 ethertype);
+
+static void incoming_packet(int start, int end) {
+	size_t sum = 0;
+	u16 ethtype = 0;
+	// Are packets split *only* when they are too big or can they be split just
+	// because?
+	for (int i = start; i != end; i = (i + 1) % N_DESC)
+	{
+		size_t len = receive_descriptors[i].length;
+		if (i == start) {
+			u8* pkt = (u8*)receive_buffers[i];
+			ethtype = read_u16be(pkt + 12);
+		}
 		sum += len;
 	}
-	printf("Packet received: %ld bytes\n", sum);
+	printf("e1000: %ld bytes ethertype %04x\n", sum, ethtype);
+	protocol* proto = find_proto_ethtype(ethtype);
+	if (proto && !proto->unacked_recv && sum <= 4096) {
+		copy_packet(proto->receive_buffer, start, end);
+		printf("e1000: after copy packet, ethtype=%04x\n", read_u16be(proto->receive_buffer + 12));
+		hexdump(proto->receive_buffer, sum);
+		proto->unacked_recv = true;
+		send2(MSG_ETHERNET_RCVD, (uintptr_t)proto, 0, sum);
+	} else {
+		printf("Unhandled packet: %ld bytes ethertype %04x\n", sum, ethtype);
+	}
 	for (int i = start; i != end; i = (i + 1) % N_DESC)
 	{
 		// We require that the status for descriptors in the queue is reset so
@@ -202,10 +247,64 @@ void handle_irq(void) {
 	}
 }
 
+static protocol* reg_proto(u16 ethertype, u8 recv_buffers) {
+	if (free_protocol == MAX_PROTO) {
+		return NULL;
+	}
+	printf("e1000: protocol %x registered\n", ethertype);
+	const size_t i = free_protocol++;
+	protocol* proto = &protocols[i];
+	proto->ethertype = ethertype;
+	proto->receive_buffer = proto_buffers[2 * i + 0];
+	proto->send_buffer = proto_buffers[2 * i + 1];
+	/* These are really just to fault in the pages so we can later grant them
+	 * without having support for recursive faults. */
+	memset(proto->receive_buffer, 0, BUFFER_SIZE);
+	memset(proto->send_buffer, 0, BUFFER_SIZE);
+	proto->unacked_recv = false;
+	proto->sending = false;
+	return proto;
+}
+
+static protocol* find_proto(uintptr_t rcpt) {
+	uintptr_t p = (uintptr_t)protocols;
+	uintptr_t i = (rcpt - p) / sizeof(protocol);
+	if (i < free_protocol && rcpt == (p + i * sizeof(protocol))) {
+		return (protocol*)rcpt;
+	}
+	return NULL;
+}
+
+static protocol* find_proto_ethtype(u16 ethertype) {
+	for (unsigned i = 0; i < free_protocol; i++) {
+		if (protocols[i].ethertype == ethertype) {
+			return &protocols[i];
+		}
+	}
+	return NULL;
+}
+
+static void proto_ack_recv(protocol* proto, u8 recv_buffer) {
+	if (!proto) {
+		return;
+	}
+	printf("e1000: protocol %x acks recv %d\n", proto->ethertype, recv_buffer);
+	proto->unacked_recv = false;
+	assert(recv_buffer == 0);
+}
+
+static void proto_send(protocol* proto, u8 send_buffer) {
+	if (!proto) {
+		return;
+	}
+	assert(send_buffer == 1);
+	printf("e1000: protocol %x sends %d\n", proto->ethertype, send_buffer);
+	proto->sending = true;
+}
+
 void start() {
 	__default_section_init();
 
-	uintptr_t dummy = 0;
 	uintptr_t arg = 0x8086100e; // 8086:100e PCI ID for 82540EM PRO/1000
 	printf("e1000: looking for PCI device...\n");
 	sendrcv1(MSG_ACPI_FIND_PCI, acpi_handle, &arg);
@@ -257,7 +356,7 @@ void start() {
 	mmiospace[RDBAL] = physAddr;
 	mmiospace[RDBAH] = physAddr >> 32;
 
-	for (int i = 0; i < N_DESC; i++) {
+	for (size_t i = 0; i < N_DESC; i++) {
 		uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
 				(void*)receive_buffers[i], 0, sizeof(receive_buffers[i]));
 		init_descriptor(receive_descriptors + i, physAddr);
@@ -294,7 +393,7 @@ void start() {
 	for(;;) {
 		print_dev_state();
 		//recv_poll();
-		uintptr_t rcpt = 0;
+		uintptr_t rcpt = fresh;
 		arg = 0;
 		arg2 = 0;
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
@@ -304,8 +403,43 @@ void start() {
 			send1(MSG_IRQ_ACK, rcpt, arg);
 			continue;
 		}
+		if (rcpt == fresh) {
+			if (msg == MSG_ETHERNET_REG_PROTO) {
+				protocol* proto = reg_proto(arg & 0xffff, arg2 & 0xff);
+				printf("e1000: registered ethertype %04x => %p\n", arg & 0xffff, proto);
+				hmod(rcpt, (uintptr_t)proto, 0);
+			} else {
+				hmod_delete(rcpt);
+			}
+			continue;
+		}
+
 		switch (msg)
 		{
+		case MSG_ETHERNET_RCVD:
+			proto_ack_recv(find_proto(rcpt), arg);
+			break;
+		case MSG_ETHERNET_SEND:
+			assert(arg == 1); // only one send/recv buffer supported so far
+			proto_send(find_proto(rcpt), arg);
+			break;
+		case MSG_PFAULT: {
+			protocol* proto = find_proto(rcpt);
+			if (proto) {
+				arg >>= 12;
+				printf("e1000: fault for protocol %x buffer %d\n", proto->ethertype, arg);
+				if (arg < 1 /*proto->recv_buffers*/) {
+					arg = (uintptr_t)proto->receive_buffer;
+					arg2 = PROT_READ;
+				} else {
+					arg = (uintptr_t)proto->send_buffer;
+					arg2 = PROT_READ | PROT_WRITE;
+				}
+				printf("e1000: granting %p to protocol %x\n", arg, proto->ethertype);
+				ipc2(MSG_GRANT, &rcpt, &arg, &arg2);
+			}
+			break;
+		}
 		}
 	}
 fail:

@@ -25,12 +25,7 @@ void start() {
 	uintptr_t addr = 0x1234000;
 
 	map(zeropage, PROT_READ, (void*)pointer, addr, 4096);
-
-	uintptr_t arg1 = (uintptr_t)pointer;
-	uintptr_t arg2 = PROT_READ;
-	uintptr_t rcpt = 0;
-	uintptr_t msg = ipc2(MSG_PFAULT, &rcpt, &arg1, &arg2);
-	printf("test_maps got %x: %p %p\n", msg, arg1, arg2);
+	prefault(pointer, PROT_READ);
 
 	/*while (addr < 32*1024*1024)*/ {
 		inspect(pointer, pointer + 4096);
