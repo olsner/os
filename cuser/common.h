@@ -15,6 +15,7 @@ typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
 typedef uintptr_t size_t;
+typedef unsigned int uint;
 
 // FIXME This causes 'start' to follow various silly calling conventions - such
 // as saving callee-save registers. Find some way to get rid of that...
@@ -97,6 +98,7 @@ enum msg_ethernet {
 	/**
 	 * Register an ethernet protocol. Use with a fresh handle, memory map pages
 	 * to read incoming packets and store outgoing packets.
+	 * The special protocol number 0 can be used to match all protocols.
 	 *
 	 * The number of receive pages is specified here, if the number is n, then
 	 * pages 0..n-1 are receive pages, and n.. are send pages. Any number of
@@ -139,6 +141,10 @@ enum msg_ethernet {
 	 * the driver.
 	 */
 	MSG_ETHERNET_SEND,
+};
+enum
+{
+	ETHERTYPE_ANY = 0,
 };
 
 enum msg_kind {

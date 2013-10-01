@@ -1,5 +1,7 @@
 #include "common.h"
 
+//#define printf(...) (void)0
+
 static const uintptr_t acpi_handle = 4;
 static const uintptr_t pic_handle = 2;
 static const uintptr_t pin0_irq_handle = 0x100;
@@ -23,6 +25,37 @@ enum
 	RDESC_STAT_EOP = 1 << 1,
 
 };
+struct tdesc
+{
+	u64 buffer;
+	u16 length;
+	// "Should be written with 0b for future compatibility"
+	u8 checksumOffset;
+	u8 cmd;
+	// upper nibble reserved
+	u8 status;
+	u8 checksumStart;
+	u16 special;
+};
+_Static_assert(sizeof(struct tdesc) == 16, "transmit decriptor size doesn't match spec");
+enum
+{
+	TDESC_CMD_EOP = 1 << 0,
+	TDESC_CMD_IFCS = 1 << 1,
+	TDESC_CMD_RS = 1 << 3,
+};
+enum
+{
+	TDESC_STA_DD = 1
+};
+
+union desc
+{
+	struct rdesc rdesc;
+	struct tdesc tdesc;
+	u64 buffer;
+};
+_Static_assert(sizeof(union desc) == 16, "decriptor sizes don't match spec");
 
 // Ugh. The specification gives byte offsets for these, and most are 8-byte
 // aligned but with 4-byte registers. For use as indexes in mmiospace, the byte
@@ -33,16 +66,25 @@ enum regs
 	STATUS = 2,
 	EERD = 0x14 / 4,
 	ICR = 0xc0 / 4,
+	// Interrupt Throttle Register. Bochs seems to ignore this.
 	ITR = 0xc4 / 4,
 	IMS = 0xd0 / 4,
 	IMC = 0xd8 / 4,
 	RCTL = 0x100 / 4,
+	TCTL = 0x400 / 4,
 	RDBA = 0x2800 / 4,
 	RDBAL = RDBA,
 	RDBAH,
 	RDLEN,
 	RDHEAD = RDLEN + 2, // (RDH in intel docs)
 	RDTAIL = RDHEAD + 2, // (RDT in intel docs)
+
+	TDBA = 0x3800 / 4,
+	TDBAL = TDBA,
+	TDBAH,
+	TDLEN,
+	TDHEAD = TDLEN + 2, // TDH/TDT in intel docs
+	TDTAIL = TDHEAD + 2,
 
 	// Good Packets Received Count
 	GPRC = 0x4074 / 4,
@@ -53,12 +95,25 @@ enum regs
 
 enum interrupts
 {
+	IM_TXDW = 1 << 0,
+	IM_RXDMT0 = 1 << 4,
 	IM_RXT0 = 1 << 7
 };
 enum
 {
 	CTRL_ASDE = 1 << 5,
 	CTRL_SLU = 1 << 6,
+};
+enum
+{
+	STATUS_FD = 1 << 0,
+	STATUS_LU = 1 << 1,
+	// 3..2: Function ID (00 or 01)
+	// 4: TXOFF
+	// 5: TBIMODE
+	STATUS_SPEED_SHIFT = 6,
+	STATUS_SPEED_MASK = 3 << STATUS_SPEED_SHIFT,
+	// more stuff...
 };
 enum
 {
@@ -80,6 +135,18 @@ enum
 };
 enum
 {
+	// EN, bit 1 = 1 - enable transmission
+	TCTL_EN = 1 << 1,
+	// PSP, bit 3 = 1 - pad short packets
+	TCTL_PSP = 1 << 3,
+	// CT, bit 11:4 = collision threshold (Recommended value - 0Fh)
+	TCTL_CT_SHIFT = 4,
+	// COLD, bit 21:12 = COLlision Distance, in byte times (Recommended value,
+	// half duplex - 512 byte times, full duplex 64 byte times)
+	TCTL_COLD_SHIFT = 12,
+};
+enum
+{
 	EERD_START = 1,
 	EERD_DONE = 1 << 4,
 };
@@ -91,14 +158,23 @@ static volatile u32 mmiospace[128 * 1024 / 4] PLACEHOLDER_SECTION ALIGN(128*1024
 // See RDLEN in e1000 manual, must be a multiple of 8 to make the total (byte)
 // size of the descriptor ring a multiple of 128.
 // Maximum is 65536 (a descriptor ring size of 1MB)
-#define N_DESC (128 / sizeof(struct rdesc))
+#define N_DESC (128 / sizeof(union desc))
 
-static struct rdesc receive_descriptors[N_DESC] PLACEHOLDER_SECTION ALIGN(0x1000);
+static struct descriptors {
+	struct rdesc receive[N_DESC];
+	struct tdesc transmit[N_DESC];
+} descriptors PLACEHOLDER_SECTION ALIGN(0x1000);
+
+#define receive_descriptors descriptors.receive
+#define transmit_descriptors descriptors.transmit
 
 #define BUFFER_SIZE 4096
 static char receive_buffers[N_DESC][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
+static char transmit_buffers[N_DESC][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
 
-static int rdhead, rdtail;
+// "rd" is not "ReaD", but "Receive Descriptor"
+static uint rdhead, rdtail;
+static uint tdhead, tdtail;
 static uintptr_t gprc_total;
 static u64 hwaddr0;
 
@@ -123,15 +199,20 @@ u32 readpci32(u32 addr, u8 reg)
 	return arg;
 }
 
-void init_descriptor(struct rdesc* desc, uintptr_t physAddr)
+void init_descriptor(union desc* desc, uintptr_t physAddr)
 {
-	memset(desc, 0, sizeof(struct rdesc));
+	memset(desc, 0, sizeof(union desc));
 	desc->buffer = physAddr;
 }
 
 int get_descriptor_status(int index)
 {
 	return ((volatile struct rdesc*)receive_descriptors + index)->status;
+}
+
+int get_tdesc_status(int index)
+{
+	return ((volatile struct tdesc*)transmit_descriptors + index)->status;
 }
 
 #define FOR_DESCS(i, start, end) \
@@ -144,14 +225,14 @@ static int check_recv(int start, int end)
 	{
 		if (i == N_DESC) i = 0;
 		u8 status = get_descriptor_status(i);
-		printf("Descriptor %d: status %#x\n", i, status);
+		printf("e1000: RX descriptor %d: status %#x\n", i, status);
 		if (!(status & RDESC_STAT_DD))
 		{
 			return i;
 		}
 		else if (status & RDESC_STAT_EOP)
 		{
-			printf("Packet at %d..%d\n", start, i);
+			printf("e1000: RX packet at %d..%d\n", start, i);
 			return (i + 1) % N_DESC;
 		}
 	}
@@ -208,19 +289,25 @@ static void incoming_packet(int start, int end) {
 }
 
 void print_dev_state(void) {
-	printf("STATUS: %#x\n", mmiospace[STATUS]);
+	static const int link_speed[] = { 10, 100, 1000, 1000 };
+	u32 status = mmiospace[STATUS];
+	printf("STATUS: %#x link %s %dMb/s %s\n",
+		status,
+		status & STATUS_LU ? "up":"down",
+		link_speed[(status & STATUS_SPEED_MASK) >> STATUS_SPEED_SHIFT],
+		status & STATUS_FD ? "FD":"HD");
 	gprc_total += mmiospace[GPRC];
 	printf("GPRC: %lu\n", gprc_total);
 }
 
 static void recv_poll(void) {
-	int new_tail = rdtail;
+	uint new_tail = rdtail;
 	for (;;) {
-		int new_rdhead = check_recv(rdhead, rdtail);
+		uint new_rdhead = check_recv(rdhead, rdtail);
 		if (new_rdhead == rdhead)
 			break;
 
-		printf("Finished descriptors: %d..%d\n", rdhead, new_rdhead);
+		printf("e1000: done RX descriptors: %d..%d\n", rdhead, new_rdhead);
 		incoming_packet(rdhead, new_rdhead);
 
 		// Device's real RDHEAD is somewhere "between" new_rdhead and rdtail
@@ -234,13 +321,36 @@ static void recv_poll(void) {
 	}
 	if (new_tail != rdtail)
 	{
-		printf("New tail = %d\n", new_tail);
+		printf("e1000: New RDTAIL = %d\n", new_tail);
 		rdtail = new_tail;
 		// TODO Write barrier or something may be required before writing to
 		// RDTAIL to make sure our changes to the descriptors are visible.
 		mmiospace[RDTAIL] = rdtail;
 	}
-	printf("New descriptor ring: %d..%d\n", rdhead, rdtail);
+	printf("e1000: receive descriptor ring: %d..%d\n", rdhead, rdtail);
+}
+
+// Some transmission finished, iterate from tdhead up looking for EOP+RS+DD
+// packets.
+static void tx_done() {
+	uint new_head = tdhead;
+	for (;;) {
+		u8 status = get_tdesc_status(new_head);
+		printf("e1000: TX descriptor %u status %02x\n", new_head, status);
+		if (!(status & TDESC_STA_DD))
+			break;
+
+		printf("e1000: TX descriptor %u done\n", new_head);
+		new_head++;
+		new_head %= N_DESC;
+	}
+	if (new_head != tdhead)
+	{
+		printf("e1000: New TDHEAD = %u\n", new_head);
+		tdhead = new_head;
+		// We don't need to poke TDHEAD ourselves, the NIC does that.
+	}
+	printf("e1000: transmit descriptor ring %u..%u\n", tdhead, tdtail);
 }
 
 void handle_irq(void) {
@@ -249,12 +359,15 @@ void handle_irq(void) {
 	u32 icr = mmiospace[ICR];
 	printf("ICR: %#x (%#x)\n", icr, mmiospace[ICR]);
 	printf("IMS: %#x\n", mmiospace[IMS]);
-	if (icr & 0x80) {
+	if (icr & IM_RXT0) {
 		// Receive timer timeout. Receive some messages.
 		recv_poll();
 	}
-	if (icr & 0x10) {
+	if (icr & IM_RXDMT0) {
 		// RXDMT0, Receive Descriptor Minimum Threshold Reached
+	}
+	if (icr & IM_TXDW) {
+		tx_done();
 	}
 }
 
@@ -288,8 +401,9 @@ static protocol* find_proto(uintptr_t rcpt) {
 
 static protocol* find_proto_ethtype(u16 ethertype) {
 	for (unsigned i = 0; i < free_protocol; i++) {
-		if (protocols[i].ethertype == ethertype) {
-			return &protocols[i];
+		protocol* proto = &protocols[i];
+		if (proto->ethertype == ethertype || proto->ethertype == ETHERTYPE_ANY) {
+			return proto;
 		}
 	}
 	return NULL;
@@ -304,13 +418,37 @@ static void proto_ack_recv(protocol* proto, u8 recv_buffer) {
 	assert(recv_buffer == 0);
 }
 
-static void proto_send(protocol* proto, u8 send_buffer) {
+static void proto_send(protocol* proto, u8 send_buffer, uintptr_t length) {
 	if (!proto) {
 		return;
 	}
 	assert(send_buffer == 1);
 	printf("e1000: protocol %x sends %d\n", proto->ethertype, send_buffer);
 	proto->sending = true;
+	if (length > 4096) length = 4096;
+	// find a free transmit buffer and descriptor
+	size_t i = tdtail, newtdtail = (tdtail + 1) % N_DESC;
+	if (newtdtail == tdhead) {
+		printf("e1000: out of transmit descriptors!\n");
+		// ran out of descriptors. (We keep tdhead up to date with descriptors
+		// marked as finished in the TXDW interrupt.)
+		send1(MSG_ETHERNET_SEND, (uintptr_t)proto, send_buffer);
+		return;
+	}
+	// copy some data, set up length, reset status, set command.
+	memcpy(transmit_buffers[i], proto->send_buffer, length);
+	struct tdesc* desc = transmit_descriptors + i;
+	desc->length = length;
+	desc->status = 0;
+	// EOP: send this now, RS: report status and set DD when done.
+	desc->cmd = TDESC_CMD_EOP | TDESC_CMD_RS | TDESC_CMD_IFCS;
+	tdtail = newtdtail;
+	printf("e1000: descriptor data %p %p\n", *(u64*)desc, ((u64*)desc)[1]);
+	mmiospace[TDTAIL] = tdtail;
+	printf("e1000: transmit ring now %u..%u\n", tdhead, tdtail);
+	// since we always copy the data (or drop the packet entirely) we can
+	// actually send the reply immediately. Unfortunately it deadlocks?
+	send1(MSG_ETHERNET_SEND, (uintptr_t)proto, send_buffer);
 }
 
 static u64 read_eeprom(u8 word) {
@@ -379,22 +517,42 @@ void start() {
 	hwaddr0 &= 0xffffffffffff;
 
 	// Allocate receive descriptors and buffers
-	uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
-			(void*)receive_descriptors, 0, sizeof(receive_descriptors));
-	printf("Allocated descriptor ring space at %p phys\n", physAddr);
+	uintptr_t descriptorPhysAddr =
+		(uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE, (void*)&descriptors,
+			0, sizeof(descriptors));
+	uintptr_t physAddr = descriptorPhysAddr + offsetof(struct descriptors, receive);
+	printf("RX descriptor ring space at %p phys\n", physAddr);
 	mmiospace[RDBAL] = physAddr;
 	mmiospace[RDBAH] = physAddr >> 32;
 
 	for (size_t i = 0; i < N_DESC; i++) {
+		// Note: DMA memory must still be allocated page by page
 		uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
 				(void*)receive_buffers[i], 0, sizeof(receive_buffers[i]));
-		init_descriptor(receive_descriptors + i, physAddr);
+		init_descriptor((union desc*)receive_descriptors + i, physAddr);
 	}
 
 	mmiospace[RDLEN] = sizeof(receive_descriptors);
 	rdhead = 0; rdtail = N_DESC - 1;
 	mmiospace[RDHEAD] = rdhead;
 	mmiospace[RDTAIL] = rdtail;
+
+	physAddr = descriptorPhysAddr + offsetof(struct descriptors, transmit);
+	printf("TX descriptor ring space at %p phys\n", physAddr);
+	mmiospace[TDBAL] = physAddr;
+	mmiospace[TDBAH] = physAddr >> 32;
+
+	for (size_t i = 0; i < N_DESC; i++) {
+		// Note: DMA memory must still be allocated page by page
+		uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
+				(void*)transmit_buffers[i], 0, sizeof(transmit_buffers[i]));
+		printf("transmit_buffer %u: %p -> phys %p\n", i, transmit_buffers[i], physAddr);
+		init_descriptor((union desc*)transmit_descriptors + i, physAddr);
+	}
+	mmiospace[TDLEN] = sizeof(transmit_descriptors);
+	tdhead = 0; tdtail = 0;
+	mmiospace[TDHEAD] = 0;
+	mmiospace[TDTAIL] = 0;
 
 	// ITR (0xc4), lower 16 bits = number of 256ns intervals between interrupts
 	// "A initial suggested range is 651-5580 (28Bh - 15CCh)."
@@ -410,6 +568,13 @@ void start() {
 	// DPF, bit 22 = 1 (discard pause frames)
 	// BSEX, bit 25 = 1b
 	mmiospace[RCTL] = RCTL_EN | RCTL_LPE | RCTL_BAM | RCTL_DPF | RCTL_BSIZE_4096;
+	// Enable transmit:
+	// EN, bit 1 = 1 - enable transmission
+	// PSP, bit 3 = 1 - pad short packets
+	// CT, bit 11:4 = collision threshold (Recommended value - 0Fh)
+	// COLD, bit 21:12 = COLlision Distance, in byte times (Recommended value,
+	// half duplex - 512 byte times, full duplex 64 byte times)
+	mmiospace[TCTL] = TCTL_EN | TCTL_PSP | (0xf << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT);
 
 	// Set some stuff: Set Link Up, Auto Speed Detect Enable
 	// Clear: PHY Reset, VME (VLAN Enable)
@@ -417,11 +582,10 @@ void start() {
 	// TODO Enable some subset of interrupts
 	// * RXT0. With the receive timer set to 0 (disabled), this trigger for
 	//   every received package.
-	mmiospace[IMS] = IM_RXT0;
+	mmiospace[IMS] = IM_RXT0 | IM_TXDW;
 
 	for(;;) {
 		print_dev_state();
-		//recv_poll();
 		uintptr_t rcpt = fresh;
 		arg = 0;
 		arg2 = 0;
@@ -451,7 +615,7 @@ void start() {
 			break;
 		case MSG_ETHERNET_SEND:
 			assert(arg == 1); // only one send/recv buffer supported so far
-			proto_send(find_proto(rcpt), arg);
+			proto_send(find_proto(rcpt), arg, arg2);
 			break;
 		case MSG_PFAULT: {
 			protocol* proto = find_proto(rcpt);

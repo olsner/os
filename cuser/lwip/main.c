@@ -1,4 +1,6 @@
+#include "lwip/dhcp.h"
 #include "lwip/init.h"
+#include "lwip/ip.h"
 #include "lwip/autoip.h"
 #include "netif/etharp.h"
 
@@ -18,6 +20,7 @@ static const u16 ETHERTYPE_ARP = 0x0806;
 #define BUFFER_SIZE 4096
 static char receive_buffers[NBUFS][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
 static char send_buffers[NBUFS][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
+static bool send_busy[NBUFS];
 
 extern void netif_rcvd(const char*, size_t);
 
@@ -38,6 +41,10 @@ static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
 }
 
 static err_t if_output(struct netif* netif, struct pbuf* p) {
+	if (send_busy[0]) {
+		printf("if_output: busy...\n");
+		return EAGAIN;
+	}
 	size_t len = 0;
 	while (p) {
 		memcpy(send_buffers[0] + len, p->payload, p->len);
@@ -46,6 +53,7 @@ static err_t if_output(struct netif* netif, struct pbuf* p) {
 	}
 	printf("if_output: %ld bytes\n", len);
 	hexdump(send_buffers[0], len);
+	send_busy[0] = true;
 	send2(MSG_ETHERNET_SEND, proto_handle, NBUFS + 0, len);
 	return 0;
 }
@@ -66,7 +74,7 @@ void start() {
 	__default_section_init();
 
 	hmod(eth_handle, eth_handle, proto_handle);
-	uintptr_t arg1 = ETHERTYPE_ARP, arg2 = NBUFS;
+	uintptr_t arg1 = ETHERTYPE_ANY, arg2 = NBUFS;
 	sendrcv2(MSG_ETHERNET_REG_PROTO, proto_handle, &arg1, &arg2);
 	hwaddr = arg1;
 	printf("lwip: registered protocol on %012lx, mapping+faulting buffer...\n", hwaddr);
@@ -78,13 +86,22 @@ void start() {
 	printf("lwip: registered protocol\n");
 
 	lwip_init();
+//#if !(LWIP_AUTOIP || LWIP_DHCP)
+	IP4_ADDR(&ipaddr, 192,168,100,3);
+	IP4_ADDR(&netmask, 255,255,255,0);
+	IP4_ADDR(&gw, 192,168,100,1);
+//#endif
 	netif_add(&netif, &ipaddr, &netmask, &gw, NULL, if_init, ethernet_input);
 	// Set hardware address of netif. The ethernet driver doesn't send it
 	// though, it doesn't even know its own MAC yet.
 	netif_set_default(&netif);
 	netif_set_up(&netif);
 	// If IPv6: set linklocal address for interface
+#if LWIP_AUTOIP
 	autoip_start(&netif);
+#elif LWIP_DHCP
+	dhcp_start(&netif);
+#endif
 
 	for (;;) {
 		uintptr_t rcpt = proto_handle;
@@ -96,11 +113,20 @@ void start() {
 			send1(MSG_ETHERNET_RCVD, proto_handle, arg1);
 			break;
 		case MSG_ETHERNET_SEND:
-			// TODO mark send-buffer as unused, continue.
+			printf("lwip: send %ld acked\n", arg1);
+			arg1 -= NBUFS;
+			if (arg1 < NBUFS) {
+				send_busy[arg1] = false;
+			}
 			break;
 		}
 		etharp_tmr();
+#if LWIP_DHCP
+		dhcp_fine_tmr();
+		dhcp_coarse_tmr();
+#elif LWIP_AUTOIP
 		autoip_tmr();
+#endif
 		//tcp_tmr();
 	}
 }
