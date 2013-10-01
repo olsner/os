@@ -79,7 +79,8 @@ CONFIG_BYTE	equ	1 | 4
 	push	byte 0
 	mov	ebp, esp
 	; [rbp]: last character read, or 0
-	; [rbp+1]: non-zero if there's a process waiting for a key press
+	; [rbp+1]: non-zero if there's a process waiting for a key press, or a
+	; process in the middle of writing a line.
 	; [rbp+4]: shift state
 
 	mov	esi, IRQ_KEYBOARD
@@ -122,13 +123,32 @@ rcv_loop:
 	jmp	rcv_loop
 
 msg_write:
+	push	rsi
+	cmp	esi, 10
+	je	.newline
+
+	cmp	rdi, the_reader
+	je	.write
+
+	; rename the writer to the_reader
+	mov	eax, MSG_HMOD
+	mov	esi, the_reader
+	zero	edx
+	syscall
+
+.write:
 	; Let's cheat for now
 	; Later: have the frame buffer mapped in this process instead.
 	mov	eax, MSG_SYSCALL_WRITE
-	mov	edi, esi
+	pop	rdi ; the character pushed above
 	syscall
 
 	jmp	rcv_loop
+
+.newline:
+	; new line, clear the reader
+	call	clear_reader
+	jmp	.write
 
 msg_read:
 	push	rdi
@@ -172,15 +192,19 @@ lodstr	edi,	'Have key %x (waiting=%x), sending to reader', 10
 	syscall
 
 	; delete the reader now that it's done
+	call	clear_reader
+
+	zero	eax
+	mov	[rbp], eax
+
+	ret
+
+clear_reader:
 	mov	eax, MSG_HMOD
 	mov	edi, the_reader
 	zero	esi
 	zero	edx
 	syscall
-
-	zero	eax
-	mov	[rbp], eax
-
 	ret
 
 irq_message:
