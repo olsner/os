@@ -35,15 +35,17 @@ OUTDIR       := out/x32
 endif
 ACPICA_OUT   := $(OUTDIR)/cuser/acpica
 ACPICA       := acpica
+LWIP_OUT     := $(OUTDIR)/cuser/lwip
+LWIP         := lwip
 GRUBDIR      := $(OUTDIR)/grub
 MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm user/shell.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
-MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c cuser/arping.c
+MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
-MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod) $(GRUBDIR)/cuser/acpica.mod
+MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod) $(GRUBDIR)/cuser/acpica.mod $(GRUBDIR)/cuser/lwip.mod
 DEPFILES     := $(ASMFILES:%.asm=$(OUTDIR)/%.d) $(MOD_OFILES:.o=.d)
 ASMOUTS      := \
 	$(GRUBDIR)/kstart.b \
@@ -121,7 +123,7 @@ $(OUTDIR)/cuser/%.o: cuser/%.cpp
 	@mkdir -p $(@D)
 	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
 
-$(ACPICA_OUT)/%.o: $(ACPICA)/%.c
+$(OUTDIR)/cuser/%.o: %.c
 	@mkdir -p $(@D)
 	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
 
@@ -137,7 +139,6 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o $(OUTDIR)/cuser/printf.o
 $(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
 $(GRUBDIR)/cuser/zeropage.mod: $(OUTDIR)/cuser/printf.o
 $(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
-$(GRUBDIR)/cuser/arping.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm
@@ -238,3 +239,41 @@ all: $(ACPICA_OUT)/acpica.elf
 $(ACPICA_OUT)/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
+
+
+LWIP = lwip
+LWIP_CORE = $(LWIP)/src/core
+LWIP4_CORE = $(LWIP_CORE)/ipv4
+LWIP_API = $(LWIP)/src/api
+
+LWIP_CORE_SRCS = def.c dhcp.c dns.c inet_chksum.c init.c mem.c memp.c netif.c \
+	pbuf.c raw.c stats.c sys.c tcp.c tcp_in.c tcp_out.c timers.c udp.c
+LWIP4_CORE_SRCS = autoip.c icmp.c igmp.c ip4_addr.c ip4.c ip_frag.c
+
+LWIP_SRCS := \
+	$(LWIP)/src/netif/etharp.c \
+	$(addprefix $(LWIP_CORE)/, $(LWIP_CORE_SRCS)) \
+	$(addprefix $(LWIP4_CORE)/, $(LWIP4_CORE_SRCS)) \
+	$(addprefix $(LWIP_API)/, api_lib.c api_msg.c err.c netbuf.c netdb.c netifapi.c sockets.c tcpip.c)
+
+LWIP_OBJS := $(LWIP_SRCS:$(LWIP)/%.c=$(LWIP_OUT)/%.o)
+LWIP_OBJS += $(addprefix $(OUTDIR)/cuser/, \
+	lwip/main.o)
+
+-include $(LWIP_OBJS:.o=.d)
+
+LWIP_CFLAGS := -Icuser -Icuser/lwip
+LWIP_CFLAGS += -I$(LWIP)/src/include -I$(LWIP)/src/include/ipv4 -I$(LWIP)/src/include/ipv6
+#LWIP_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
+LWIP_CFLAGS += -Wno-parentheses
+
+$(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
+
+$(GRUBDIR)/cuser/lwip.mod: cuser/linker.ld $(LWIP_OBJS)
+	@mkdir -p $(@D)
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(LWIP_OUT)/lwip.map
+	$(SIZE_LD)
+
+$(GRUBDIR)/cuser/lwip.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+
+all: $(GRUBDIR)/cuser/lwip.mod

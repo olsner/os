@@ -20,14 +20,14 @@ menuentry "ACPICA+e1000" {
     boot
 }
 
-menuentry "ACPICA+e1000+arping" {
+menuentry "lwIP" {
     multiboot (cd)/kstart.b
     module (cd)/kern/irq.mod
     module (cd)/kern/pic.mod
     module (cd)/kern/console.mod
     module (cd)/cuser/acpica.mod
     module (cd)/cuser/e1000.mod
-    module (cd)/cuser/arping.mod
+    module (cd)/cuser/lwip.mod
     boot
 }
 

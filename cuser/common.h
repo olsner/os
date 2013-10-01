@@ -1,3 +1,6 @@
+#ifndef __COMMON_H
+#define __COMMON_H
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
@@ -129,9 +132,8 @@ enum msg_ethernet {
 	 * until delivered over the wire and the MSG_ETHERNET_SEND_ACK reply is
 	 * sent.
 	 *
-	 * arg1: destination MAC address
-	 * arg2: page number of buffer that contains data to send.
-	 * more? datagram length?
+	 * arg1: page number of buffer that contains data to send.
+	 * arg2: datagram length
 	 * Returns:
 	 * arg1: page number of delivered packet - the page is no longer owned by
 	 * the driver.
@@ -377,18 +379,38 @@ static void prefault(void* addr, int prot) {
 	(void)ipc2(MSG_PFAULT, &rcpt, &arg1, &arg2);
 }
 
-static void memcpy(void* dest, const void* src, size_t sz) {
-	asm("rep movsb": : "D"(dest), "S"(src), "c"(sz) : "memory");
+static void memcpy(void* dest, const void* src, size_t n) {
+	asm("rep movsb": "+D"(dest), "+c"(n), "=m"(dest) : "S"(src) : "memory");
 }
 
 static void memset(void* dest, int c, size_t n) {
-	asm("rep stosb": : "D"(dest), "a"(c), "c"(n) : "memory");
+	asm("rep stosb": "+D"(dest), "+c"(n), "=m"(dest) : "a"(c) : "memory");
+}
+
+static int memcmp(const void* a_, const void* b_, size_t n) {
+	const char* a = a_, *b = b_;
+	while (n--) {
+		int diff = *a++ - *b++;
+		if (diff) return diff;
+	}
+	return 0;
+}
+
+static int strcmp(const char* a, const char* b) {
+	while (*a && *b && *a == *b) {
+		a++, b++;
+	}
+	return *a - *b;
 }
 
 static size_t strlen(const char* s) {
 	size_t res = 0;
 	while (*s++) res++;
 	return res;
+}
+
+static void strcat(char* dest, const char* src) {
+	memcpy(dest + strlen(dest), src, strlen(src));
 }
 
 static void __default_section_init(void) {
@@ -442,3 +464,4 @@ enum pci_regs
 }
 #endif
 
+#endif // __COMMON_H

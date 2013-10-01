@@ -31,6 +31,7 @@ enum regs
 {
 	CTRL = 0,
 	STATUS = 2,
+	EERD = 0x14 / 4,
 	ICR = 0xc0 / 4,
 	ITR = 0xc4 / 4,
 	IMS = 0xd0 / 4,
@@ -44,7 +45,10 @@ enum regs
 	RDTAIL = RDHEAD + 2, // (RDT in intel docs)
 
 	// Good Packets Received Count
-	GPRC = 0x4074 / 4
+	GPRC = 0x4074 / 4,
+
+	RAL0 = 0x5400 / 4,
+	RAH0 = 0x5404 / 4
 };
 
 enum interrupts
@@ -74,6 +78,11 @@ enum
 	// Discard Pause Frames
 	RCTL_DPF = 1 << 22,
 };
+enum
+{
+	EERD_START = 1,
+	EERD_DONE = 1 << 4,
+};
 
 #define ALIGN(n) __attribute__((aligned(n)))
 
@@ -91,6 +100,7 @@ static char receive_buffers[N_DESC][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFE
 
 static int rdhead, rdtail;
 static uintptr_t gprc_total;
+static u64 hwaddr0;
 
 // protocol pointer doubles as handle for the protocol process
 typedef struct protocol
@@ -148,7 +158,8 @@ static int check_recv(int start, int end)
 	return start;
 }
 
-static u16 read_u16be(u8* p) {
+static u16 read_u16be(const void* p_) {
+	const u8* p = p_;
 	return ((u16)p[0] << 8) | p[1];
 }
 
@@ -302,6 +313,12 @@ static void proto_send(protocol* proto, u8 send_buffer) {
 	proto->sending = true;
 }
 
+static u64 read_eeprom(u8 word) {
+	mmiospace[EERD] = EERD_START | (word << 8);
+	while (!(mmiospace[EERD] & EERD_DONE));
+	return (mmiospace[EERD] >> 16) & 0xffff;
+}
+
 void start() {
 	__default_section_init();
 
@@ -348,6 +365,18 @@ void start() {
 
 	u32 status = mmiospace[STATUS];
 	printf("Status: %x\n", status);
+
+	hwaddr0 = read_eeprom(0) | (read_eeprom(1) << 16) | (read_eeprom(2) << (u64)32);
+	printf("e1000: EEPROM hardware address %012lx\n", hwaddr0 & 0xffffffffffff);
+
+	mmiospace[RAL0] = hwaddr0;
+	mmiospace[RAH0] = (hwaddr0 >> 32) | 0x80000000;
+
+	hwaddr0 = mmiospace[RAL0] | ((u64)mmiospace[RAH0] << 32);
+	printf("e1000: hardware address %012lx\n", hwaddr0 & 0xffffffffffff);
+	printf("e1000: address valid = %d\n", (hwaddr0 >> 63) & 1);
+	printf("e1000: address select = %d\n", (hwaddr0 >> 48) & 3);
+	hwaddr0 &= 0xffffffffffff;
 
 	// Allocate receive descriptors and buffers
 	uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
@@ -404,17 +433,18 @@ void start() {
 			continue;
 		}
 		if (rcpt == fresh) {
-			if (msg == MSG_ETHERNET_REG_PROTO) {
+			if ((msg & 0xff) == MSG_ETHERNET_REG_PROTO) {
 				protocol* proto = reg_proto(arg & 0xffff, arg2 & 0xff);
 				printf("e1000: registered ethertype %04x => %p\n", arg & 0xffff, proto);
 				hmod(rcpt, (uintptr_t)proto, 0);
+				send1(MSG_ETHERNET_REG_PROTO, (uintptr_t)proto, hwaddr0);
 			} else {
 				hmod_delete(rcpt);
 			}
 			continue;
 		}
 
-		switch (msg)
+		switch (msg & 0xff)
 		{
 		case MSG_ETHERNET_RCVD:
 			proto_ack_recv(find_proto(rcpt), arg);
