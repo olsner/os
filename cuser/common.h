@@ -386,7 +386,7 @@ static void prefault(void* addr, int prot) {
 }
 
 static void memcpy(void* dest, const void* src, size_t n) {
-	asm("rep movsb": "+D"(dest), "+c"(n), "=m"(dest) : "S"(src) : "memory");
+	asm("rep movsb": "+D"(dest), "+S"(src), "+c"(n), "=m"(dest) : : "memory");
 }
 
 static void memset(void* dest, int c, size_t n) {
