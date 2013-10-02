@@ -45,6 +45,7 @@ static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
 		memcpy(q->payload, src, q->len);
 		src += q->len;
 	}
+	send1(MSG_ETHERNET_RCVD, proto_handle, buffer_index);
 	netif.input(p, &netif);
 }
 
@@ -113,13 +114,12 @@ void start() {
 #endif
 
 	for (;;) {
-		uintptr_t rcpt = proto_handle;
+		uintptr_t rcpt = 0;
 		uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
 		debug("lwip: received %x from %x: %x %x\n", msg, rcpt, arg1, arg2);
 		switch (msg) {
 		case MSG_ETHERNET_RCVD:
 			rcvd(arg1, arg2);
-			send1(MSG_ETHERNET_RCVD, proto_handle, arg1);
 			break;
 		case MSG_ETHERNET_SEND:
 			debug("lwip: send %ld acked\n", arg1);
