@@ -340,6 +340,8 @@ static void tx_done() {
 		if (!(status & TDESC_STA_DD))
 			break;
 
+		transmit_descriptors[new_head].status = 0;
+		transmit_descriptors[new_head].cmd = 0;
 		printf("e1000: TX descriptor %u done\n", new_head);
 		new_head++;
 		new_head %= N_DESC;
