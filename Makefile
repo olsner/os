@@ -265,7 +265,10 @@ LWIP_OBJS += $(addprefix $(OUTDIR)/cuser/, \
 LWIP_CFLAGS := -Icuser -Icuser/lwip
 LWIP_CFLAGS += -I$(LWIP)/src/include -I$(LWIP)/src/include/ipv4 -I$(LWIP)/src/include/ipv6
 #LWIP_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
-LWIP_CFLAGS += -Wno-parentheses
+LWIP_CFLAGS += -Wno-parentheses -Wstrict-aliasing -fno-strict-aliasing
+ifneq ($(LWIP_DEBUG),YES)
+LWIP_CFLAGS += -DNDEBUG
+endif
 
 $(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
 

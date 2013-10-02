@@ -4,6 +4,12 @@
 #include "lwip/autoip.h"
 #include "netif/etharp.h"
 
+#ifdef NDEBUG
+#define debug(...) (void)0
+#else
+#define debug(...) printf(__VA_ARGS__)
+#endif
+
 u32 tm;
 u32 sys_now() {
 	return tm++;
@@ -29,8 +35,10 @@ static ip_addr_t ipaddr, netmask, gw;
 static u64 hwaddr;
 
 static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
-	printf("lwip: received %u bytes\n", packet_length);
+	debug("lwip: received %u bytes\n", packet_length);
+#ifndef NDEBUG
 	hexdump(receive_buffers[buffer_index], packet_length);
+#endif
 	struct pbuf* p = pbuf_alloc(PBUF_LINK, packet_length, PBUF_POOL);
 	const char* src = receive_buffers[buffer_index];
 	for (struct pbuf* q = p; q != NULL; q = q->next) {
@@ -42,7 +50,7 @@ static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
 
 static err_t if_output(struct netif* netif, struct pbuf* p) {
 	if (send_busy[0]) {
-		printf("if_output: busy...\n");
+		debug("if_output: busy...\n");
 		return EAGAIN;
 	}
 	size_t len = 0;
@@ -51,8 +59,10 @@ static err_t if_output(struct netif* netif, struct pbuf* p) {
 		len += p->len;
 		p = p->next;
 	}
-	printf("if_output: %ld bytes\n", len);
+	debug("if_output: %ld bytes\n", len);
+#ifndef NDEBUG
 	hexdump(send_buffers[0], len);
+#endif
 	send_busy[0] = true;
 	send2(MSG_ETHERNET_SEND, proto_handle, NBUFS + 0, len);
 	return 0;
@@ -65,8 +75,7 @@ static err_t if_init(struct netif* netif) {
 	netif->linkoutput = if_output;
 	netif->mtu = 1500;
 	memcpy(netif->hwaddr, &hwaddr, 6);
-	netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_ETHERNET;
-	printf("if_init returns\n");
+	netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_ETHERNET;
 	return 0;
 }
 
@@ -77,13 +86,13 @@ void start() {
 	uintptr_t arg1 = ETHERTYPE_ANY, arg2 = NBUFS;
 	sendrcv2(MSG_ETHERNET_REG_PROTO, proto_handle, &arg1, &arg2);
 	hwaddr = arg1;
-	printf("lwip: registered protocol on %012lx, mapping+faulting buffer...\n", hwaddr);
+	debug("lwip: registered protocol on %012lx, mapping+faulting buffer...\n", hwaddr);
 
 	map(proto_handle, PROT_READ, receive_buffers, 0, sizeof(receive_buffers));
 	map(proto_handle, PROT_READ | PROT_WRITE, send_buffers, sizeof(receive_buffers), sizeof(send_buffers));
 	prefault(receive_buffers[0], PROT_READ);
 	prefault(send_buffers[0], PROT_READ | PROT_WRITE);
-	printf("lwip: registered protocol\n");
+	puts("lwip: registered protocol\n");
 
 	lwip_init();
 //#if !(LWIP_AUTOIP || LWIP_DHCP)
@@ -106,14 +115,14 @@ void start() {
 	for (;;) {
 		uintptr_t rcpt = proto_handle;
 		uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
-		printf("lwip: received %x from %x: %x %x\n", msg, rcpt, arg1, arg2);
+		debug("lwip: received %x from %x: %x %x\n", msg, rcpt, arg1, arg2);
 		switch (msg) {
 		case MSG_ETHERNET_RCVD:
 			rcvd(arg1, arg2);
 			send1(MSG_ETHERNET_RCVD, proto_handle, arg1);
 			break;
 		case MSG_ETHERNET_SEND:
-			printf("lwip: send %ld acked\n", arg1);
+			debug("lwip: send %ld acked\n", arg1);
 			arg1 -= NBUFS;
 			if (arg1 < NBUFS) {
 				send_busy[arg1] = false;
