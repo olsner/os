@@ -1,6 +1,6 @@
 #include "common.h"
 
-//#define printf(...) (void)0
+#define printf(...) (void)0
 
 static const uintptr_t acpi_handle = 4;
 static const uintptr_t pic_handle = 2;
@@ -274,7 +274,6 @@ static void incoming_packet(int start, int end) {
 	if (proto && !proto->unacked_recv && sum <= 4096) {
 		copy_packet(proto->receive_buffer, start, end);
 		printf("e1000: after copy packet, ethtype=%04x\n", read_u16be(proto->receive_buffer + 12));
-		hexdump(proto->receive_buffer, sum);
 		proto->unacked_recv = true;
 		send2(MSG_ETHERNET_RCVD, (uintptr_t)proto, 0, sum);
 	} else {
