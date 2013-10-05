@@ -12,11 +12,12 @@ PIC_IRQ_BASE	equ	0x20
 ; Base where we map incoming IRQs. (handles to rawIRQ process)
 IN_IRQ_BASE	equ	0x30
 
+IRQ_DRIVER	equ	1
 fresh_handle	equ	0x100
 
 boot:
 	; Input: IRQ driver in rdi
-	mov	edi, 1
+	mov	edi, IRQ_DRIVER
 	push	rdi
 	; Check that rdi doesn't overlap our internal stuff:
 	; 0x20..0x2f: keep track of our clients

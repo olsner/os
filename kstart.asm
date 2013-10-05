@@ -26,7 +26,6 @@
 %define verbose_procstate 0
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
-%define builtin_keyboard 0
 %define builtin_timer 1
 %define bochs_con 1
 
@@ -437,15 +436,6 @@ test_free:
 	jmp	test_free
 
 .done:
-
-%if builtin_keyboard
-init_keyboard:
-lodstr	rdi,	'Enable keyboard', 10
-	call	printf
-
-	mov	al,0xff ^ 2 ; Enable IRQ 1 (keyboard)
-	out	PIC1_DATA, al
-%endif
 
 fpu_initstate:
 	call	allocate_frame
@@ -2104,47 +2094,6 @@ save_from_iret:
 
 	mov	rsp, rcx
 	ret
-
-%if builtin_keyboard
-key_handler:
-	push	rax
-	push	rbp
-	swapgs
-
-	mov	word [rel 0xb8002], 0x0700|'K'
-
-	zero	eax
-	mov	rbp, [gs:rax + gseg.self]
-	add	rax, [rbp + gseg.process]
-	jz	.no_save
-	; The rax and rbp we saved above, store them in process
-	pop	qword [rax + proc.rbp]
-	pop	qword [rax + proc.rax]
-	call	save_from_iret
-
-	mov	rdi, [rbp + gseg.process]
-	mov	qword [rbp + gseg.process], 0 ; some kind of temporary code
-	call	runqueue_append
-	jmp	.saved
-.no_save:
-	; Pop the saved rax/rbp, plus the 5-word interrupt stack frame
-	add	rsp, 7 * 8
-.saved:
-
-KEY_DATA	equ 0x60
-
-	zero	eax
-	in	al, KEY_DATA
-
-lodstr	rdi,	'Key interrupt! key %x', 10
-	mov	esi, eax
-	call	printf
-
-	mov	al, PIC_EOI
-	out	PIC1_CMD, al
-
-	jmp	switch_next
-%endif
 
 %if builtin_timer
 timer_handler:
@@ -3912,11 +3861,7 @@ idt_data:
 	; 32..47: PIC interrupts
 %assign idt_nvec 32
 %rep 16
-%if builtin_keyboard && idt_nvec == 33
-	reg_vec 33, key_handler
-%else
 	reg_vec idt_nvec, handle_irq_ %+ idt_nvec
-%endif
 %endrep
 %if builtin_timer
 	reg_vec APIC_TIMER_IRQ, timer_handler
