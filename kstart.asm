@@ -26,7 +26,6 @@
 %define verbose_procstate 0
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
-%define builtin_timer 0
 %define bochs_con 1
 
 %define debug_tcalls 0
@@ -294,58 +293,6 @@ cleanup_pages:
 	invlpg	[rel -0x1000]
 
 apic_setup:
-	mov	ecx, MSR_APIC_BASE
-	rdmsr
-	; Clear high part of base address
-	zero	edx
-	; Set base address, enable APIC (0x800), and set boot-strap CPU
-	mov	eax, APIC_PBASE | 0x800 | 0x100
-	wrmsr
-
-; referenced by IDT table generation
-%assign APIC_TIMER_IRQ 0x30
-
-%if builtin_timer
-APIC_REG_TPR		equ	0x80
-APIC_REG_EOI		equ	0xb0
-APIC_REG_SPURIOUS	equ	0xf0
-; Bit in APIC_REG_SPURIOUS
-APIC_SOFTWARE_ENABLE	equ	0x100
-
-APIC_REG_TIMER_LVT	equ	0x320
-APIC_REG_PERFC_LVT	equ	0x340
-APIC_REG_LINT0_LVT	equ	0x350
-APIC_REG_LINT1_LVT	equ	0x360
-APIC_REG_ERROR_LVT	equ	0x370
-APIC_REG_APICTIC	equ	0x380
-APIC_REG_APICTCC	equ	0x390
-APIC_REG_TIMER_DIV	equ	0x3e0
-
-%assign rbpoffset 0x380
-
-	mov	rbp,kernel_base-0x1000+rbpoffset
-	mov	ax,1010b
-	mov	dword [rbp+APIC_REG_TIMER_DIV-rbpoffset],eax  ; Divide by 128
-
-	mov	dword [rbp+APIC_REG_TIMER_LVT-rbpoffset], 0x20000 + APIC_TIMER_IRQ
-	mov	dword [rbp+APIC_REG_PERFC_LVT-rbpoffset], 0x10000
-	mov	dword [rbp+APIC_REG_LINT0_LVT-rbpoffset], 0x8700
-	mov	dword [rbp+APIC_REG_LINT1_LVT-rbpoffset], 0x0400
-	mov	dword [rbp+APIC_REG_ERROR_LVT-rbpoffset], 0x10000
-	mov	dword [rbp+APIC_REG_APICTIC-rbpoffset],APIC_TICKS
-
-	; Enable the APIC and set the spurious interrupt vector to 0xff
-	xor	eax,eax
-	mov	ax,APIC_SOFTWARE_ENABLE | 0xff
-	or	dword [rbp+APIC_REG_SPURIOUS-rbpoffset],eax
-
-	; Set end-of-interrupt flag so we get some interrupts.
-	mov	dword [rbp+APIC_REG_EOI-rbpoffset],eax
-	; Set the task priority register to 0 (accept all interrupts)
-	zero	eax
-	mov	cr8,rax
-%endif
-
 	mov	ecx, MSR_STAR
 	; cs for syscall (high word) and sysret (low word).
 	; cs is loaded from selector or selector+16 depending on whether we're returning to compat (+16) or long mode (+0)
@@ -2101,57 +2048,6 @@ save_from_iret:
 	mov	rsp, rcx
 	ret
 
-%if builtin_timer
-timer_handler:
-	push	rax
-	push	rbp
-	swapgs
-
-	mov	word [rel 0xb8002], 0x0700|'T'
-
-	zero	eax
-	mov	rbp, [gs:rax + gseg.self]
-	inc	dword [rbp + gseg.curtime]
-	mov	eax, dword [rel -0x1000 + APIC_REG_APICTCC]
-	mov	dword [rbp + gseg.tick], eax
-	mov	dword [rel -0x1000 + APIC_REG_APICTIC], APIC_TICKS
-	mov	dword [rel -0x1000 + APIC_REG_EOI], 0
-
-	mov	rax, [rbp + gseg.process]
-	test	rax, rax
-	jnz	.save
-
-	; Pop the saved rax/rbp, plus the 5-word interrupt stack frame
-	add	rsp, 7 * 8
-%if log_timer_interrupt
-lodstr	rdi, 'Timer interrupt while idle', 10
-	call	printf
-%endif
-	jmp	switch_next
-
-.save:
-	; The rax and rbp we saved above, store them in process
-	pop	qword [rax + proc.rbp]
-	pop	qword [rax + proc.rax]
-	call	save_from_iret
-
-%if log_timer_interrupt
-lodstr	rdi, 'Timer interrupt in %p (%x)', 10
-	mov	rsi, [rbp + gseg.process]
-	call	print_proc
-%endif
-	mov	rdi, [rbp + gseg.process]
-	mov	qword [rbp + gseg.process], 0 ; some kind of temporary code
-	call	runqueue_append
-%if log_timer_interrupt > 1
-lodstr	rdi, 'Next proc %p (%x)', 10
-	mov	rsi, [rbp + gseg.runqueue + dlist.head]
-	sub	rsi, proc.node
-	call	print_proc
-%endif
-	jmp	switch_next
-%endif
-
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
 	push	rbp
 	push	rax
@@ -3902,11 +3798,7 @@ idt_data:
 	; 48: APIC timer interrupt
 %assign idt_nvec 32
 %rep 17
-%if builtin_timer && idt_nvec == APIC_TIMER_IRQ
-	reg_vec APIC_TIMER_IRQ, timer_handler
-%else
 	reg_vec idt_nvec, handle_irq_ %+ idt_nvec
-%endif
 %endrep
 .vectors_end:
 
