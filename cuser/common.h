@@ -147,6 +147,21 @@ enum
 	ETHERTYPE_ANY = 0,
 };
 
+enum
+{
+	/**
+	 * Register a timer to trigger in approximately N nanoseconds.
+	 *
+	 * arg1: timeout.
+	 */
+	MSG_REG_TIMER = MSG_USER,
+	/**
+	 * A registered timer has triggered. The timer will not be triggered again
+	 * unless you re-register a new timeout.
+	 */
+	MSG_TIMER_T,
+};
+
 enum msg_kind {
 	MSG_KIND_SEND = 0,
 	MSG_KIND_CALL = 1,

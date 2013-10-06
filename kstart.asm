@@ -26,7 +26,7 @@
 %define verbose_procstate 0
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
-%define builtin_timer 1
+%define builtin_timer 0
 %define bochs_con 1
 
 %define debug_tcalls 0
@@ -113,7 +113,8 @@ struc	gseg
 	.fpu_process	resq 1
 	; Process that should receive IRQ interrupts
 	.irq_process	resq 1
-	; bitmask of irqs that have been delayed (extend to per-irq counter?)
+	; bitmask of irqs that have been delayed
+	; (also add per-irq counter?)
 	.irq_delayed	resq 1
 
 	.free_frame	resq 1
@@ -301,6 +302,9 @@ apic_setup:
 	mov	eax, APIC_PBASE | 0x800 | 0x100
 	wrmsr
 
+; referenced by IDT table generation
+%assign APIC_TIMER_IRQ 0x30
+
 %if builtin_timer
 APIC_REG_TPR		equ	0x80
 APIC_REG_EOI		equ	0xb0
@@ -316,8 +320,6 @@ APIC_REG_ERROR_LVT	equ	0x370
 APIC_REG_APICTIC	equ	0x380
 APIC_REG_APICTCC	equ	0x390
 APIC_REG_TIMER_DIV	equ	0x3e0
-
-%assign APIC_TIMER_IRQ 0x30
 
 %assign rbpoffset 0x380
 
@@ -496,6 +498,11 @@ lodstr	rdi,	'Module at %p size %x', 10 ; : %s', 10, '%s', 10
 	push	rcx
 	push	r8
 	call	launch_user
+	push	rax
+lodstr	rdi, '=> process %p', 10
+	mov	rsi, rax
+	call	printf
+	pop	rax
 	pop	r8
 	pop	rcx
 	pop	rsi
@@ -614,11 +621,6 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 %endif
 
 	; Not very nice to duplicate message-sending here...
-	; Oh, and we forget to check some things:
-	; - the receiver has to be in an open-ended (fresh or null) receive,
-	;   otherwise we might accidentally "respond" to an in-progress call,
-	;   which will now get dropped on the floor.
-	; - (other things too, probably)
 	mov	rax, [rbp + gseg.irq_process]
 	test	[rax + proc.flags], byte PROC_IN_SEND
 	jnz	.delay
@@ -638,10 +640,14 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 
 	jmp	switch_to
 .delay:
+%if log_irq
 lodstr	rdi,	'handle_irq_generic(%x): delivery delayed', 10
 	mov	rsi, rbx
 	call	printf
+%endif
 
+	sub	ebx, 32
+	; FIXME bounds check
 	bts	dword [rbp + gseg.irq_delayed], ebx
 	jmp	switch_next
 
@@ -653,7 +659,7 @@ handle_irq_ %+ %1:
 %endmacro
 
 %assign irq 32
-%rep 16
+%rep 17
 handle_irqN_generic irq
 %assign irq irq + 1
 %endrep
@@ -3123,6 +3129,18 @@ lodstr	rdi, '%p: recv from fresh %x', 10
 	call	printf
 %endif
 
+	mov	rax, [rbp + gseg.process]
+	cmp	rax, [rbp + gseg.irq_process]
+	jne	.not_irq
+%if log_irq
+lodstr	rdi, 'recv in irq process, delayed=%x', 10
+	mov	rsi, [rbp + gseg.irq_delayed]
+	call	printf
+%endif
+	cmp	qword [rbp + gseg.irq_delayed], 0
+	jne	.recv_irq
+.not_irq:
+
 	call	allocate_frame
 	mov	rdi, [rbp + gseg.process]
 	mov	rdx, [rdi + proc.rdi]
@@ -3130,6 +3148,28 @@ lodstr	rdi, '%p: recv from fresh %x', 10
 	zero	esi
 	; rax = handle, rdi = receiving process
 	jmp	.do_recv
+
+.recv_irq:
+	zero	esi
+.irq_loop
+	btr	dword [rbp + gseg.irq_delayed], esi
+	jc	.found_irq
+	inc	esi
+	jmp	.irq_loop
+.found_irq:
+	add	esi, 32
+	mov	rax, [rbp + gseg.process]
+%if log_irq
+	push	rsi
+lodstr	rdi, 'recv delayed irq %x', 10
+	call	printf
+	pop	rsi
+%endif
+	zero	edi
+	swapgs
+	mov	rax, [rbp + gseg.process]
+	mov	qword [rax + proc.rax], msg_send(MSG_IRQ_T)
+	jmp	fastret.no_clear
 
 syscall_call:
 	mov	rax, [rbp + gseg.process]
@@ -3859,13 +3899,15 @@ idt_data:
 	;reg_vec 8, handler_DF
 	reg_vec 14, handler_PF
 	; 32..47: PIC interrupts
+	; 48: APIC timer interrupt
 %assign idt_nvec 32
-%rep 16
-	reg_vec idt_nvec, handle_irq_ %+ idt_nvec
-%endrep
-%if builtin_timer
+%rep 17
+%if builtin_timer && idt_nvec == APIC_TIMER_IRQ
 	reg_vec APIC_TIMER_IRQ, timer_handler
+%else
+	reg_vec idt_nvec, handle_irq_ %+ idt_nvec
 %endif
+%endrep
 .vectors_end:
 
 section bss

@@ -10,16 +10,6 @@ menuentry "irq+pic+console+shell" {
     boot
 }
 
-menuentry "ACPICA+e1000" {
-    multiboot (cd)/kstart.b
-    module (cd)/kern/irq.mod
-    module (cd)/kern/pic.mod
-    module (cd)/kern/console.mod
-    module (cd)/cuser/acpica.mod
-    module (cd)/cuser/e1000.mod
-    boot
-}
-
 menuentry "lwIP" {
     multiboot (cd)/kstart.b
     module (cd)/kern/irq.mod
@@ -28,6 +18,16 @@ menuentry "lwIP" {
     module (cd)/cuser/acpica.mod
     module (cd)/cuser/e1000.mod
     module (cd)/cuser/lwip.mod
+    boot
+}
+
+menuentry "user-apic" {
+    multiboot (cd)/kstart.b
+    module (cd)/kern/irq.mod
+    module (cd)/kern/pic.mod
+    module (cd)/kern/console.mod
+    module (cd)/cuser/apic.mod
+    module (cd)/cuser/timer_test.mod
     boot
 }
 

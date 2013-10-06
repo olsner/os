@@ -42,7 +42,7 @@ MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm user/shell.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
-MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c
+MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
 MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod) $(GRUBDIR)/cuser/acpica.mod $(GRUBDIR)/cuser/lwip.mod
@@ -136,9 +136,14 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o $(OUTDIR)/cuser/printf.o
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
 
-$(GRUBDIR)/cuser/test_maps.mod: $(OUTDIR)/cuser/printf.o
-$(GRUBDIR)/cuser/zeropage.mod: $(OUTDIR)/cuser/printf.o
-$(GRUBDIR)/cuser/e1000.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+WANT_PRINTF = test_maps zeropage
+WANT_PRINTF += timer_test
+WANT_REAL_PRINTF = e1000 apic
+
+$(WANT_PRINTF:%=$(GRUBDIR)/cuser/%.mod): $(OUTDIR)/cuser/printf.o
+$(WANT_REAL_PRINTF:%=$(GRUBDIR)/cuser/%.mod): \
+	$(OUTDIR)/cuser/acpica/printf.o \
+	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm

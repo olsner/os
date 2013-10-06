@@ -19,7 +19,7 @@
 ; are reserved for cpu exceptions)
 fresh_handle	equ	256
 ; Further limit the interrupts we actually support
-%define MAX_IRQ 0x30
+%define MAX_IRQ 0x40
 %define IRQ_START 0x20
 %define NUM_IRQS (MAX_IRQ - IRQ_START)
 
