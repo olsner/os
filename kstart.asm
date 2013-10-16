@@ -26,6 +26,8 @@
 %define verbose_procstate 0
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
+; print each word of the mbootinfo block on bootup
+%define log_mbi 0
 %define bochs_con 1
 
 %define debug_tcalls 0
@@ -150,12 +152,14 @@ section .text
 align 4
 mboot_header:
 mboot MBOOT_FLAG_LOADINFO | MBOOT_FLAG_NEED_MEMMAP
+	; | MBOOT_FLAG_NEED_VIDMODE
 mboot_load \
 	text_paddr(mboot_header), \
 	section..text.vstart, \
 	section.data.end, \
 	kernel_reserved_end, \
 	text_paddr(start32_mboot)
+;mboot_vidmode_text
 endmboot
 
 bits 64
@@ -395,6 +399,28 @@ fpu_initstate:
 	mov	rax,cr0
 	bts	rax,CR0_TS_BIT
 	mov	cr0,rax
+
+%if log_mbi
+show_mbi_info:
+	mov	esi, dword [mbi_pointer]
+	add	rsi, phys_vaddr(0)
+	mov	rbx, rsi
+	mov	ecx, mbootinfo_size / 4
+.loop:
+	lodsd
+	push	rcx
+	push	rsi
+
+lodstr	rdi, 'mboot %x: %x', 10
+	sub	rsi, rbx
+	sub	esi, 4
+	mov	edx, eax
+	call	printf
+
+	pop	rsi
+	pop	rcx
+	loop	.loop
+%endif
 
 list_mbi_modules:
 	mov	rbx, phys_vaddr(0)

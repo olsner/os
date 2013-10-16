@@ -49,6 +49,15 @@ assert (header_pos == 12)
 mboot_dd %1, %2, %3, %4, %5
 %endmacro
 
+%macro mboot_vidmode_text 0
+	dd 1
+times 3	dd 0
+%endmacro
+
+%macro mboot_vidmode_any 0
+times 4	dd 0
+%endmacro
+
 %macro endmboot 0
 %if mboot_flags & (MBOOT_FLAG_LOADINFO)
 assert header_pos >= 32
@@ -68,6 +77,34 @@ struc mboot_vbe
 .iface_seg	resw 1
 .iface_off	resw 1
 .iface_len	resw 1
+endstruc
+
+struc mboot_fb
+.addr		resq 1
+.pitch		resd 1
+.width		resd 1
+.height		resd 1
+.bpp		resb 1
+.type		resb 1
+.colors		resb 6
+endstruc
+
+MBOOT_FB_INDEXED equ 0
+MBOOT_FB_RGB	equ 1
+MBOOT_FB_TEXT	equ 2
+
+struc mboot_fb_palette
+.addr		resd 1
+.count		resw 1
+endstruc
+
+struc mboot_fb_pixelfmt
+.red_shift	resb 1
+.red_mask	resb 1
+.green_shift	resb 1
+.green_mask	resb 1
+.blue_shift	resb 1
+.blue_mask	resb 1
 endstruc
 
 struc mbootinfo
@@ -99,7 +136,8 @@ struc mbootinfo
 .boot_loader	resd 1
 .apm_table	resd 1
 
-.vbe		resb mboot_vbe_size
+.vbe		restruc mboot_vbe
+.fb		restruc mboot_fb
 endstruc
 
 struc mboot_mod
