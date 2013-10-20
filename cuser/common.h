@@ -386,9 +386,6 @@ static void* map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t o
 		handle, prot, (uintptr_t)local_addr, offset, size);
 }
 
-// FIXME Workaround for the fact that anonymous mappings can only span a single
-// page (currently).
-// FIXME Also uses a kernel backdoor API
 static void map_anon(int prot, void *local_addr, uintptr_t size) {
 	map(0, MAP_ANON | prot, local_addr, 0, size);
 }
