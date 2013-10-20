@@ -564,8 +564,9 @@ lodstr	rdi,	'handle_irq_generic(%x): proc=%p', 10
 	call	printf
 %endif
 
-	mov	rdi, [rbp + gseg.process]
-	mov	qword [rbp + gseg.process], 0 ; some kind of temporary code
+	; some kind of temporary code - do we need to clear gseg.process to 0?
+	zero	edi
+	xchg	rdi, [rbp + gseg.process]
 	call	runqueue_append
 	jmp	.saved
 .no_save:
@@ -601,8 +602,7 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 .recv_from_any:
 
 	and	[rax + proc.flags], byte ~PROC_IN_RECV
-	mov	qword [rax + proc.rax], 0
-	mov	[rax + proc.rsi], ebx
+	mov	[rax + proc.rsi], rbx
 	mov	qword [rax + proc.rax], msg_send(MSG_IRQ_T)
 
 	jmp	switch_to
@@ -914,7 +914,8 @@ lodstr rdi, 'Unblocked %p (%x)', 10
 	cmp	[rsi + proc.waiting_for], rdi
 	jne	.not_waiting
 
-	mov	qword [rsi + proc.waiting_for], 0
+	zero	eax
+	mov	[rsi + proc.waiting_for], rax
 	add	rdi, proc.waiters
 	add	rsi, proc.node
 	call	dlist_remove
@@ -946,7 +947,7 @@ lodstr	rdi, 'runqueue_append %p', 10
 %endif
 	test	[rdi + proc.flags], byte PROC_RUNNING
 	jnz	.already_running
-	test	dword [rdi + proc.flags], PROC_IN_SEND | PROC_IN_RECV
+	test	[rdi + proc.flags], byte PROC_IN_SEND | PROC_IN_RECV
 	jne	.queueing_blocked
 	bts	dword [rdi + proc.flags], PROC_ON_RUNQUEUE_BIT
 	jc	.ret ; already on runqueue
@@ -992,7 +993,8 @@ lodstr	rdi, 'Idle: proc=%p', 10
 	mov	rsi, [rbp + gseg.process]
 	call	printf
 %endif
-	mov	qword [rbp + gseg.process], 0
+	zero	eax
+	mov	[rbp + gseg.process], rax
 	; Fun things to do while idle: check how soon the first timer wants to
 	; run, make sure the APIC timer doesn't trigger before then.
 	swapgs
@@ -1012,7 +1014,8 @@ lodstr	rdi,	'Idle: hlt fell through?', 10
 block_and_switch:
 	btr	dword [rdi + proc.flags], PROC_RUNNING_BIT
 	jnc	switch_next
-	mov	qword [rbp + gseg.process], 0
+	zero	edi
+	mov	[rbp + gseg.process], rdi
 
 switch_next:
 %if log_switch_next
@@ -1966,7 +1969,7 @@ lodstr	rdi,	'Found ', %2, ' %p at %p', 10
 	call	printf
 %endif
 
-	test	qword [r12], 1
+	test	byte [r12], 1
 	jnz	%%have_entry
 
 	cmp	qword [r12], 0
@@ -1998,7 +2001,7 @@ lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	do_table 21, 'PT'
 	; r12 now points to PT, add the PTE
 	index_table [rsp], 12, rdi, r12
-	test	qword [r12], 1
+	test	byte [r12], 1
 	; We should probably check and handle mapping the same page twice as a
 	; no-op. Or maybe not - since it indicates other code tried to map
 	; something - getting a fault for an already-mapped page might mean the
@@ -3402,8 +3405,9 @@ lodstr	rdi, '%p (%x) just sent, not sendrcv', 10
 %endif
 
 	; The sender was only sending - unblock it if necessary
+	zero	eax
+	mov	[rsi + proc.rdi], rax
 	test	[rsi + proc.flags], byte PROC_RUNNING
-	mov	qword [rsi + proc.rdi], 0
 	jnz	.sender_was_running
 
 	; rdi: process that was being waited for
