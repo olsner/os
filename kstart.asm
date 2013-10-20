@@ -288,13 +288,9 @@ cleanup_pages:
 
 	; Clear old link that points to low_pdp (where these mappings will
 	; otherwise be duplicated)
-	mov	[pages.pml4], dword 0
+	mov	[pages.pml4], eax
 	mov	[pages.kernel_pdp + 0xff0], dword pages.low_pd | 3
 	mov	[pages.low_pd + 0xff8], dword pages.low_pt | 3
-	; Set page kernel_base-0x1000 to uncacheable and map it to the APIC
-	; address.
-	mov	[pages.low_pt + 0xff8], dword APIC_PBASE | 0x13
-	invlpg	[rel -0x1000]
 
 apic_setup:
 	mov	ecx, MSR_STAR
