@@ -545,8 +545,6 @@ handle_irq_generic:
 	push	rbp
 	swapgs
 
-	mov	word [rel 0xb8002], 0x0700|'Q'
-
 	zero	eax
 	mov	rbp, [gs:rax + gseg.self]
 	add	rax, [rbp + gseg.process]
@@ -2500,8 +2498,6 @@ syscall_entry:
 	; rax = syscall number, rax = return value (error code)
 
 	; interrupts are disabled the whole time, TODO enable interrupts after switching GS and stack
-
-	mov	word [rel 0xb8002], 0xf00|'S'
 
 	swapgs
 	xchg	rsp, [gs:gseg.rsp]
