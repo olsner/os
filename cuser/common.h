@@ -397,6 +397,12 @@ static void prefault(void* addr, int prot) {
 	(void)ipc2(MSG_PFAULT, &rcpt, &arg1, &arg2);
 }
 
+static void grant(uintptr_t rcpt, void* addr, int prot) {
+	uintptr_t arg1 = (uintptr_t)addr;
+	uintptr_t arg2 = prot;
+	(void)ipc2(MSG_GRANT, &rcpt, &arg1, &arg2);
+}
+
 static void memcpy(void* dest, const void* src, size_t n) {
 	asm("rep movsb": "+D"(dest), "+S"(src), "+c"(n), "=m"(dest) : : "memory");
 }

@@ -1,5 +1,7 @@
 #include "common.h"
 
+#define printf(...) (void)0
+
 static const uintptr_t irq_driver = 1;
 static const uintptr_t fresh_handle = 100;
 static const uintptr_t apic_pbase = 0xfee00000;
@@ -52,10 +54,6 @@ REG(TIMER_DIV, 0x3e0);
 enum TimerDiv {
 	TIMER_DIV_128 = 10,
 };
-
-static volatile u32 apic[1024] PLACEHOLDER_SECTION ALIGN(4096);
-// TODO Make a page of timer information that can be shared.
-static uintptr_t tick_counter;
 
 typedef struct timer timer;
 struct timer {
@@ -117,6 +115,8 @@ timer* timer_add(timer** head, timer* timer) {
 	return timer;
 }
 
+static volatile u32 apic[1024] PLACEHOLDER_SECTION ALIGN(4096);
+
 static timer* timers_head;
 // one MILLION timers
 #define MAX_TIMERS (1048576)
@@ -124,15 +124,40 @@ static timer timer_heap[MAX_TIMERS];
 static u32 timer_heap_limit = 0;
 static timer* free_timers;
 static u32 prevTIC = 0;
+static struct {
+	u64 tick_counter;
+	u64 ms_counter;
+	u64 ns_counter;
+	// pad to a full page to avoid exposing anything we don't have to
+	u64 padding[510];
+} static_data;
 
-#define MAX_U32(x) ((x) > (u32)-1 ? (u32)-1 : (x))
+static u64 ticks_to_millis(u64 ticks) {
+	return ticks / (apic_ticks / 1000);
+}
+static u64 ticks_to_nanos(u64 ticks) {
+	return 500 * ticks / (apic_ticks / 2000000);
+}
+
+u64 get_tick_counter() {
+	// Since this is a count*down* timer, the elapsed count is the initial count
+	// minus the current count.
+	u32 tcc = apic[APICTCC];
+	printf("apic: from tic %u to tcc %u: %u elapsed\n", prevTIC, tcc, prevTIC - tcc);
+	static_data.tick_counter += prevTIC - tcc;
+	static_data.ms_counter = ticks_to_millis(static_data.tick_counter);
+	prevTIC = tcc;
+	return static_data.tick_counter;
+}
+#define MIN(x,y) ((x) > (y) ? (y) : (x))
+#define MAX_U32(x) MIN(x, (u32)-1)
 void setTIC(u64 ticks) {
 	ticks = MAX_U32(ticks);
+	// When we reset TIC we lose track of how much time passed between TIC..TCC
+	get_tick_counter();
 	prevTIC = ticks;
 	apic[APICTIC] = ticks;
-}
-u32 getElapsedTCC() {
-	return prevTIC - apic[APICTCC];
+	printf("apic: setTIC %u\n", ticks);
 }
 
 timer* timer_alloc() {
@@ -154,15 +179,9 @@ void timer_free(timer* t) {
 timer* reg_timer(u64 ns) {
 	u64 ticks = (ns / 1000) * apic_ticks / 1000000;
 	printf("apic: %lu ns -> %lu ticks\n", ns, ticks);
-	u64 old_timeout = timers_head ? timers_head->timeout : (u64)-1;
+	u64 tick_counter = get_tick_counter();
 	u64 tick_timeout = tick_counter + ticks;
-	printf("apic: old timeout in %lu ticks\n", old_timeout - tick_counter);
-	timer* t = timer_add(&timers_head, timer_new(tick_timeout));
-	if (tick_timeout < old_timeout) {
-		printf("apic: new deadline %lu ticks\n", tick_timeout - tick_counter);
-		setTIC(ticks);
-	}
-	return t;
+	return timer_add(&timers_head, timer_new(tick_timeout));
 }
 
 // Fun stuff: APIC is CPU local, user programs generally don't know which CPU
@@ -196,30 +215,17 @@ void start() {
 	// enable and set spurious interrupt vector to 0xff
 	apic[SPURIOUS] |= APIC_SOFTWARE_ENABLE | 0xff;
 
-	// Set end-of-interrupt flag so we get some interrupts.
-	apic[EOI] = 0;
-	// Set the task priority register to 0 (accept all interrupts)
-	// Set this in the kernel somewheres...
-	//zero	eax
-	//mov	cr8,rax
+	setTIC(-1);
 
+	bool need_eoi = true;
 	for (;;) {
-		uintptr_t rcpt = fresh_handle;
-		uintptr_t arg1, arg2;
-		const uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
-
-		if (rcpt == irq_driver && (msg & 0xff) == MSG_IRQ_T) {
+		{
+			u64 tick_counter = get_tick_counter();
 			//send1(MSG_IRQ_ACK, irq_driver, arg1);
-			u32 tcc = getElapsedTCC();
-			tick_counter += tcc;
-			printf("T: %lu [tcc=%u]\n", tick_counter, tcc);
+			printf("T: %lu %lums\n", tick_counter, static_data.ms_counter);
 			if (!timers_head) {
-				printf("apic: woken up with no timers? boo.\n");
-				setTIC(0);
-				apic[EOI] = 0;
-				continue;
-			}
-			if (timers_head->timeout <= tick_counter) {
+				printf("apic: idle.\n");
+			} else if (timers_head->timeout <= tick_counter) {
 				printf("apic: triggered %p.\n", timers_head);
 				timer* t = timer_pop(&timers_head);
 				send1(MSG_TIMER_T, (uintptr_t)t, tick_counter);
@@ -231,17 +237,32 @@ void start() {
 				printf("apic: time to next timeout %lu ticks\n", t_next);
 				setTIC(t_next);
 			}
-			apic[EOI] = 0;
+			if (need_eoi) {
+				apic[EOI] = 0;
+				need_eoi = false;
+			}
+		}
+
+		uintptr_t rcpt = fresh_handle;
+		uintptr_t arg1, arg2;
+		const uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
+
+		if (rcpt == irq_driver && (msg & 0xff) == MSG_IRQ_T) {
+			// Keep the counter counting please. (Switch back to periodic mode?)
+			setTIC((u32)-1);
+			need_eoi = true;
 			continue;
 		}
 
 		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
 		switch (msg & 0xff) {
-		case MSG_REG_TIMER: {
-			timer* t = reg_timer(arg1);
-			hmod(rcpt, (uintptr_t)t, 0);
+		case MSG_REG_TIMER:
+			hmod(rcpt, (uintptr_t)reg_timer(arg1), 0);
 			break;
-		}
+		case MSG_PFAULT:
+			*(volatile u64*)&static_data;
+			grant(rcpt, &static_data, PROT_READ);
+			break;
 		}
 	}
 }

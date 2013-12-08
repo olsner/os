@@ -1,8 +1,11 @@
+#include "lwip/autoip.h"
 #include "lwip/dhcp.h"
 #include "lwip/init.h"
 #include "lwip/ip.h"
-#include "lwip/autoip.h"
+#include "lwip/timers.h"
 #include "netif/etharp.h"
+
+#define USE_TIMER LWIP_DHCP
 
 #ifdef NDEBUG
 #define debug(...) (void)0
@@ -10,15 +13,13 @@
 #define debug(...) printf(__VA_ARGS__)
 #endif
 
-u32 tm;
-u32 sys_now() {
-	return tm++;
-}
-
 #include "common.h"
 
 static const uintptr_t eth_handle = 5;
+static const uintptr_t apic_handle = 6;
 static const uintptr_t proto_handle = 0x100;
+static const uintptr_t timer_handle = 0x101;
+static const uintptr_t fresh_handle = 0x200;
 
 static const u16 ETHERTYPE_ARP = 0x0806;
 
@@ -33,6 +34,30 @@ extern void netif_rcvd(const char*, size_t);
 struct netif netif;
 static ip_addr_t ipaddr, netmask, gw;
 static u64 hwaddr;
+
+#if USE_TIMER
+// Should be a struct somewhere we can share it with the apic implementation.
+static struct {
+	u64 tick_counter;
+	u64 ms_counter;
+} timer_data PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
+
+u32 sys_now() {
+	u32 res = timer_data.ms_counter;
+	printf("sys_now: %u\n", res);
+	return res;
+}
+void check_timers() {
+	u64 timeout_ms = sys_check_timeouts();
+	if (timeout_ms != (u32)-1) {
+		hmod(apic_handle, apic_handle, timer_handle);
+		send1(MSG_REG_TIMER, timer_handle, timeout_ms * 1000000);
+	}
+}
+#else
+static void check_timers() {}
+u32 sys_now() { static u32 c; return c++; }
+#endif
 
 static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
 	debug("lwip: received %u bytes\n", packet_length);
@@ -95,12 +120,18 @@ void start() {
 	prefault(send_buffers[0], PROT_READ | PROT_WRITE);
 	puts("lwip: registered protocol\n");
 
+#if USE_TIMER
+	map(apic_handle, PROT_READ, &timer_data, 0, 4096);
+	prefault(&timer_data, PROT_READ);
+	puts("lwip: initialized timer\n");
+#endif
+
 	lwip_init();
-//#if !(LWIP_AUTOIP || LWIP_DHCP)
+#if !(LWIP_AUTOIP || LWIP_DHCP)
 	IP4_ADDR(&ipaddr, 192,168,100,3);
 	IP4_ADDR(&netmask, 255,255,255,0);
 	IP4_ADDR(&gw, 192,168,100,1);
-//#endif
+#endif
 	netif_add(&netif, &ipaddr, &netmask, &gw, NULL, if_init, ethernet_input);
 	// Set hardware address of netif. The ethernet driver doesn't send it
 	// though, it doesn't even know its own MAC yet.
@@ -113,29 +144,30 @@ void start() {
 	dhcp_start(&netif);
 #endif
 
+	check_timers();
 	for (;;) {
-		uintptr_t rcpt = 0;
+		uintptr_t rcpt = fresh_handle;
 		uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
-		debug("lwip: received %x from %x: %x %x\n", msg, rcpt, arg1, arg2);
-		switch (msg) {
-		case MSG_ETHERNET_RCVD:
-			rcvd(arg1, arg2);
-			break;
-		case MSG_ETHERNET_SEND:
-			debug("lwip: send %ld acked\n", arg1);
-			arg1 -= NBUFS;
-			if (arg1 < NBUFS) {
-				send_busy[arg1] = false;
+		debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
+		if (rcpt == proto_handle) {
+			switch (msg) {
+			case MSG_ETHERNET_RCVD:
+				rcvd(arg1, arg2);
+				break;
+			case MSG_ETHERNET_SEND:
+				debug("lwip: send %ld acked\n", arg1);
+				arg1 -= NBUFS;
+				if (arg1 < NBUFS) {
+					send_busy[arg1] = false;
+				}
+				break;
 			}
-			break;
+		} else if (rcpt == timer_handle) {
+			debug("lwip: timer\n");
 		}
-		etharp_tmr();
-#if LWIP_DHCP
-		dhcp_fine_tmr();
-		dhcp_coarse_tmr();
-#elif LWIP_AUTOIP
-		autoip_tmr();
-#endif
-		//tcp_tmr();
+		if (rcpt == fresh_handle) {
+			hmod_delete(rcpt);
+		}
+		check_timers();
 	}
 }

@@ -17,6 +17,7 @@ menuentry "lwIP" {
     module (cd)/kern/console.mod
     module (cd)/cuser/acpica.mod
     module (cd)/cuser/e1000.mod
+    module (cd)/cuser/apic.mod
     module (cd)/cuser/lwip.mod
     boot
 }
@@ -60,12 +61,12 @@ menuentry "puts+xmm" {
 EOF
 
 while [ $# -gt 0 ]; do
-	echo "menuentry \"${1#user/}\" {"
-	echo "    multiboot (cd)/kstart.b"
-	echo "    module (cd)/$1.mod"
-	echo "    boot"
-	echo "}"
-	shift
+    echo "menuentry \"${1#user/}\" {"
+    echo "    multiboot (cd)/kstart.b"
+    echo "    module (cd)/$1.mod"
+    echo "    boot"
+    echo "}"
+    shift
 done
 
 cat <<EOF
