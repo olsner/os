@@ -23,6 +23,7 @@
 %define log_waiters 0
 %define log_messages 0
 %define log_irq 0
+%define log_alloc 0
 %define verbose_procstate 0
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
@@ -1283,6 +1284,16 @@ fastret:
 ; physical address.
 allocate_frame:
 	call	allocate_frame.nopanic
+
+%if log_alloc
+lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
+	mov	rsi, [rsp]
+	mov	rdx, rax
+	push	rax
+	call	printf
+	pop	rax
+%endif
+
 	test	rax,rax
 	jz	.panic
 	ret
@@ -1353,6 +1364,14 @@ allocate_frame:
 
 ; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storage?
 free_frame:
+%if log_alloc
+	push	rdi
+	mov	rsi, rdi
+lodstr	rdi,	'free_frame %p', 10
+	call	printf
+	pop	rdi
+%endif
+
 	; TODO acquire global-page-structures spinlock
 	lea	rax, [rel globals.garbage_frame]
 	mov	rcx, [rax]
