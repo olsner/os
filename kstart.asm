@@ -599,6 +599,10 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 	jz	.recv_from_any
 	cmp	qword [rsi + handle.other], 0
 	jnz	.delay
+	push	rax
+	mov	rdi, rsi
+	call	free_frame
+	pop	rax
 .recv_from_any:
 
 	and	[rax + proc.flags], byte ~PROC_IN_RECV
