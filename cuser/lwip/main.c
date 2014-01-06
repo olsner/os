@@ -127,10 +127,12 @@ void start() {
 #endif
 
 	lwip_init();
-#if !(LWIP_AUTOIP || LWIP_DHCP)
 	IP4_ADDR(&ipaddr, 192,168,100,3);
 	IP4_ADDR(&netmask, 255,255,255,0);
+#if !(LWIP_AUTOIP || LWIP_DHCP)
 	IP4_ADDR(&gw, 192,168,100,1);
+#else
+	IP4_ADDR(&gw, 0,0,0,0);
 #endif
 	netif_add(&netif, &ipaddr, &netmask, &gw, NULL, if_init, ethernet_input);
 	// Set hardware address of netif. The ethernet driver doesn't send it
