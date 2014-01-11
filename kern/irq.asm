@@ -53,38 +53,51 @@ rcv_loop:
 	cmp	al, MSG_REG_IRQ
 	je	reg_irq
 
-	cmp	al, MSG_IRQ_T
+	cmp	al, MSG_PULSE
 	jne	rcv_loop
 
 irq:
 	; received interrupt
 	; rdi = null (magic message from kernel)
-	; rsi = interrupt number
-	; (rdx = number of times interrupt was triggered before we responded)
+	; rsi = interrupt mask
 
-	bt	dword [rsp], esi
 %if log
-	jc	.registered
+	test	[rsp + 4], rdi
+	jnz	.registered
+	mov	rsi, rdi
 lodstr	edi,	"rawIRQ: %x triggered but I'm not listening", 10
 	call	printf
 	jmp	rcv_loop
-%else
-	jnc	rcv_loop
 %endif
+
 .registered:
+	and	edi, [rsp + 4]
+	jz	rcv_loop
+
+	; Some interrupts were interesting
+	zero	ebx
+	mov	rbp, rdi
+.loop:
+	test	rbp, rbp
+	jz	rcv_loop
+	btr	rbp, rbx
+	jnc	.cont
 
 %if log
-	push	rsi
 lodstr	edi,	'rawIRQ: %x triggered', 10
+	lea	esi, [ebx + IRQ_START]
 	call	printf
-
-	pop	rdi
-%else
-	mov	edi, esi
 %endif
+	lea	edi, [ebx + IRQ_START]
+	; TODO Use pulse API instead. (But boring since receipt of pulses is not
+	; yet implemented.)
 	mov	eax, msg_send(MSG_IRQ_T)
 	syscall
 
+.cont:
+	inc	ebx
+	and	ebx, byte 63
+	jnz	.loop
 	jmp	rcv_loop
 
 ; rdi is the fresh handle that wants to register

@@ -589,7 +589,21 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 	call	printf
 %endif
 
+	; Perhaps this could be "process-global pulse" instead - removing the
+	; global from gseg. (More words per process though, and IRQs are not
+	; handled by most processes!)
+	sub	ebx, 32
+	; FIXME bounds check
+	bts	dword [rbp + gseg.irq_delayed], ebx
+	; The IRQ was already received and delayed - no need to do anything
+	jc	.delay
+
 	; Not very nice to duplicate message-sending here...
+	; Double not-nice to duplicate the code from _recv to handle an IRQ
+	; that was delayed.
+	; And to duplicate what should be possible to handle through the pulse
+	; API. If there's a handle associated with the IRQ receipt, that handle
+	; could be put in the process' pending-handle list instead.
 	mov	rax, [rbp + gseg.irq_process]
 	test	[rax + proc.flags], byte PROC_IN_SEND
 	jnz	.delay
@@ -607,20 +621,20 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 .recv_from_any:
 
 	and	[rax + proc.flags], byte ~PROC_IN_RECV
-	mov	[rax + proc.rsi], rbx
-	mov	qword [rax + proc.rax], msg_send(MSG_IRQ_T)
+	zero	esi
+	xchg	rsi, [rbp + gseg.irq_delayed]
+	mov	[rax + proc.rdi], rsi
+	mov	qword [rax + proc.rax], MSG_PULSE
 
 	jmp	switch_to
 .delay:
 %if log_irq
-lodstr	rdi,	'handle_irq_generic(%x): delivery delayed', 10
+lodstr	rdi,	'handle_irq_generic(%x): delivery delayed (%x)', 10
 	mov	rsi, rbx
+	mov	rdx, [rbp + gseg.irq_delayed]
 	call	printf
 %endif
 
-	sub	ebx, 32
-	; FIXME bounds check
-	bts	dword [rbp + gseg.irq_delayed], ebx
 	jmp	switch_next
 
 %macro handle_irqN_generic 1
@@ -3090,14 +3104,9 @@ lodstr	rdi, 'recv in irq process, delayed=%x', 10
 	jmp	.do_recv
 
 .recv_irq:
+	; gseg is CPU-private, no need to synchronize or make atomic.
 	zero	esi
-.irq_loop
-	btr	dword [rbp + gseg.irq_delayed], esi
-	jc	.found_irq
-	inc	esi
-	jmp	.irq_loop
-.found_irq:
-	add	esi, 32
+	xchg	rsi, [rbp + gseg.irq_delayed]
 	mov	rax, [rbp + gseg.process]
 %if log_irq
 	push	rsi
@@ -3108,7 +3117,7 @@ lodstr	rdi, 'recv delayed irq %x', 10
 	zero	edi
 	swapgs
 	mov	rax, [rbp + gseg.process]
-	mov	qword [rax + proc.rax], msg_send(MSG_IRQ_T)
+	mov	qword [rax + proc.rax], MSG_PULSE
 	jmp	fastret.no_clear
 
 syscall_call:

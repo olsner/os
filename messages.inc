@@ -151,6 +151,16 @@ MSG_SYSCALL_WRITE	equ	6
 MSG_SYSCALL_IO		equ	7
 ;MSG_GRANT		equ	8
 
+; Pulse: send one or more pulses to a handle. The handles will be received by
+; the recipient whenever it receives a message and the handle can match (i.e.
+; receive on 0, a fresh handle or the same handle.)
+; Deleting a handle discards all pending pulses.
+;
+; rdi: handle
+; rsi (send): bitmask of pulses to add to the handle.
+; rsi (recv): bitmask of pending pulses for the handle.
+MSG_PULSE		equ	9
+
 ; Start of user-mapped message-type range
 MSG_USER	equ	16
 MSG_MAX		equ	255
