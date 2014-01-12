@@ -1378,6 +1378,10 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 
 ; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storage?
 free_frame:
+	test	rdi, rdi
+	jz	.ret
+
+.not_null:
 %if log_alloc
 	push	rdi
 	mov	rsi, rdi
@@ -1392,7 +1396,7 @@ lodstr	rdi,	'free_frame %p', 10
 	mov	[rdi], rcx
 	mov	[rax], rdi
 	; TODO release global-page-structures spinlock
-	ret
+.ret	ret
 
 struc dlist
 	.head	resq 1
@@ -1888,8 +1892,7 @@ delete_handle:
 	call	dict_remove
 	test	rax, rax
 	mov	rdi, rax
-	tc nz,	free_frame
-	ret
+	tcall	free_frame
 
 ; rdi: the address space being mapped into
 ; rsi: the local address (key) being mapped
