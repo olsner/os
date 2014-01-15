@@ -60,6 +60,7 @@ struct timer {
 	u64 timeout;
 	timer* down;
 	timer* right;
+	u8 pulse;
 };
 
 timer* ph_merge(timer* l, timer* r) {
@@ -167,21 +168,24 @@ timer* timer_alloc() {
 		return &timer_heap[timer_heap_limit++];
 	}
 }
-timer* timer_new(u64 timeout) {
+timer* timer_new(u64 timeout, u8 pulse) {
 	timer* t = timer_alloc();
 	t->timeout = timeout;
+	t->pulse = pulse;
 	return t;
 }
 void timer_free(timer* t) {
 	t->timeout = (uintptr_t)t;
 	timer_add(&free_timers, t);
 }
-timer* reg_timer(u64 ns) {
+timer* reg_timer(u64 ns, u8 pulse) {
 	u64 ticks = (ns / 1000) * apic_ticks / 1000000;
 	printf("apic: %lu ns -> %lu ticks\n", ns, ticks);
 	u64 tick_counter = get_tick_counter();
 	u64 tick_timeout = tick_counter + ticks;
-	return timer_add(&timers_head, timer_new(tick_timeout));
+	timer* t = timer_add(&timers_head, timer_new(tick_timeout, pulse));
+	printf("apic: registered %p\n", t);
+	return t;
 }
 
 // Fun stuff: APIC is CPU local, user programs generally don't know which CPU
@@ -207,6 +211,8 @@ void start() {
 	apic[ERROR_LVT] = LVT_MASK;
 
 	// Register irq 48 with irq driver
+	// Note we don't use the PIC driver here - APIC interrupts have their own
+	// EOI etc.
 	uintptr_t arg = apic_timer_irq;
 	sendrcv1(MSG_REG_IRQ, irq_driver, &arg);
 
@@ -228,7 +234,7 @@ void start() {
 			} else if (timers_head->timeout <= tick_counter) {
 				printf("apic: triggered %p.\n", timers_head);
 				timer* t = timer_pop(&timers_head);
-				send1(MSG_TIMER_T, (uintptr_t)t, tick_counter);
+				pulse((uintptr_t)t, 1 << t->pulse);
 				hmod_delete((uintptr_t)t);
 				timer_free(t);
 			}
@@ -239,15 +245,20 @@ void start() {
 			}
 			if (need_eoi) {
 				apic[EOI] = 0;
+				printf("apic: EOI\n");
 				need_eoi = false;
 			}
 		}
 
 		uintptr_t rcpt = fresh_handle;
 		uintptr_t arg1, arg2;
+		printf("apic: receiving\n");
 		const uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
 
+		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
+
 		if (rcpt == irq_driver && (msg & 0xff) == MSG_IRQ_T) {
+			printf("apic: irq\n");
 			// Keep the counter counting please. (Switch back to periodic mode?)
 			setTIC((u32)-1);
 			need_eoi = true;
@@ -257,7 +268,8 @@ void start() {
 		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
 		switch (msg & 0xff) {
 		case MSG_REG_TIMER:
-			hmod(rcpt, (uintptr_t)reg_timer(arg1), 0);
+			// FIXME Check if the rcpt is already registered as a timer.
+			hmod_rename(rcpt, (uintptr_t)reg_timer(arg1, arg2));
 			break;
 		case MSG_PFAULT:
 			*(volatile u64*)&static_data;

@@ -24,6 +24,7 @@
 %define log_messages 0
 %define log_irq 0
 %define log_alloc 0
+%define log_pulses 0
 %define verbose_procstate 0
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
 
@@ -1036,17 +1037,20 @@ block_and_switch:
 	zero	edi
 	mov	[rbp + gseg.process], rdi
 
+%if log_waiters
+	mov	rsi, rdi
+lodstr rdi, 'Blocked %p (%x)', 10
+	call	print_proc
+%endif
+
+
 switch_next:
 %if log_switch_next
-	mov	r12, rax
-	mov	r13, rdx
 lodstr	rdi, 'switch_next', 10
 	call	printf
 %if verbose_procstate
 	call	print_procstate
 %endif
-	mov	rax, r12
-	mov	rdx, r13
 %endif
 
 	call	runqueue_pop
@@ -1261,6 +1265,8 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 ; If you do not know that rax is the current process, you must use switch_to
 ; instead. But that should be cheap for the fastret case.
 ; This does *not* swapgs, that must be run before getting here.
+; TODO Use another register than 'rax' (preferrably one of the ones that get
+; clobbered by sysret) - then rax can contain the return value to the process.
 fastret:
 %macro load_regs 1-*
 %rep %0
@@ -1437,13 +1443,20 @@ endstruc
 ; associated = proc is not null
 struc handle
 	.dnode	restruc dict_node
+	.key	equ handle.dnode + dict_node.key
 	.proc	resq 1
 	; pointer to other handle if any. Its 'key' field is the other-name that
 	; we need when e.g. sending it a message. If null this is not associated
 	; in other-proc yet.
 	.other	resq 1
+	.events	resq 1
 endstruc
-handle.key equ handle.dnode + dict_node.key
+
+struc pending_pulse
+	.dnode	restruc dict_node
+	.key	equ pending_pulse.dnode + dict_node.key
+	.handle	resq 1
+endstruc
 
 ; Ordinary and boring flags
 MAPFLAG_X	equ 1
@@ -1532,6 +1545,7 @@ struc aspace
 	; (That would remove the need for .count, I think.)
 	;.procs	resq 1
 	.handles	restruc dict
+	.pending	restruc dict
 
 	.mapcards	restruc dict
 	.backings	restruc dict
@@ -1972,6 +1986,91 @@ lodstr	rdi,	'%p mapping new handle: %x (proc=%p)', 10
 	; rax = handle
 	ret
 
+; rdi: address space of handle
+; rsi: handle object to pulse
+; rdx: pulses to add
+pulse_handle:
+	mov	rax, [rsi + handle.events]
+.retry	mov	rcx, rdx
+	or	rcx, rax
+	; if events == rax (old events), replace with rdx
+	cmpxchg	qword [rsi + handle.events], rcx
+	jne	.retry
+	; rax now contains the previous value of events.
+
+	test	rax, rax
+	jnz	.already_pending
+
+	; The events mask was 0 before we got here - we need to add it to the
+	; pending map.
+	push	rdi
+	push	rsi
+	call	allocate_frame
+	pop	rsi
+	mov	[rax + pending_pulse.handle], rsi
+	mov	rsi, [rsi + handle.key]
+	mov	[rax + pending_pulse.key], rsi
+	pop	rdi
+	lea	rdi, [rdi + aspace.pending]
+	mov	rsi, rax
+	call	dict_insert
+
+.already_pending:
+.ret	ret
+
+; rdi: address space
+; returns the first pending handle with a non-zero pulses field
+; rax: pulses pending
+; rdx: handle
+get_pending_handle:
+	push	rdi
+
+.handle:
+	mov	rsi, [rdi + aspace.pending + dict.root]
+	test	rsi, rsi
+	jz	.ret_null
+
+	mov	rsi, [rsi + pending_pulse.handle]
+	push	rsi
+	call	get_pending_pulse
+	pop	rdx
+	; rax = pending pulses
+	test	rax, rax
+	jnz	.ret
+
+	mov	rdi, [rsp]
+	jmp	.handle
+
+.ret_null:
+	zero	eax
+	zero	edx
+.ret:	pop	rdi
+	ret
+
+; rdi: address space
+; rsi: handle object
+; returns the set of events that were pending on that handle object, if any.
+; Also removes the handle from the pending list.
+get_pending_pulse:
+	; old events -> rax, 0 -> events
+	mov	rax, [rsi + handle.events]
+.retry	zero	ecx
+	cmpxchg	qword [rsi + handle.events], rcx
+	jne	.retry
+
+	; rax = set of pending events, push so we can return it later.
+	push	rax
+	; The set of events was not empty, the handle was queued and should now
+	; be unqueued.
+	lea	rdi, [rdi + aspace.pending]
+	mov	rsi, [rsi + handle.key]
+	call	dict_remove
+
+	mov	rdi, rax
+	call	free_frame
+
+	pop	rax
+.ret	ret
 
 ; rdi: address space to add mapping to
 ; rsi: physical address of page to add, plus relevant flags as they will appear
@@ -2607,6 +2706,7 @@ lodstr	rdi, 'Invalid syscall %x! proc=%p', 10
 	sc write
 	sc portio
 	sc grant
+	sc pulse
 .end_table:
 N_SYSCALLS	equ (.end_table - .table) / 4
 
@@ -3284,21 +3384,54 @@ assoc_handles:
 	tcall	proc_insert_handle
 
 ; rdi: target process
-; rsi: source process
-; Note: we return from transfer_message if not blocked
-transfer_message:
+; rsi: handle object
+; rdx: pulses to deliver
+; Always returns to the caller, may unblock dst if it was waiting.
+transfer_pulse:
+	; pulses to deliver
+	mov	[rdi + proc.rsi], rdx
+
 	push	rdi
 	push	rsi
+	; process = null ... though we could get it from handle.other ->
+	; handle.proc since we require previously associated handles, that
+	; requirement also means that transfer_set_handle will never use the
+	; process argument.
+	zero	edx
+	call	transfer_set_handle
+	pop	rsi
+	pop	rdi
 
-	; [rsp] = source/sender process
-	; [rsp+8] = target/recipient process
+	zero	eax
+	mov	al, MSG_PULSE
+	mov	[rdi + proc.rax], rax
+	; TODO Refactoring: move the wake up into a common transfer function,
+	; merge that with transfer_set_handle and run *after* copying/setting
+	; message registers.
+	; Both kinds of transfers become set registers -> tailcall
+	and	[rdi + proc.flags], byte ~PROC_IN_RECV
+	test	[rdi + proc.flags], byte PROC_RUNNING
+	jnz	.ret
+	mov	rsi, [rsi + handle.proc]
+	xchg	rsi, rdi
+	call	stop_waiting
+.ret	ret
 
-	; Find the source handle we were sending from
-	mov	rbx, [rsi + proc.rdi]
-	; rcx = source handle object (assumed non-zero, because otherwise
-	; there'd be no way for them to send anything!)
+; rdi: target process
+; rsi: source handle object (from sender! *not* the handle in the recipient)
+; target's rdi is set to the appropriate handle key for a receive from rsi.
+; no message registers are touched here. target *must* currently be blocked on
+; receive.
+; rdx: source process
+; TODO Swap rsi and rdx here to match transfer_message
+;
+; It's assumed we have already checked that it's a valid receive match up (i.e
+; either a fresh/open receive, or it's for the correct handle). Any checks here
+; are just bonuses/asserts and will panic.
+transfer_set_handle:
+	push	rdx
 
-	mov	rdx, [rdi + proc.rdi] ; recipient handle
+	mov	rdx, [rdi + proc.rdi] ; recipient handle (object)
 	test	rdx, rdx
 	jz	.null_recipient_id
 	mov	rax, [rdx + handle.other]
@@ -3306,21 +3439,21 @@ transfer_message:
 	jz	.fresh_handle
 
 	; not-fresh handle: check that the recipient did want a message from
-	; *us*. If not, give an error back to sender and keep recipient waiting.
-	cmp	rbx, rax
+	; *us*. If not, panic.
+	cmp	rsi, rax
 	push	qword [rdx + handle.key]
 	pop	qword [rdi + proc.rdi]
 	je	.rcpt_rdi_set
 
-	; rbx = actual sender's handle
+	; rbx = sender's handle
 	; rdx = recipient's handle
 	; rax = recipient's handle's other handle
 %if log_messages
+	mov	r8, rsi
 lodstr	rdi, 'rcpt handle %p -> handle %p (proc %p) != sender handle %p', 10
 	mov	rsi, rdx
 	mov	rdx, rax
 	mov	rcx, [rdx + handle.proc]
-	mov	r8, rbx
 	call	printf
 %endif
 
@@ -3330,7 +3463,7 @@ lodstr	rdi, 'rcpt handle %p -> handle %p (proc %p) != sender handle %p', 10
 .fresh_handle:
 	; rdx = recipient's (fresh) handle
 	; Get the source handle's other handle, i.e. the recipient handle.
-	mov	rax, [rbx + handle.other]
+	mov	rax, [rsi + handle.other]
 	test	rax, rax
 	; other is not null: a fresh-handle receive got fulfilled by a known
 	; handle - return that handle instead as if we'd have given null.
@@ -3342,7 +3475,8 @@ lodstr	rdi, 'rcpt handle %p -> handle %p (proc %p) != sender handle %p', 10
 	; rsi = sender process
 	; rdx = recipient handle
 	; rcx = source handle
-	mov	rcx, rbx
+	mov	rcx, rsi
+	mov	rsi, [rsp + 16]
 	call	assoc_handles
 	pop	rsi
 	pop	rdi
@@ -3357,6 +3491,7 @@ lodstr	rdi, 'rcpt handle %p -> handle %p (proc %p) != sender handle %p', 10
 
 %if log_messages
 lodstr	rdi, 'Junking fresh rcpt %x because sender %x has other %x', 10
+	mov	rbx, rsi ; source handle
 	mov	rsi, [rdx + handle.key]
 	mov	rdx, [rbx + handle.key]
 	mov	rcx, [rbx + handle.other]
@@ -3372,7 +3507,7 @@ lodstr	rdi, 'Junking fresh rcpt %x because sender %x has other %x', 10
 	pop	rdi
 
 .null_recipient_id:
-	mov	rax, [rbx + handle.other]
+	mov	rax, [rsi + handle.other]
 	test	rax, rax
 	jz	.rax_has_key
 .rax_has_handle:
@@ -3381,6 +3516,31 @@ lodstr	rdi, 'Junking fresh rcpt %x because sender %x has other %x', 10
 .rax_has_key:
 	mov	[rdi + proc.rdi], rax
 .rcpt_rdi_set:
+	; we don't care about restoring rdx as such, just balance the stack
+	pop	rdx
+	ret
+
+; rdi: target process
+; rsi: source process
+; Note: we return from transfer_message if not blocked
+transfer_message:
+	; Find the source handle we were sending from
+	mov	rbx, [rsi + proc.rdi]
+
+	push	rdi
+	push	rsi
+	mov	rdx, rsi
+	; note source handle, not source process
+	mov	rsi, rbx
+	call	transfer_set_handle
+
+	mov	rsi, [rsp]
+	mov	rdi, [rsp + 8]
+	; [rsp] = source/sender process
+	; [rsp+8] = target/recipient process
+
+	; rcx = source handle object (assumed non-zero, because otherwise
+	; there'd be no way for them to send anything!)
 
 %macro copy_regs 0-*
 %rep %0
@@ -3399,7 +3559,8 @@ lodstr	rdi, 'Junking fresh rcpt %x because sender %x has other %x', 10
 %if log_messages
 	mov	rdx, rdi
 	mov	rcx, [rdi + proc.rdi]
-lodstr	rdi, 'Copied message from %p to %p (handle = %x)', 10
+	mov	r8, [rdi + proc.flags]
+lodstr	rdi, 'Copied message from %p to %p (handle = %x, flags = %x)', 10
 	call	printf
 %endif
 	; The recipient is guaranteed to be unblocked by this, make it stop
@@ -3569,6 +3730,22 @@ lodstr	rdi,	'No senders found to %p (%x)', 10
 	pop	rdi
 %endif
 
+	push	rdi
+	mov	rdi, [rdi + proc.aspace]
+	call	get_pending_handle
+	pop	rdi
+	test	rax, rax
+	jz	.no_pulses
+
+	; TODO transfer_pulse Should take the the recipient's handle instead
+	mov	rsi, [rdx + handle.other]
+	mov	rdx, rax
+	; rdi = recipient process
+	; rsi = sender's handle object
+	; rdx = pulses
+	tcall	transfer_pulse
+
+.no_pulses:
 	tcall	block_and_switch
 
 ; rdi = handle to map
@@ -3774,6 +3951,91 @@ syscall_grant:
 	; unimplemented...
 .panic:
 	PANIC
+
+; rdi: handle key
+; rsi: pulses to pulse
+syscall_pulse:
+%if log_pulses
+	push	rsi
+	push	rdi
+	mov	rdx, rdi
+lodstr	rdi, 'Pulsing %x of %x', 10
+	call	printf
+	pop	rdi
+	pop	rsi
+%endif
+
+	push	rsi
+	mov	rsi, rdi
+	mov	rdi, [rbp + gseg.process]
+	mov	rdi, [rdi + proc.aspace]
+	call	find_handle
+
+%if log_pulses
+	push	rax
+lodstr	rdi, 'Pulsing %x of %x', 10
+	mov	rsi, [rsp + 8]
+	mov	rdx, rax
+	call	printf
+	pop	rax
+%endif
+
+	pop	rdx
+
+	test	rax, rax
+	jz	.ret
+
+	mov	rsi, [rax + handle.other]
+	test	rsi, rsi
+	jz	.ret
+
+	mov	rdi, [rax + handle.proc]
+	test	rdi, rdi
+	jz	.ret
+	push	rdi
+	push	rax
+	mov	rdi, [rdi + proc.aspace]
+	call	pulse_handle
+
+	pop	rdx ; the pulsed handle (*our* handle)
+	pop	rdi ; recipient process
+	mov	al, [rdi + proc.flags]
+	and	al, PROC_IN_RECV | PROC_IN_SEND | PROC_PFAULT
+	cmp	al, PROC_IN_RECV
+	jne	.ret0
+
+	; Get the recipient handle that the other process is waiting for
+	mov	rsi, [rdi + proc.rdi]
+	; Open-ended receive: deliver
+	test	rsi, rsi
+	jz	.can_deliver
+
+	mov	rax, [rsi + handle.other]
+	; Receive to fresh handle: deliver freely
+	test	rax, rax
+	jz	.can_deliver
+	; Receive to specific: if it's not the right handle, we can't deliver
+	; now.
+	cmp	rax, rdx
+	jne	.ret0
+
+.can_deliver:
+	; sender's handle
+	; TODO Swap rsi,rdx above to get rid of this one.
+	mov	rsi, rdx
+
+	; FIXME Should use get_pulse etc to unqueue the handle
+	zero	rdx
+	mov	rcx, [rsi + handle.other]
+	xchg	rdx, [rcx + handle.events]
+
+	; rdi = recipient process
+	; rsi = sender's handle object
+	; rdx = pulses
+	call	transfer_pulse
+
+.ret0	zero	eax
+.ret	ret
 
 %include "printf.asm"
 

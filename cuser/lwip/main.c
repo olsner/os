@@ -44,14 +44,14 @@ static struct {
 
 u32 sys_now() {
 	u32 res = timer_data.ms_counter;
-	printf("sys_now: %u\n", res);
+	//printf("sys_now: %u\n", res);
 	return res;
 }
 void check_timers() {
 	u64 timeout_ms = sys_check_timeouts();
 	if (timeout_ms != (u32)-1) {
 		hmod(apic_handle, apic_handle, timer_handle);
-		send1(MSG_REG_TIMER, timer_handle, timeout_ms * 1000000);
+		send2(MSG_REG_TIMER, timer_handle, timeout_ms * 1000000, 0);
 	}
 }
 #else
@@ -150,7 +150,6 @@ void start() {
 	for (;;) {
 		uintptr_t rcpt = fresh_handle;
 		uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
-		debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
 		if (rcpt == proto_handle) {
 			switch (msg) {
 			case MSG_ETHERNET_RCVD:
@@ -165,7 +164,9 @@ void start() {
 				break;
 			}
 		} else if (rcpt == timer_handle) {
-			debug("lwip: timer\n");
+			//debug("lwip: timer\n");
+		} else {
+			debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
 		}
 		if (rcpt == fresh_handle) {
 			hmod_delete(rcpt);

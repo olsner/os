@@ -54,6 +54,7 @@ enum syscalls_builtins {
 	// arg2 (if applicable) = data for output
 	SYSCALL_IO = 7, // Backdoor!
 	MSG_GRANT = 8,
+	MSG_PULSE = 9,
 	MSG_USER = 16,
 };
 
@@ -369,6 +370,14 @@ static void hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
 
 static void hmod_delete(uintptr_t h) {
 	hmod(h, 0, 0);
+}
+
+static void hmod_rename(uintptr_t h, uintptr_t rename) {
+	hmod(h, rename, 0);
+}
+
+static void pulse(uintptr_t handle, u64 mask) {
+	send1(MSG_PULSE, handle, mask);
 }
 
 enum prot {
