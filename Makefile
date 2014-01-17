@@ -45,6 +45,7 @@ ASMFILES     := kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
+MOD_ELFS     += $(OUTDIR)/cuser/acpica.elf $(OUTDIR)/cuser/lwip.elf
 MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod) $(GRUBDIR)/cuser/acpica.mod $(GRUBDIR)/cuser/lwip.mod
 DEPFILES     := $(ASMFILES:%.asm=$(OUTDIR)/%.d) $(MOD_OFILES:.o=.d)
 ASMOUTS      := \
@@ -240,8 +241,7 @@ $(GRUBDIR)/cuser/acpica.mod: cuser/linker.ld $(ACPI_OBJS)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(OUTDIR)/acpica.map
 	$(SIZE_LD)
 
-all: $(ACPICA_OUT)/acpica.elf
-$(ACPICA_OUT)/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
+$(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
 
@@ -277,11 +277,15 @@ endif
 
 $(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
 
-$(GRUBDIR)/cuser/lwip.mod: cuser/linker.ld $(LWIP_OBJS)
+LWIP_DEP_OBJS := $(LWIP_OBJS) $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+
+$(GRUBDIR)/cuser/lwip.mod: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(LWIP_OUT)/lwip.map
 	$(SIZE_LD)
 
-$(GRUBDIR)/cuser/lwip.mod: $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+$(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
+	@mkdir -p $(@D)
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
 
 all: $(GRUBDIR)/cuser/lwip.mod
