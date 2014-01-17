@@ -95,8 +95,17 @@ enum regs
 
 enum interrupts
 {
+	// Transmit descriptor written
 	IM_TXDW = 1 << 0,
+	// Transmit queue empty
+	IM_TXQE = 1 << 1,
+	// Link status change
+	IM_LSC = 1 << 2,
+	// Receive descriptor minimum threshold
 	IM_RXDMT0 = 1 << 4,
+	// Receive overrun
+	IM_RXO = 1 << 6,
+	// Receiver timer
 	IM_RXT0 = 1 << 7
 };
 enum
@@ -269,6 +278,15 @@ static void incoming_packet(int start, int end) {
 		}
 		sum += len;
 	}
+	// TODO Instead of synchronously sending the packet here, which means we
+	// have to drop packets that can't be received *right now*, we should just
+	// notify the protocol about a packet, then wait for a receive message -
+	// the copying to the recipient's packet buffer can happen there.
+	// We may run out of receive descriptors if we do that, so we'd have to e.g.
+	// drop the oldest received packet if we have no free receive descriptors.
+	// (Should decouple the descriptors and the buffers a bit too, since we
+	// don't know that packets will be handled in the same order as they are
+	// received, we'll want "enqueue buffer" after we handle one.)
 	printf("e1000: %ld bytes ethertype %04x\n", sum, ethtype);
 	protocol* proto = find_proto_ethtype(ethtype);
 	if (proto && !proto->unacked_recv && sum <= 4096) {
