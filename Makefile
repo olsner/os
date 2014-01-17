@@ -263,7 +263,7 @@ LWIP_SRCS := \
 
 LWIP_OBJS := $(LWIP_SRCS:$(LWIP)/%.c=$(LWIP_OUT)/%.o)
 LWIP_OBJS += $(addprefix $(OUTDIR)/cuser/, \
-	lwip/main.o)
+	lwip/main.o lwip/http.o)
 
 -include $(LWIP_OBJS:.o=.d)
 

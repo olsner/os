@@ -15,6 +15,8 @@
 
 #include "common.h"
 
+err_t http_start(void);
+
 static const uintptr_t eth_handle = 5;
 static const uintptr_t apic_handle = 6;
 static const uintptr_t proto_handle = 0x100;
@@ -76,7 +78,7 @@ static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
 
 static err_t if_output(struct netif* netif, struct pbuf* p) {
 	if (send_busy[0]) {
-		debug("if_output: busy...\n");
+		printf("if_output: busy...\n");
 		return EAGAIN;
 	}
 	size_t len = 0;
@@ -146,6 +148,8 @@ void start() {
 	dhcp_start(&netif);
 #endif
 
+	http_start();
+
 	check_timers();
 	for (;;) {
 		uintptr_t rcpt = fresh_handle;
@@ -153,6 +157,7 @@ void start() {
 		if (rcpt == proto_handle) {
 			switch (msg) {
 			case MSG_ETHERNET_RCVD:
+				debug("lwip: received %ld bytes in buf %ld\n", arg2, arg1);
 				rcvd(arg1, arg2);
 				break;
 			case MSG_ETHERNET_SEND:
