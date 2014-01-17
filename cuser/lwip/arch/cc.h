@@ -35,6 +35,6 @@ typedef uintptr_t   mem_ptr_t;
 
 /* Plaform specific diagnostic output */
 #define LWIP_PLATFORM_DIAG(x) printf x
-#define LWIP_PLATFORM_ASSERT assert
+#define LWIP_PLATFORM_ASSERT(x) assert_failed(__FILE__, __LINE__, x)
 
 #endif /* __ARCH_CC_H__ */

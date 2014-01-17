@@ -462,19 +462,25 @@ static char* strchr(const char* s, char c) {
 	return *s ? (char*)s : NULL;
 }
 
-static void abort(void) __attribute__((noreturn));
-static void abort(void)
-{
-	for (;;) recv0(-1);
-}
-
-#define assert(X) if ((X)); else { printf("%s:%d: ASSERT FAILED (%s)\n", __FILE__, __LINE__, #X); abort(); }
-
 /* Not all of these are implemented, depending on what you link against. */
 extern void printf(const char* fmt, ...);
 extern void vprintf(const char* fmt, va_list ap);
 extern void* malloc(size_t size);
 extern void free(void* p);
+
+static void abort(void) __attribute__((noreturn));
+static void abort(void)
+{
+	printf("<<abort>>\n");
+	for (;;) recv0(-1);
+}
+
+static void assert_failed(const char* file, int line, const char* msg) __attribute__((noreturn));
+static void assert_failed(const char* file, int line, const char* msg) {
+	printf("%s:%d: ASSERT FAILED (%s)\n", file, line, msg);
+	abort();
+}
+#define assert(X) if ((X)); else { assert_failed(__FILE__, __LINE__, #X); }
 
 static void hexdump(char* data, size_t length) {
 	size_t pos = 0;
