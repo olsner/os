@@ -188,10 +188,29 @@ timer* reg_timer(u64 ns, u8 pulse) {
 	return t;
 }
 
+static void __more_stack(size_t more) {
+	static const uintptr_t TOP = 0x100000;
+	static const size_t START = 0x1000;
+	static const size_t MAX = TOP - START;
+	static size_t extra;
+	assert(!(more % 0x1000));
+	printf("Extending stack... had %ld want %ld more\n", extra, more);
+	extra += more;
+	assert(extra <= MAX);
+	char* bottom = (char*)TOP - START - extra;
+	printf("Extending stack... adding %p..%p\n", bottom, bottom + more);
+	map_anon(PROT_READ | PROT_WRITE, bottom, more);
+	printf("Extending stack... bottom now %p\n", bottom);
+}
+
 // Fun stuff: APIC is CPU local, user programs generally don't know which CPU
 // they're running on. (Though we're not multiprocessing yet anyway.)
 void start() {
 	__default_section_init();
+	// FIXME It's really a bug that we end up using loads of stack here. Maybe
+	// ph_mergepairs has to be made norecursive, or the problem is that a bug
+	// leads it into an infinite loop?
+	__more_stack(0xff000);
 	printf("apic: starting...\n");
 
 	// Perhaps we should use ACPI information to tell us if/that there's an
