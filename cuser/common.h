@@ -65,7 +65,6 @@ enum msg_con {
 
 enum msg_irq {
 	MSG_REG_IRQ = MSG_USER,
-	MSG_IRQ_T,
 	MSG_IRQ_ACK,
 };
 
@@ -82,7 +81,6 @@ enum msg_acpi {
 	 */
 	MSG_ACPI_FIND_PCI = MSG_USER,
 	/* Wrappers around PCI IRQ routing (to PIC or I/O APIC) */
-	MSG_ACPI_IRQ_T = MSG_IRQ_T,
 	MSG_ACPI_IRQ_ACK = MSG_IRQ_ACK,
 	/* Claim a PCI device for the caller.
 	 *

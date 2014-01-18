@@ -25,7 +25,7 @@ boot:
 	; 1: temporary handle for something that is registering itself
 
 %if log
-lodstr	rdi, 'PIC booting...', 10
+lodstr	edi, 'PIC booting...', 10
 	call	printf
 %endif
 
@@ -62,7 +62,7 @@ lodstr	rdi, 'PIC booting...', 10
 
 %if log
 	mov	rsi, [rsp]
-lodstr	rdi, 'PIC boot complete. rawIRQ is %x', 10
+lodstr	edi, 'PIC boot complete. rawIRQ is %x', 10
 	call	printf
 %endif
 
@@ -79,7 +79,7 @@ rcv_loop:
 	mov	rcx, rsi
 	mov	rdx, rdi
 	mov	rsi, rax
-lodstr	rdi, 'PIC received %x from %x: %x', 10
+lodstr	edi, 'PIC received %x from %x: %x', 10
 	call	printf
 %endif
 
@@ -99,6 +99,12 @@ lodstr	rdi, 'PIC received %x from %x: %x', 10
 	cmp	al, MSG_IRQ_ACK
 	je	ack_irq
 
+%if log
+lodstr	edi, 'Message %x not handled', 10
+	mov	rsi, rax
+	call	printf
+%endif
+
 	jmp	rcv_loop
 
 ; rsi = 0..15
@@ -110,7 +116,7 @@ reg_irq:
 	push	rsi
 %if log
 	push	rdi
-lodstr	rdi,	'PIC registering IRQ %x', 10
+lodstr	edi,	'PIC registering IRQ %x', 10
 	call	printf
 
 	pop	rdi
@@ -138,7 +144,7 @@ irq:
 %if log
 	push	rdi
 	mov	esi, edi
-lodstr	rdi, 'PIC: IRQ %x triggered', 10
+lodstr	edi, 'PIC: IRQ %x triggered', 10
 	call	printf
 	pop	rdi
 %endif
@@ -183,7 +189,9 @@ lodstr	rdi, 'PIC: IRQ %x triggered', 10
 	; be done elsewhere to allow interrupts to be queued.
 	pop	rsi
 	lea	edi, [rsi + PIC_IRQ_BASE]
-	mov	eax, msg_send(MSG_IRQ_T)
+	zero	esi
+	inc	esi
+	mov	eax, MSG_PULSE
 	syscall
 
 	jmp	rcv_loop
@@ -192,7 +200,7 @@ ack_irq:
 %if log
 	push	rdi
 	mov	esi, edi
-lodstr	rdi, 'PIC: IRQ %x acknowledged', 10
+lodstr	edi, 'PIC: IRQ %x acknowledged', 10
 	call	printf
 	pop	rdi
 %endif

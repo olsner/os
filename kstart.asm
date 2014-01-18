@@ -3468,7 +3468,6 @@ lodstr	rdi, 'rcpt handle %p -> handle %p (proc %p) != sender handle %p', 10
 	jmp	.null_recipient_id
 
 .junk_fresh_handle:
-	; rax = actual handle
 	push	rdi
 	push	rsi
 	push	rdx

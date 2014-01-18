@@ -611,7 +611,7 @@ void start() {
 		arg2 = 0;
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
 		printf("e1000: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
-		if (rcpt == pin0_irq_handle && msg == MSG_IRQ_T) {
+		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
 			handle_irq();
 			send1(MSG_IRQ_ACK, rcpt, arg);
 			continue;

@@ -89,9 +89,10 @@ lodstr	edi,	'rawIRQ: %x triggered', 10
 	call	printf
 %endif
 	lea	edi, [ebx + IRQ_START]
-	; TODO Use pulse API instead. (But boring since receipt of pulses is not
-	; yet implemented.)
-	mov	eax, msg_send(MSG_IRQ_T)
+	; We only use bit 0, but we could also let the caller choose.
+	zero	esi
+	inc	esi
+	mov	eax, MSG_PULSE
 	syscall
 
 .cont:

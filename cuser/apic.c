@@ -276,7 +276,9 @@ void start() {
 
 		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
 
-		if (rcpt == irq_driver && (msg & 0xff) == MSG_IRQ_T) {
+		// Note that since we use the raw IRQ driver, we don't need to ACK the
+		// IRQ's we get - it's not listening for that anyway.
+		if (rcpt == irq_driver) {
 			printf("apic: irq\n");
 			// Keep the counter counting please. (Switch back to periodic mode?)
 			setTIC((u32)-1);

@@ -12,7 +12,5 @@
 ; Takes one parameter, the IRQ number to listen for.
 MSG_REG_IRQ	equ	MSG_USER + 0
 
-; The IRQ has been triggered. Do something!!1
-MSG_IRQ_T	equ	MSG_USER + 1
 ; The IRQ has been handled, feel free to signal us again when something happens.
-MSG_IRQ_ACK	equ	MSG_USER + 2
+MSG_IRQ_ACK	equ	MSG_USER + 1
