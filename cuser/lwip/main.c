@@ -5,8 +5,6 @@
 #include "lwip/timers.h"
 #include "netif/etharp.h"
 
-#define USE_TIMER LWIP_DHCP
-
 #ifdef NDEBUG
 #define debug(...) (void)0
 #else
@@ -37,7 +35,6 @@ struct netif netif;
 static ip_addr_t ipaddr, netmask, gw;
 static u64 hwaddr;
 
-#if USE_TIMER
 // Should be a struct somewhere we can share it with the apic implementation.
 static struct {
 	u64 tick_counter;
@@ -56,10 +53,6 @@ void check_timers() {
 		send2(MSG_REG_TIMER, timer_handle, timeout_ms * 1000000, 0);
 	}
 }
-#else
-static void check_timers() {}
-u32 sys_now() { static u32 c; return c++; }
-#endif
 
 static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
 	debug("lwip: received %u bytes\n", packet_length);
@@ -122,11 +115,9 @@ void start() {
 	prefault(send_buffers[0], PROT_READ | PROT_WRITE);
 	puts("lwip: registered protocol\n");
 
-#if USE_TIMER
 	map(apic_handle, PROT_READ, &timer_data, 0, 4096);
 	prefault(&timer_data, PROT_READ);
 	puts("lwip: initialized timer\n");
-#endif
 
 	lwip_init();
 	IP4_ADDR(&ipaddr, 192,168,100,3);
