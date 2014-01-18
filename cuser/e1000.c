@@ -582,11 +582,12 @@ void start() {
 	// Enable receive:
 	// EN, bit 1 = 1 - enable reception
 	// LPE, bit 5 = 1 - enable long packet reception
+	// Note: disabled because we can only send <4kB packets to the recipients.
 	// BAM, bit 15 = 1 - receive broadcast messages without filtering
 	// BSIZE, bit 17:16 = 11b (256/4096 bytes)
 	// DPF, bit 22 = 1 (discard pause frames)
 	// BSEX, bit 25 = 1b
-	mmiospace[RCTL] = RCTL_EN | RCTL_LPE | RCTL_BAM | RCTL_DPF | RCTL_BSIZE_4096;
+	mmiospace[RCTL] = RCTL_EN | /*RCTL_LPE |*/ RCTL_BAM | RCTL_DPF | RCTL_BSIZE_4096;
 	// Enable transmit:
 	// EN, bit 1 = 1 - enable transmission
 	// PSP, bit 3 = 1 - pad short packets
