@@ -34,6 +34,8 @@
 
 %define debug_tcalls 0
 
+; Use an unrolled loop of movntdq (MMX?) instructions to clear pages
+%define unroll_memset_0 0
 
 CR0_PE		equ	0x00000001
 CR0_MP		equ	0x00000002
@@ -1331,25 +1333,34 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	mov	rcx, [rax]
 	mov	[globals.garbage_frame], rcx
 
-	mov	rsi, rax
-	add	rsi, 128
+	mov	rdi, rax
+%if unroll_memset_0
+	add	rdi, 128
 	mov	ecx, 16
 	; Clear the task-switched flag while we reuse some registers
 	mov	rdx, cr0
 	clts
 	movdqu	[rbp + gseg.temp_xmm0], xmm0
 	xorps	xmm0, xmm0
+
 .loop:
 %assign i -128
 %rep 16
-	movntdq	[rsi + i], xmm0
+	movntdq	[rdi + i], xmm0
 %assign i i+16
 %endrep
-	add	rsi, 16*16
+	add	rdi, 16*16
 	loop	.loop
+
 	movdqu	xmm0, [rbp + gseg.temp_xmm0]
 	; Reset TS to whatever it was before
 	mov	cr0, rdx
+%else
+	mov	ecx, 4096/8
+	zero	eax
+	rep stosq
+	lea	rax, [rdi - 4096]
+%endif
 
 .ret_oom:
 	; TODO release global-page-structures spinlock
