@@ -5,7 +5,7 @@
 %endmacro
 
 struc pages, 0x100000
-.kernel		respage 2
+.kernel		respage 3
 
 .page_tables:
 .pml4		respage
