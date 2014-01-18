@@ -372,11 +372,10 @@ static void tx_done() {
 	printf("e1000: transmit descriptor ring %u..%u\n", tdhead, tdtail);
 }
 
-void handle_irq(void) {
-	// NB: This clears all pending interrupts. We must handle all causes set to
-	// 1.
-	u32 icr = mmiospace[ICR];
-	printf("ICR: %#x (%#x)\n", icr, mmiospace[ICR]);
+// Handle all interrupt causes set in ICR. Since reading ICR clears the
+// register, we have to handle all of them.
+void handle_icr(u32 icr) {
+	printf("ICR: %#x\n", icr);
 	printf("IMS: %#x\n", mmiospace[IMS]);
 	if (icr & IM_RXT0) {
 		// Receive timer timeout. Receive some messages.
@@ -387,6 +386,18 @@ void handle_irq(void) {
 	}
 	if (icr & IM_TXDW) {
 		tx_done();
+	}
+}
+
+void handle_irq(void) {
+	u32 icr;
+	unsigned n = 0;
+	while ((icr = mmiospace[ICR])) {
+		handle_icr(icr);
+		n++;
+	}
+	if (n > 1) {
+		printf("e1000: needed %u loops of IRQ\n", n);
 	}
 }
 
@@ -599,9 +610,9 @@ void start() {
 	// Set some stuff: Set Link Up, Auto Speed Detect Enable
 	// Clear: PHY Reset, VME (VLAN Enable)
 	mmiospace[CTRL] = CTRL_ASDE | CTRL_SLU;
-	// TODO Enable some subset of interrupts
 	// * RXT0. With the receive timer set to 0 (disabled), this trigger for
 	//   every received package.
+	// * TXDW. Fires when transmit descriptors have been written back.
 	mmiospace[IMS] = IM_RXT0 | IM_TXDW;
 
 	for(;;) {
@@ -612,8 +623,11 @@ void start() {
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
 		printf("e1000: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
-			handle_irq();
+			// Disable all interrupts, then ACK receipt to PIC
+			mmiospace[IMC] = ~0;
 			send1(MSG_IRQ_ACK, rcpt, arg);
+			handle_irq();
+			mmiospace[IMS] = IM_RXT0 | IM_TXDW;
 			continue;
 		}
 		if (rcpt == fresh) {
