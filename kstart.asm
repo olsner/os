@@ -294,6 +294,7 @@ cleanup_pages:
 	mov	[pages.kernel_pdp + 0xff0], dword pages.low_pd | 3
 	mov	[pages.low_pd + 0xff8], dword pages.low_pt | 3
 
+; This has nothing to do with the APIC
 apic_setup:
 	mov	ecx, MSR_STAR
 	; cs for syscall (high word) and sysret (low word).
@@ -359,34 +360,6 @@ E820_MEM	equ 1
 E820_RESERVED	equ 2
 E820_ACPI_RCL	equ 3
 ; There is also 4, which is some ACPI thingy that we shouldn't touch
-
-test_alloc:
-	zero	ebx
-	zero	r12
-.loop:
-	call	allocate_frame.nopanic
-	test	rax,rax
-	jz	.done
-	inc	rbx
-	mov	[rax], r12
-	mov	r12, rax
-	jmp	.loop
-
-.done:
-lodstr	rdi,	'%x frames allocated (memory_start %x)', 10
-	mov	rsi, rbx
-	mov	edx, [memory_start]
-	call	printf
-
-test_free:
-	mov	rdi, r12
-	test	rdi, rdi
-	jz	.done
-	mov	r12, [rdi]
-	call	free_frame
-	jmp	test_free
-
-.done:
 
 fpu_initstate:
 	call	allocate_frame
