@@ -52,8 +52,7 @@ CR4_OSXMMEXCPT	equ	0x400
 
 %define PANIC PANIC_ __LINE__
 %macro PANIC_ 1
-	mov	esi, %1
-	tcall	panic_print
+	call	panic
 %assign need_panic 1
 %endmacro
 
@@ -4022,8 +4021,18 @@ lodstr	rdi, 'Pulsing %x of %x', 10
 
 %include "printf.asm"
 
-panic_print:
-lodstr	rdi, 'PANIC @ %x', 10 ; Decimal output would be nice...
+; pre-panic frame is set up by the PANIC macro
+; Currently it just does a 'call', leaving the rip of the panic on the bottom
+; of the stack when we get here.
+; One caveat is that if the stack is hosed, this'll be broken. Maybe we could
+; have a separate panic dump area for this.
+panic:
+	push	rsi
+	push	rdi
+	; Offset from rsp to start of pre-panic frame
+	%assign spoff 16
+	mov	rsi, [rsp + spoff]
+lodstr	rdi, 'PANIC @ rip=%x', 10 ; Decimal output would be nice...
 	call	printf
 	cli
 	hlt
