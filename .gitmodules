@@ -6,4 +6,4 @@
 	url = git://github.com/olsner/acpica.git
 [submodule "lwip"]
 	path = lwip
-	url = git://git.sv.gnu.org/lwip.git
+	url = git://github.com/olsner/lwip.git
