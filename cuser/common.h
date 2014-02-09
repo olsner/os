@@ -93,45 +93,37 @@ enum msg_acpi {
 };
 
 enum msg_ethernet {
-	// registration of fresh handle
 	/**
 	 * Register an ethernet protocol. Use with a fresh handle, memory map pages
 	 * to read incoming packets and store outgoing packets.
 	 * The special protocol number 0 can be used to match all protocols.
 	 *
-	 * The number of receive pages is specified here, if the number is n, then
-	 * pages 0..n-1 are receive pages, and n.. are send pages. Any number of
-	 * send pages can be allocated on demand.
+	 * The number of buffers to use is decided by the protocol through sending
+	 * receive messages for each buffer it wants to use for reception. All
+	 * buffers start out owned by the protocol until given to ethernet for
+	 * sending or receiving.
 	 *
 	 * arg1: protocol number
-	 * arg2: number of send and receive pages to allocate
-	 * arg2.byte0: number of receive pages
-	 * (arg2.byte1: number of send pages)
 	 * Returns:
 	 * arg1: MAC address of card
 	 */
 	MSG_ETHERNET_REG_PROTO = MSG_USER,
 	/**
-	 * ethernet -> protocol: A packet has been received.
-	 * protocol -> ethernet: Acknowledge a received packet and release the
-	 * buffer back for reception.
+	 * protocol -> ethernet: allocate a buffer to reception, handing over
+	 * ownership to the ethernet driver. Can only be sent without sendrcv. The
+	 * reply comes by pulse afterwards.
 	 *
 	 * The buffer contains the whole ethernet frame including headers, as it
 	 * came from the network. It may contain any type of frame, with or without
 	 * a VLAN header.
 	 *
-	 * ethernet -> protocol:
-	 * arg1: page number containing the received packet
-	 * arg2: packet length including headers
-	 * protocol -> ethernet:
-	 * arg1: page number of packet to release
+	 * arg1: page number of the buffer to receive into
 	 */
-	MSG_ETHERNET_RCVD,
+	MSG_ETHERNET_RECV,
 	/**
-	 * (protocol -> ethernet)
-	 * Send a packet. The given page number is owned by the ethernet driver
-	 * until delivered over the wire and the MSG_ETHERNET_SEND_ACK reply is
-	 * sent.
+	 * protocol -> ethernet: Send a packet. The given page number is owned by
+	 * the ethernet driver until delivered over the wire and the
+	 * pulse reply is sent.
 	 *
 	 * arg1: page number of buffer that contains data to send.
 	 * arg2: datagram length
@@ -169,7 +161,8 @@ enum msg_kind {
 
 enum msg_masks {
 	MSG_CODE_MASK = 0x0ff,
-	MSG_KIND_MASK = 0x300
+	MSG_KIND_MASK = 0x300,
+	MSG_KIND_SHIFT = 8
 };
 
 static uintptr_t msg_set_kind(uintptr_t msg, enum msg_kind kind) {
@@ -183,6 +176,9 @@ static uintptr_t msg_call(uintptr_t msg) {
 }
 static u8 msg_code(uintptr_t msg) {
 	return msg & MSG_CODE_MASK;
+}
+static enum msg_kind msg_get_kind(uintptr_t msg) {
+	return (msg & MSG_KIND_MASK) >> MSG_KIND_SHIFT;
 }
 
 /*
@@ -469,7 +465,6 @@ extern void free(void* p);
 static void abort(void) __attribute__((noreturn));
 static void abort(void)
 {
-	printf("<<abort>>\n");
 	for (;;) recv0(-1);
 }
 
@@ -496,6 +491,14 @@ enum pci_regs
 	PCI_BAR_0 = 0x10,
 	PCI_BAR_1 = 0x14,
 };
+
+/**
+ * A simple (compiler) barrier. Memory writes to volatile variables before the
+ * barrier must not be moved to after the barrier, regardless of optimizations.
+ */
+static void __barrier() {
+	__asm__ __volatile__ ("":::"memory");
+}
 
 #ifdef __cplusplus
 }

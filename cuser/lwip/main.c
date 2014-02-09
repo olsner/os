@@ -2,16 +2,20 @@
 #include "lwip/dhcp.h"
 #include "lwip/init.h"
 #include "lwip/ip.h"
+#include "lwip/sys.h"
 #include "lwip/timers.h"
 #include "netif/etharp.h"
 
-#ifdef NDEBUG
-#define debug(...) (void)0
+#include "common.h"
+
+#define log printf
+#if 0
+#define debug log
 #else
-#define debug(...) printf(__VA_ARGS__)
+#define debug(...) (void)0
 #endif
 
-#include "common.h"
+#define HEXDUMP 0
 
 err_t http_start(void);
 
@@ -23,7 +27,7 @@ static const uintptr_t fresh_handle = 0x200;
 
 static const u16 ETHERTYPE_ARP = 0x0806;
 
-#define NBUFS 1
+#define NBUFS 4
 #define BUFFER_SIZE 4096
 static char receive_buffers[NBUFS][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
 static char send_buffers[NBUFS][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
@@ -43,7 +47,7 @@ static struct {
 
 u32 sys_now() {
 	u32 res = timer_data.ms_counter;
-	//printf("sys_now: %u\n", res);
+	//debug("sys_now: %u\n", res);
 	return res;
 }
 void check_timers() {
@@ -56,37 +60,44 @@ void check_timers() {
 
 static void rcvd(uintptr_t buffer_index, uintptr_t packet_length) {
 	debug("lwip: received %u bytes\n", packet_length);
-#ifndef NDEBUG
+#if HEXDUMP
 	hexdump(receive_buffers[buffer_index], packet_length);
 #endif
 	struct pbuf* p = pbuf_alloc(PBUF_LINK, packet_length, PBUF_POOL);
 	const char* src = receive_buffers[buffer_index];
-	for (struct pbuf* q = p; q != NULL; q = q->next) {
-		memcpy(q->payload, src, q->len);
-		src += q->len;
-	}
-	send1(MSG_ETHERNET_RCVD, proto_handle, buffer_index);
+	pbuf_take(p, src, packet_length);
 	netif.input(p, &netif);
+	// Prepare to receive the next message
+	send1(MSG_ETHERNET_RECV, proto_handle, buffer_index);
+}
+
+static void buffer_done(uintptr_t i) {
+	if (i < NBUFS) {
+		debug("lwip: finish recv on %d\n", i);
+		rcvd(i, *(u16*)(receive_buffers[i] + 4094));
+	} else {
+		debug("lwip: finish send on %d\n", i);
+		send_busy[i - NBUFS] = false;
+	}
 }
 
 static err_t if_output(struct netif* netif, struct pbuf* p) {
-	if (send_busy[0]) {
-		printf("if_output: busy...\n");
-		return EAGAIN;
-	}
-	size_t len = 0;
-	while (p) {
-		memcpy(send_buffers[0] + len, p->payload, p->len);
-		len += p->len;
-		p = p->next;
-	}
-	debug("if_output: %ld bytes\n", len);
-#ifndef NDEBUG
-	hexdump(send_buffers[0], len);
+	for (size_t i = 0; i < NBUFS; i++) {
+		if (send_busy[i]) {
+			continue;
+		}
+		size_t len = pbuf_copy_partial(p, send_buffers[i], BUFFER_SIZE, 0);
+		debug("if_output: %ld bytes\n", len);
+#if HEXDUMP
+		hexdump(send_buffers[i], len);
 #endif
-	send_busy[0] = true;
-	send2(MSG_ETHERNET_SEND, proto_handle, NBUFS + 0, len);
-	return 0;
+		send_busy[i] = true;
+		send2(MSG_ETHERNET_SEND, proto_handle, NBUFS + i, len);
+		return 0;
+	}
+
+	log("if_output: busy...\n");
+	return ERR_WOULDBLOCK;
 }
 
 static err_t if_init(struct netif* netif) {
@@ -103,6 +114,10 @@ static err_t if_init(struct netif* netif) {
 void start() {
 	__default_section_init();
 
+	map(apic_handle, PROT_READ, &timer_data, 0, 4096);
+	prefault(&timer_data, PROT_READ);
+	puts("lwip: initialized timer\n");
+
 	hmod(eth_handle, eth_handle, proto_handle);
 	uintptr_t arg1 = ETHERTYPE_ANY, arg2 = NBUFS;
 	sendrcv2(MSG_ETHERNET_REG_PROTO, proto_handle, &arg1, &arg2);
@@ -111,13 +126,12 @@ void start() {
 
 	map(proto_handle, PROT_READ, receive_buffers, 0, sizeof(receive_buffers));
 	map(proto_handle, PROT_READ | PROT_WRITE, send_buffers, sizeof(receive_buffers), sizeof(send_buffers));
-	prefault(receive_buffers[0], PROT_READ);
-	prefault(send_buffers[0], PROT_READ | PROT_WRITE);
+	for (int i = 0; i < NBUFS; i++) {
+		prefault(receive_buffers[i], PROT_READ);
+		send1(MSG_ETHERNET_RECV, proto_handle, i);
+		prefault(send_buffers[i], PROT_READ | PROT_WRITE);
+	}
 	puts("lwip: registered protocol\n");
-
-	map(apic_handle, PROT_READ, &timer_data, 0, 4096);
-	prefault(&timer_data, PROT_READ);
-	puts("lwip: initialized timer\n");
 
 	lwip_init();
 	IP4_ADDR(&ipaddr, 192,168,100,3);
@@ -145,18 +159,19 @@ void start() {
 	for (;;) {
 		uintptr_t rcpt = fresh_handle;
 		uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
+		//debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
 		if (rcpt == proto_handle) {
-			switch (msg) {
-			case MSG_ETHERNET_RCVD:
-				debug("lwip: received %ld bytes in buf %ld\n", arg2, arg1);
-				rcvd(arg1, arg2);
-				break;
-			case MSG_ETHERNET_SEND:
-				debug("lwip: send %ld acked\n", arg1);
-				arg1 -= NBUFS;
-				if (arg1 < NBUFS) {
-					send_busy[arg1] = false;
+			switch (msg & 0xff) {
+			case MSG_PULSE:
+				for (int i = 0; i < 2 * NBUFS; i++) {
+					if (arg1 & (1 << i)) {
+						buffer_done(i);
+					}
 				}
+				break;
+			default:
+				debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
+				assert(false);
 				break;
 			}
 		} else if (rcpt == timer_handle) {
