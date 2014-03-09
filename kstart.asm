@@ -206,11 +206,6 @@ init_idt:
 load_idt:
 	lidt	[idtr]
 
-	mov	rdi,phys_vaddr(0xb8004)
-	lea	rsi,[rel message]
-	mov	ecx, 4
-	rep movsd
-
 	mov	rsp, phys_vaddr(kernel_stack_end)
 
 	mov	ax,tss64_seg
@@ -4027,19 +4022,6 @@ lodstr	rdi, 'PANIC @ rip=%x', 10 ; Decimal output would be nice...
 	call	printf
 	cli
 	hlt
-
-section .rodata
-
-%macro vga_string 1-*
-	%assign color %1
-	%rotate 1
-%rep (%0 - 1)
-	db %1, color
-	%rotate 1
-%endrep
-%endmacro
-message:
-	vga_string 7,'L','O','N','G','M','O','D','E'
 
 section .text
 tss:
