@@ -224,8 +224,6 @@ init_frames:
 	mov	r9d, [memory_start]
 	zero	r10
 
-	mov	r11, phys_vaddr(0xb8020)
-
 	mov	esi, [mbi_pointer]
 	add	rsi, r8
 	;mov	rsi, phys_vaddr(pages.memory_map)
@@ -248,8 +246,6 @@ init_frames:
 	cmp	eax, E820_MEM
 	; TODO ranges with value 3 (E820_ACPI_RECLAIM) are reusable once we're done with the ACPI data in them
 	jne	.loop
-	add	ax,0x0f00 | '0'
-	mov	word [r11], ax
 	cmp	rdi, r9
 	cmovb	rdi, r9
 
