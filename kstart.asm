@@ -28,6 +28,7 @@
 
 ; print each word of the mbootinfo block on bootup
 %define log_mbi 0
+%define kernel_vga_console 1
 %define bochs_con 1
 
 %define debug_tcalls 0
@@ -101,9 +102,11 @@ struc	gseg
 	.self	resq	1
 	; Kernel stack pointer for syscalls and interrupts
 	.rsp	resq	1
+%if kernel_vga_console
 	.vga_base	resq 1
 	.vga_pos	resq 1
 	.vga_end	resq 1
+%endif
 
 	.process	resq 1
 	.runqueue	restruc dlist
@@ -163,9 +166,11 @@ endmboot
 bits 64
 default rel
 
+%if kernel_vga_console
 %define printf kprintf
 %define puts kputs
 %define putchar kputchar
+%endif
 
 ;;
 ; The main 64-bit entry point. At this point, we have set up a page table that
@@ -335,6 +340,7 @@ apic_setup:
 	stosq ; gs:0 - selfpointer
 	mov	rax, rsp
 	stosq
+%if kernel_vga_console
 	mov	rax,phys_vaddr(0xb8000)
 	;mov	eax,0xb8000
 	stosq ; gs:8 - VGA buffer base
@@ -342,6 +348,7 @@ apic_setup:
 	stosq ; gs:16 - VGA writing position
 	lea	rax,[rax+80*25*2-160]
 	stosq ; gs:24 - VGA buffer end
+%endif
 
 E820_MEM	equ 1
 E820_RESERVED	equ 2
@@ -2684,6 +2691,7 @@ syscall_nosys:
 	jmp syscall_entry.invalid_syscall
 
 syscall_write:
+%if kernel_vga_console
 	; user write: 0x0f00 | char (white on black)
 	movzx	edi, dil
 	or	di, 0x0f00
@@ -2723,10 +2731,12 @@ lodstr	rsi, 27, '[0m'
 	cmp	rdi, [rbp + gseg.vga_end]
 	jge	.scroll_line
 	mov	[rbp + gseg.vga_pos], rdi
+%endif
 .ret:
 	clear_clobbered
 	ret
 
+%if kernel_vga_console
 .scroll_line:
 	mov	rsi, [rbp + gseg.vga_base]
 	mov	rdi, rsi
@@ -2761,6 +2771,7 @@ lodstr	rsi, 27, '[0m', 10
 	rep	stosw
 
 	jmp	.finish_write
+%endif
 
 syscall_portio:
 	; di = port
@@ -4001,7 +4012,11 @@ lodstr	rdi, 'Pulsing %x of %x', 10
 .ret0	zero	eax
 .ret	ret
 
+%if kernel_vga_console
 %include "printf.asm"
+%else
+printf:	ret
+%endif
 
 ; pre-panic frame is set up by the PANIC macro
 ; Currently it just does a 'call', leaving the rip of the panic on the bottom
