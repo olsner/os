@@ -105,9 +105,6 @@ struc	gseg
 	.vga_pos	resq 1
 	.vga_end	resq 1
 
-	.curtime	resd 1
-	.tick		resd 1
-
 	.process	resq 1
 	.runqueue	restruc dlist
 
@@ -182,8 +179,6 @@ start64:
 	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
 	; will get unmapped as soon as we leave the boot code.
 	lgdt	[gdtr]
-	; Load before setup :)
-	lidt	[idtr]
 
 init_idt:
 	lea	rbp, [rel idt]
@@ -209,6 +204,7 @@ init_idt:
 	loop	.loop
 
 load_idt:
+	lidt	[idtr]
 
 	mov	rdi,phys_vaddr(0xb8004)
 	lea	rsi,[rel message]
@@ -216,6 +212,7 @@ load_idt:
 	rep movsd
 
 	mov	rsp, phys_vaddr(kernel_stack_end)
+
 	mov	ax,tss64_seg
 	ltr	ax
 
@@ -2819,10 +2816,6 @@ syscall_portio:
 
 .outdw:
 	out	dx, eax
-	ret
-
-syscall_gettime:
-	movzx	eax, byte [rbp + gseg.curtime]
 	ret
 
 syscall_yield:
