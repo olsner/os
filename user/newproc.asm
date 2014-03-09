@@ -1,7 +1,5 @@
 %include "module.inc"
 
-[map all newproc.map]
-
 CHILD_HANDLE	equ	1
 
 	mov	edi, CHILD_HANDLE

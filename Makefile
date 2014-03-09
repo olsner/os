@@ -78,7 +78,7 @@ $(OUTDIR)/%.d: %.asm
 
 $(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d
 	@mkdir -p $(@D)
-	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $*.lst
+	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $(OUTDIR)/$*.lst --mapfile=$(OUTDIR)/$*.map
 	$(SIZE_ASM)
 
 $(OUTDIR)/kstart.b: $(INLINE_MODULES)
