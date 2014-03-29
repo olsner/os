@@ -80,6 +80,8 @@ struc aspace
 	; Upon setup, pml4 is set to a freshly allocated frame that is empty
 	; except for the mapping to the kernel memory area (which, as long as
 	; it's less than 4TB is only a single entry in the PML4).
+	; (This is the virtual address in the higher half. proc.cr3 is a
+	; physical address.)
 	.pml4		resq 1
 	; TODO Lock structure for multiprocessing
 	.count		resq 1

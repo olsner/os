@@ -2017,7 +2017,7 @@ lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	add	rdi, kernel_base
 %endmacro
 
-	mov	rdi, [rdi + aspace.pml4] ; Confirm: vaddr of pml4?
+	mov	rdi, [rdi + aspace.pml4]
 	do_table 39, 'PDP'
 	do_table 30, 'PD'
 	do_table 21, 'PT'

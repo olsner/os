@@ -29,6 +29,7 @@ struc	proc, -0x80
 	.waiters restruc dlist
 	; If/when in a list, points to next process in list
 	.node	restruc dlist_node
+	; Physical address of PML4 to put in CR3
 	.cr3	resq 1
 	.aspace	resq 1
 	.count	resq 1
