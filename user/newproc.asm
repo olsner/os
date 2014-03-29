@@ -5,7 +5,8 @@ CHILD_HANDLE	equ	1
 	mov	edi, CHILD_HANDLE
 	mov	ebx, edi ; save it away for later
 	mov	esi, user_entry_new
-	mov	edx, end_of_module
+	mov	edx, NEWPROC_PROC
+	mov	r8d, end_of_module
 	mov	eax, MSG_NEWPROC
 	syscall
 

@@ -110,10 +110,17 @@ MSG_HMOD	equ	4
 ;
 ; rdi: new process handle
 ; rsi: entry-point for new process
-; rdx: end of new process' load segment
-;
-; The stack for the new process will start just before the page that has the
-; entry point.
+; rdx: flags
+; - bit 0: set = give the new process a separate address space, populated very
+;   simply based on the entry-point address and an end pointer:
+;   * the page before the entry-point is anon-mapped and becomes the stack
+;   * the page of the entry-point up until the address in r8, are mapped shared
+;     these pages must all be mapped directly to physical addresses (currently)
+;   clear = create a thread rather than a process. the whole address space is
+;   shared with this process. The new stack is specified explicitly in r8.
+; r8: depending on flags:
+; - newproc: end of new process' load segment
+; - newthread: the stack pointer for the new thread
 ;
 ; Returns:
 ; rax: success or error code
@@ -122,6 +129,8 @@ MSG_HMOD	equ	4
 ; rdi: process handle for parent process
 ; Remaining message registers are copied from the parent process.
 MSG_NEWPROC	equ	5
+
+NEWPROC_PROC	equ	1
 
 ; other ideas
 ; * patch/pipe/connect/forward/shortcut api:

@@ -687,8 +687,33 @@ new_proc_simple:
 	mov	esi, 0x100000
 	and	edi, 0xfff
 	add	edi, esi
+
 	call	new_proc
-	mov	rbx, rax ; save away created process in callee-save register
+	mov	rbx, rax
+	test	eax, eax
+	jz	.oom
+
+	; Allocate address space. Should use kmalloc/slab/etc, aspace is small
+	call	allocate_frame
+	test	eax, eax
+	jz	.oom
+	mov	[rbx + proc.aspace], rax
+
+	; Allocate page table
+	call	allocate_frame
+	test	eax,eax
+	jz	.oom
+
+	; Copy a reference to the kernel memory range into the new PML4.
+	; Since this currently is at most one 4TB range, this is easy: only a
+	; single PML4 entry maps everything by sharing the kernel's lower
+	; page tables between all processes.
+	mov	esi, [pages.pml4 + 0xff8]
+	mov	[rax + 0xff8], esi
+	mov	rsi, [rbx + proc.aspace]
+	mov	[rsi + aspace.pml4], rax
+	sub	rax, phys_vaddr(0)
+	mov	[rbx + proc.cr3], rax
 
 	; Memory map for new process:
 	; 1MB - 4k: (stack)
@@ -737,7 +762,7 @@ new_proc_simple:
 	jnz	.map
 
 	mov	rax, rbx
-	pop	rbx
+.oom	pop	rbx
 	ret
 
 launch_user:
@@ -782,7 +807,7 @@ new_proc:
 	pop	rsi
 
 	test	eax,eax
-	jz	.oom_no_pop
+	jz	.oom
 
 	push	rbx
 	lea	rbx, [rax - proc]
@@ -797,33 +822,9 @@ new_proc:
 	mov	ecx, 512 / 8
 	rep	movsq
 
-	; Allocate address space. Should use kmalloc/slab/etc, aspace is small
-	call	allocate_frame
-	test	eax, eax
-	jz	.oom
-	mov	[rbx + proc.aspace], rax
-
-	; Allocate page table
-	call	allocate_frame
-	test	eax,eax
-	jz	.oom
-
-	; Copy a reference to the kernel memory range into the new PML4.
-	; Since this currently is at most one 4TB range, this is easy: only a
-	; single PML4 entry maps everything by sharing the kernel's lower
-	; page tables between all processes.
-	mov	esi, [pages.pml4 + 0xff8]
-	mov	[rax + 0xff8], esi
-	mov	rsi, [rbx + proc.aspace]
-	mov	[rsi + aspace.pml4], rax
-	sub	rax, phys_vaddr(0)
-	mov	[rbx + proc.cr3], rax
-
-	mov	rax,rbx
-.oom:
+	mov	rax, rbx
 	pop	rbx
-.oom_no_pop:
-	ret
+.oom	ret
 
 ; rdi: process being waited for
 ; rsi: process that should start waiting
@@ -2874,9 +2875,16 @@ syscall_newproc:
 	; - Go?
 
 	mov	r12, rsi ; entry-point/start
-	mov	r13, rdx ; end
+	mov	r13, r8  ; end/stack
 	mov	r14, rdi ; handle of child process
 
+	test	edx, NEWPROC_PROC
+	jnz	.process
+
+	PANIC ; TODO Implement new-thread-with-same-address-space
+	;call	new_proc
+
+.process:
 	; Find mapping for start..end, make sure they're all the same and a
 	; direct physical memory mapping. (That's the only one we support for
 	; making processes out of. So far.)
