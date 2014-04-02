@@ -232,4 +232,10 @@ start32:
 	and	al, ~CR0_EM ; Disable Emulate Coprocessor
 	mov	cr0,eax
 
-	jmp	code64_seg:start64
+	jmp	code64_seg:.trampoline
+
+bits 64
+.trampoline:
+	; Start by jumping into the kernel memory area at -1GB. Since that's a
+	; 64-bit address, we must do it in long mode...
+	jmp	phys_vaddr(start64)

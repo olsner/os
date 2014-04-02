@@ -178,10 +178,6 @@ default rel
 ; identity-maps 0x8000 and 0x9000 and maps all physical memory at kernel_base.
 ;;
 start64:
-	; Start by jumping into the kernel memory area at -1GB. Since that's a
-	; 64-bit address, we must do it in long mode...
-	jmp	phys_vaddr(.moved)
-.moved:
 	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
 	; will get unmapped as soon as we leave the boot code.
 	lgdt	[gdtr]
