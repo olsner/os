@@ -74,12 +74,22 @@ clean:
 
 $(OUTDIR)/%.d: %.asm
 	@mkdir -p $(@D)
-	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.b=.d)
+	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $(@:.d=.b) > $(@)
 
 $(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d
 	@mkdir -p $(@D)
 	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $(OUTDIR)/$*.lst --mapfile=$(OUTDIR)/$*.map
 	$(SIZE_ASM)
+
+-include $(OUTDIR)/start32.d
+
+$(OUTDIR)/start32.o: start32.asm
+	@mkdir -p $(@D)
+	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.o=.d)
+	$(HUSH_ASM) $(YASM) -i . -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUTDIR)/start32.lst
+	$(SIZE_ASM)
+
+all: $(OUTDIR)/start32.o
 
 $(OUTDIR)/kstart.b: $(INLINE_MODULES)
 

@@ -71,8 +71,6 @@ RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
 RFLAGS_VM	equ	(1 << 17)
 
-kernel_base equ -(1 << 30)
-
 ; Per-CPU data (theoretically)
 struc	gseg
 	; Pointer to self
@@ -101,25 +99,10 @@ struc	gseg
 endstruc
 
 section .text vstart=pages.kernel
-text_vstart_dummy:
 section .rodata vfollows=.text follows=.text align=4
-rodata_vstart_dummy:
 section bss nobits align=8 vfollows=.rodata
-bss_vstart_dummy:
 
-; get the physical address of a symbol in the .text section
-%define text_paddr(sym) (section..text.vstart + sym - text_vstart_dummy)
-%define bss_paddr(sym) (section.bss.vstart + sym - bss_vstart_dummy)
-%define rodata_paddr(sym) (section..rodata.vstart + sym - rodata_vstart_dummy)
-; get the virtual (kernel) address for a symbol in the .text section
-%define text_vpaddr(sym) phys_vaddr(text_paddr(sym))
-; get the virtual (kernel) address for a .bss-section symbol
-%define bss_vpaddr(sym) phys_vaddr(bss_paddr(sym))
-; translate a physical address to a virtual address in the 'core'
-; Note: in most cases, RIP-relative addressing is enough (since we tell the
-; assembler we're based at 0x8000 while we're actually at kernel_base+0x8000),
-; but this can be used for constant data or wherever we need the full address.
-%define phys_vaddr(phys) kernel_base + phys
+%include "sections.inc"
 
 ; Note: Must all be in the same section, otherwise trouble with complicated
 ; expressions that rely on bitwise arithmetic on symbol relocations
@@ -127,18 +110,7 @@ section .text
 
 %include "start32.inc"
 
-align 4
-mboot_header:
-mboot MBOOT_FLAG_LOADINFO | MBOOT_FLAG_NEED_MEMMAP
-	; | MBOOT_FLAG_NEED_VIDMODE
-mboot_load \
-	text_paddr(mboot_header), \
-	section..text.vstart, \
-	section.data.end, \
-	kernel_reserved_end, \
-	text_paddr(start32_mboot)
-;mboot_vidmode_text
-endmboot
+section .text
 
 bits 64
 default rel
@@ -3921,44 +3893,6 @@ lodstr	rdi, 'PANIC @ rip=%x', 10 ; Decimal output would be nice...
 	cli
 	hlt
 
-section .text
-tss:
-	dd 0 ; Reserved
-	; Interrupt stack when interrupting non-kernel code and moving to CPL 0
-	dq phys_vaddr(kernel_stack_end)
-	dq 0
-	dq 0
-	times 0x66-28 db 0
-	; IOPB starts just after the TSS
-	dw	0x68
-
-align 8
-gdt_start:
-	define_segment 0,0,0
-	; KERNEL segments
-	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
-	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT
-	define_segment 0xfffff,0,RW_ACCESS | GRANULARITY | SEG_32BIT
-	; 64-bit code/data. Used.
-	define_segment 0,0,RX_ACCESS | SEG_64BIT
-	define_segment 0,0,RW_ACCESS
-	; 64-bit TSS
-	define_tss64 0x68, text_vpaddr(tss)
-	; USER segments
-	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
-	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
-	define_segment 0xfffff,0,RW_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
-	; 64-bit code/data. Used.
-	define_segment 0,0,RX_ACCESS | SEG_64BIT | SEG_DPL3
-	define_segment 0,0,RW_ACCESS | SEG_DPL3
-gdt_end:
-
-section .rodata
-align	4
-gdtr:
-	dw	gdt_end-gdt_start-1 ; Limit
-	dq	text_vpaddr(gdt_start)  ; Offset
-
 section .rodata
 idtr:
 	dw	idt_end-idt-1
@@ -3994,9 +3928,6 @@ globals:
 ; media/fpu instructions. Points to a whole page but only 512 bytes is actually
 ; required.
 .initial_fpstate	resq 1
-
-mbi_pointer resd 1
-memory_start resd 1
 
 ; Provide room for all possible interrupts, although we'll only use up to
 ; 48 or so

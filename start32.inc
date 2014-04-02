@@ -2,6 +2,19 @@
 
 %include "common.inc"
 
+align 4
+mboot_header:
+mboot MBOOT_FLAG_LOADINFO | MBOOT_FLAG_NEED_MEMMAP
+	; | MBOOT_FLAG_NEED_VIDMODE
+mboot_load \
+	text_paddr(mboot_header), \
+	section..text.vstart, \
+	section.data.end, \
+	kernel_reserved_end, \
+	text_paddr(start32_mboot)
+;mboot_vidmode_text
+endmboot
+
 bits 32
 start32_mboot:
 	; The multiboot loader will have set cs and ds to sensible segments,
@@ -241,3 +254,47 @@ bits 64
 	; Start by jumping into the kernel memory area at -1GB. Since that's a
 	; 64-bit address, we must do it in long mode...
 	jmp	phys_vaddr(start64)
+
+section bss
+mbi_pointer resd 1
+memory_start resd 1
+
+section .text
+align 8
+gdt_start:
+	define_segment 0,0,0
+	; KERNEL segments
+	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
+	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT
+	define_segment 0xfffff,0,RW_ACCESS | GRANULARITY | SEG_32BIT
+	; 64-bit code/data. Used.
+	define_segment 0,0,RX_ACCESS | SEG_64BIT
+	define_segment 0,0,RW_ACCESS
+	; 64-bit TSS
+	define_tss64 0x68, text_vpaddr(tss)
+	; USER segments
+	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
+	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
+	define_segment 0xfffff,0,RW_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
+	; 64-bit code/data. Used.
+	define_segment 0,0,RX_ACCESS | SEG_64BIT | SEG_DPL3
+	define_segment 0,0,RW_ACCESS | SEG_DPL3
+gdt_end:
+
+section .text
+tss:
+	dd 0 ; Reserved
+	; Interrupt stack when interrupting non-kernel code and moving to CPL 0
+	dq phys_vaddr(kernel_stack_end)
+	dq 0
+	dq 0
+	times 0x66-28 db 0
+	; IOPB starts just after the TSS
+	dw	0x68
+
+section .rodata
+align	4
+gdtr:
+	dw	gdt_end-gdt_start-1 ; Limit
+	dq	text_vpaddr(gdt_start)  ; Offset
+
