@@ -1,5 +1,7 @@
 ; vim:filetype=nasm:
 
+%include "common.inc"
+
 bits 32
 start32_mboot:
 	; The multiboot loader will have set cs and ds to sensible segments,

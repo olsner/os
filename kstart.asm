@@ -36,19 +36,6 @@
 ; Use an unrolled loop of movntdq (MMX?) instructions to clear pages
 %define unroll_memset_0 0
 
-CR0_PE		equ	0x00000001
-CR0_MP		equ	0x00000002
-CR0_EM		equ	0x00000004
-CR0_TS_BIT	equ	3
-CR0_PG		equ	0x80000000
-
-CR4_PAE		equ	0x020
-CR4_MCE		equ	0x040
-CR4_PGE		equ	0x080
-CR4_PCE		equ	0x100
-CR4_OSFXSR	equ	0x200
-CR4_OSXMMEXCPT	equ	0x400
-
 %define PANIC PANIC_ __LINE__
 %macro PANIC_ 1
 	call	panic
@@ -76,24 +63,13 @@ CR4_OSXMMEXCPT	equ	0x400
 %endif
 %endmacro
 
-%include "macros.inc"
-%include "msr.inc"
-%include "proc.inc"
-%include "segments.inc"
-%include "string.inc"
-%include "mboot.inc"
-%include "pages.inc"
-%include "syscalls.inc"
-%include "messages.inc"
-%include "pic.inc"
+%include "common.inc"
 %include "aspace.inc"
+%include "proc.inc"
 
 RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
 RFLAGS_VM	equ	(1 << 17)
-
-APIC_TICKS	equ	10000
-APIC_PBASE	equ	0xfee00000
 
 kernel_base equ -(1 << 30)
 
