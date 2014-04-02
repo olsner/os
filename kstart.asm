@@ -100,7 +100,7 @@ endstruc
 
 section .text vstart=pages.kernel
 section .rodata vfollows=.text follows=.text align=4
-section bss nobits align=8 vfollows=.rodata
+section .bss nobits align=8 vfollows=.rodata
 
 %include "sections.inc"
 
@@ -3918,7 +3918,7 @@ idt_data:
 %endrep
 .vectors_end:
 
-section bss
+section .bss
 globals:
 ; Pointer to first free page frame..
 .free_frame	resq 1

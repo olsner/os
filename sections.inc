@@ -2,14 +2,14 @@
 
 section .rodata
 rodata_vstart_dummy:
-section bss nobits
+section .bss
 bss_vstart_dummy:
 section .text
 text_vstart_dummy:
 
 ; get the physical address of a symbol in the .text section
 %define text_paddr(sym) (section..text.vstart + sym - text_vstart_dummy)
-%define bss_paddr(sym) (section.bss.vstart + sym - bss_vstart_dummy)
+%define bss_paddr(sym) (section..bss.vstart + sym - bss_vstart_dummy)
 %define rodata_paddr(sym) (section..rodata.vstart + sym - rodata_vstart_dummy)
 ; get the virtual (kernel) address for a symbol in the .text section
 %define text_vpaddr(sym) phys_vaddr(text_paddr(sym))

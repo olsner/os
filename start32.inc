@@ -255,7 +255,7 @@ bits 64
 	; 64-bit address, we must do it in long mode...
 	jmp	phys_vaddr(start64)
 
-section bss
+section .bss
 mbi_pointer resd 1
 memory_start resd 1
 
