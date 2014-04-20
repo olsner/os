@@ -73,18 +73,35 @@ find_mod_ends:
 
 copy_multiboot_info:
 	mov	[mbi_pointer], ebp
+	;mov	[orig_mbi_pointer], ebx
 
 	mov	esi, ebx
 	mov	edi, ebp
 	mov	ecx, mbootinfo_size / 4
 	rep movsd
 
+	; TODO Should check for MBI_FLAG_MMAP
 	; Copy the memory mappings
 	mov	esi, [ebx + mbootinfo.mmap_addr]
 	mov	[ebp + mbootinfo.mmap_addr], edi
 	mov	ecx, [ebx + mbootinfo.mmap_length]
 	rep movsb
 
+%ifdef mboot_use_cmdline
+	test	byte [ebx + mbootinfo.flags], MBI_FLAG_CMDLINE
+	jz	.no_cmdline
+
+	mov	esi, [ebx + mbootinfo.cmdline]
+	mov	[ebp + mbootinfo.cmdline], edi
+.strcpy_loop:
+	lodsb
+	stosb
+	test	al,al
+	jnz	.strcpy_loop
+
+.no_cmdline:
+%endif
+copy_modules:
 	; If we have modules, copy them too
 	test	byte [ebx + mbootinfo.flags], MBI_FLAG_MODULES
 	jz	.no_modules
@@ -161,6 +178,7 @@ start32:
 	; User-mode stack at 0x10000-0x10fff
 	; Another page-table at 0x11000-0x11fff (for the top-of-vm kernel pages)
 	; Kernel GS-page at 0x12000-0x12fff
+	; (Oh, and all these are wrong since the move to >1MB)
 
 	; magic flag time:
 	; All entries have the same lower 4 bits (all set to 1 here):
@@ -227,8 +245,23 @@ start32:
 	xor	eax,eax
 	mov	ecx,0x0400
 	rep	stosd
+%if use_1gb_pages
 	; Write a single 1GB page mapping at physical address 0
-	mov	word [edi-8],0x1c3
+	mov	word [edi - 8],0x83
+%else
+	; Pointer to PD for upper 1GB of memory
+	mov	dword [edi - 8], pages.kernel_pd | 3
+.fill_pd:
+	mov	edi, pages.kernel_pd
+	mov	eax, 0x83
+	; Fill in with 512 x 2MB blocks
+	mov	ecx, 512
+.loop:
+	stosd
+	add	edi, 4
+	add	eax, 1 << 21
+	loop	.loop
+%endif
 
 	; Start mode-switching
 	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
@@ -251,13 +284,15 @@ start32:
 
 bits 64
 .trampoline:
+	mov	rsp, phys_vaddr(kernel_stack_end)
 	; Start by jumping into the kernel memory area at -1GB. Since that's a
 	; 64-bit address, we must do it in long mode...
-	jmp	phys_vaddr(start64)
+	jmp	start64
 
 section .bss
 mbi_pointer resd 1
 memory_start resd 1
+;orig_mbi_pointer resd 1
 
 section .text
 align 8

@@ -18,6 +18,9 @@ struc pages, 0x100000
 .kernel_stack_end:
 
 .kernel_pdp	respage
+%if use_1gb_pages == 0
+.kernel_pd	respage
+%endif
 .gseg_cpu0	respage
 endstruc
 

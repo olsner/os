@@ -30,6 +30,9 @@
 %define log_mbi 0
 %define kernel_vga_console 1
 %define bochs_con 1
+; configuration for pages.inc and start32.inc, use a single 1GB mapping instead
+; of 512 2MB-pages.
+%define use_1gb_pages 1
 
 %define debug_tcalls 0
 
@@ -121,11 +124,13 @@ default rel
 %define putchar kputchar
 %endif
 
+start64 equ phys_vaddr(start64_low)
+
 ;;
 ; The main 64-bit entry point. At this point, we have set up a page table that
 ; identity-maps 0x8000 and 0x9000 and maps all physical memory at kernel_base.
 ;;
-start64:
+start64_low:
 	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
 	; will get unmapped as soon as we leave the boot code.
 	lgdt	[gdtr]
@@ -155,8 +160,6 @@ init_idt:
 
 load_idt:
 	lidt	[idtr]
-
-	mov	rsp, phys_vaddr(kernel_stack_end)
 
 	mov	ax,tss64_seg
 	ltr	ax
