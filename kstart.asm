@@ -2596,12 +2596,12 @@ lodstr	rsi, 27, '[0m'
 	mov	rsi, [rbp + gseg.vga_base]
 	mov	rdi, rsi
 	add	rsi, 160
-	mov	ecx, 80*24*2/8
-	rep	movsq
+	mov	ecx, 80*24*2/4
+	rep	movsd
 	mov	[rbp + gseg.vga_pos], rdi
 	zero	eax
-	mov	ecx, 160 / 8
-	rep	movsq
+	mov	ecx, 160 / 4
+	rep	movsd
 	jmp	.ret
 
 .newline:
