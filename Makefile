@@ -169,6 +169,10 @@ $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 $(OUTDIR)/grub.iso: $(GRUB_CFG) $(GRUBDIR)/kstart.b $(MODFILES)
 	@echo Creating grub boot image $@ from $^
 	grub-mkrescue $(GRUB_MODULES) -o $@ $(GRUBDIR) >/dev/null
+	@echo '$@: \\' > $@.d
+	@find $(GRUBDIR) | sed 's/$$/ \\/' >> $@.d
+
+-include $(OUTDIR)/grub.iso.d
 
 ACPICA_SRC =            $(ACPICA)/source
 ACPICA_COMMON =         $(ACPICA_SRC)/common
