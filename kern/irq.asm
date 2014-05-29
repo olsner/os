@@ -62,21 +62,20 @@ irq:
 	; rsi = interrupt mask
 
 %if log
-	test	[rsp + 4], rdi
+	test	[rsp + 4], rsi
 	jnz	.registered
-	mov	rsi, rdi
 lodstr	edi,	"rawIRQ: %x triggered but I'm not listening", 10
 	call	printf
 	jmp	rcv_loop
 %endif
 
 .registered:
-	and	edi, [rsp + 4]
+	and	esi, [rsp + 4]
 	jz	rcv_loop
 
 	; Some interrupts were interesting
 	zero	ebx
-	mov	rbp, rdi
+	mov	rbp, rsi
 .loop:
 	test	rbp, rbp
 	jz	rcv_loop

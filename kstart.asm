@@ -538,8 +538,9 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 
 	and	[rax + proc.flags], byte ~PROC_IN_RECV
 	zero	esi
-	xchg	rsi, [rbp + gseg.irq_delayed]
 	mov	[rax + proc.rdi], rsi
+	xchg	rsi, [rbp + gseg.irq_delayed]
+	mov	[rax + proc.rsi], rsi
 	mov	qword [rax + proc.rax], MSG_PULSE
 
 	jmp	switch_to
