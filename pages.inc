@@ -4,8 +4,12 @@
 	resb (4096*%1)
 %endmacro
 
+%ifndef kernel_pages
+%define kernel_pages 3
+%endif
+
 struc pages, 0x100000
-.kernel		respage 3
+.kernel		respage kernel_pages
 
 .page_tables:
 .pml4		respage
