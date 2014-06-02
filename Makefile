@@ -23,8 +23,10 @@ HUSH_ASM_DEP=@
 HUSH_CC= @echo ' [CC]\t'$@;
 HUSH_CXX=@echo ' [CXX]\t'$@;
 HUSH_LD= @echo ' [LD]\t'$@;
+HUSH_OBJCOPY= @echo ' [OBJCOPY]\t'$@;
 SIZE_ASM=@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
 SIZE_LD= @echo ' [LD]\t'$@: `stat -c %s $@` bytes
+SIZE_OBJCOPY= @echo ' [OBJCOPY]\t'$@: `stat -c %s $@` bytes
 endif
 
 OUTDIR       := out
@@ -114,7 +116,7 @@ USER_CFLAGS += -ffunction-sections -fdata-sections
 
 LDFLAGS := --check-sections
 LDFLAGS += --gc-sections
-USER_LDFLAGS := $(LDFLAGS)
+USER_LDFLAGS = $(LDFLAGS)
 
 LD_ELF_FORMAT := elf64-x86-64
 YASM_ELF_FORMAT := elf64
@@ -125,6 +127,8 @@ USER_LDFLAGS += -melf32_x86_64
 LD_ELF_FORMAT := elf32-x86-64
 YASM_ELF_FORMAT := elfx32
 endif
+
+USER_LDFLAGS += --oformat $(LD_ELF_FORMAT) -Map $(@:.elf=.map)
 
 $(OUTDIR)/cuser/%.o: cuser/%.c
 	@mkdir -p $(@D)
@@ -138,26 +142,27 @@ $(OUTDIR)/cuser/%.o: %.c
 	@mkdir -p $(@D)
 	$(HUSH_CC) $(CC) $(USER_CFLAGS) -c -MP -MMD -o $@ $<
 
-$(GRUBDIR)/%.mod: cuser/linker.ld $(OUTDIR)/%.o
+$(GRUBDIR)/%.mod: $(OUTDIR)/%.elf
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(OUTDIR)/$*.map
-	$(SIZE_LD)
+	$(HUSH_OBJCOPY) objcopy -O binary $< $@
+	$(SIZE_OBJCOPY)
 
-$(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o $(OUTDIR)/cuser/printf.o
+$(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
 WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
 WANT_REAL_PRINTF = e1000 apic
 
-$(WANT_PRINTF:%=$(GRUBDIR)/cuser/%.mod): $(OUTDIR)/cuser/printf.o
-$(WANT_REAL_PRINTF:%=$(GRUBDIR)/cuser/%.mod): \
+$(WANT_PRINTF:%=$(OUTDIR)/cuser/%.elf): $(OUTDIR)/cuser/printf.o
+$(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
 	$(OUTDIR)/cuser/acpica/printf.o \
 	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm
+	@mkdir -p $(@D)
 	$(YASM) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
 
 $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
@@ -250,14 +255,9 @@ ACPI_CFLAGS += -DACPI_FULL_DEBUG
 
 $(ACPI_OBJS): USER_CFLAGS += $(ACPI_CFLAGS)
 
-$(GRUBDIR)/cuser/acpica.mod: cuser/linker.ld $(ACPI_OBJS)
-	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(OUTDIR)/acpica.map
-	$(SIZE_LD)
-
 $(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
 
 LWIP = lwip
@@ -293,13 +293,8 @@ $(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
 
 LWIP_DEP_OBJS := $(LWIP_OBJS) $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
-$(GRUBDIR)/cuser/lwip.mod: cuser/linker.ld $(LWIP_DEP_OBJS)
-	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^ -Map $(LWIP_OUT)/lwip.map
-	$(SIZE_LD)
-
 $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
-	$(HUSH_LD) $(LD) $(USER_LDFLAGS) --oformat $(LD_ELF_FORMAT) -o $@ -T $^
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
 all: $(GRUBDIR)/cuser/lwip.mod
