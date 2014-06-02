@@ -503,7 +503,7 @@ static char* allocate_buffer(buffer* buffer) {
 			return buffer->data;
 		}
 	}
-	assert(false && "ran out of buffers");
+	assert(!"ran out of buffers");
 	return NULL;
 }
 
@@ -770,6 +770,9 @@ void start() {
 				}
 				debug("e1000: granting %p (%x) to protocol %x\n", arg, arg2, proto->ethertype);
 				ipc2(MSG_GRANT, &rcpt, &arg, &arg2);
+			} else {
+				debug("e1000: fault for unknown protocol (rcpt %#lx)\n", rcpt);
+				assert(proto);
 			}
 			break;
 		}
