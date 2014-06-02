@@ -447,7 +447,7 @@ AcpiOsRemoveInterruptHandler (
 }
 
 static void HandleIrq(irq_reg* irq, uintptr_t num) {
-	printf("IRQ %#lx: Calling %p/%p (registered for %#x)\n", num,
+	printf("acpica: IRQ %#lx: Calling %p/%p (registered for %#x)\n", num,
 			irq->ServiceRoutine, irq->Context, irq->InterruptNumber);
 	irq->ServiceRoutine(irq->Context);
 }
@@ -463,6 +463,7 @@ int AcpiOsCheckInterrupt(uintptr_t rcpt, uintptr_t arg)
 		}
 		irq = irq->Next;
 	}
+	printf("IRQ %#lx/%#x: Not found!\n", rcpt, arg);
 	return 0;
 }
 

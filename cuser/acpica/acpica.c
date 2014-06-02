@@ -559,10 +559,14 @@ void start() {
 		uintptr_t arg2 = 0;
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
 		printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
-		if (msg == MSG_PULSE && AcpiOsCheckInterrupt(rcpt, arg)) {
-			printf("acpica: Handled interrupt.\n", msg, rcpt, arg);
-			// It was an IRQ, handled by ACPICA
-			continue;
+		if (msg == MSG_PULSE) {
+			if (AcpiOsCheckInterrupt(rcpt, arg)) {
+				printf("acpica: Handled interrupt.\n", msg, rcpt, arg);
+				// It was an IRQ, handled by ACPICA
+				continue;
+			} else {
+				printf("acpica: Unhandled pulse: %#x from %#lx\n", arg, rcpt);
+			}
 		}
 		switch (msg & 0xff)
 		{
