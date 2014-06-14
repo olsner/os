@@ -65,8 +65,8 @@ CONFIG_BYTE	equ	1 | 4
 	mov	si, 2 ; scan code set 2
 	call	outb
 %endif
-	mov	di, KEY_DATA
-	call	inb
+	call	clear_buffer
+	call	clear_buffer
 
 	; TODO Reinitialize the keyboard and 8042 here. We should not assume it
 	; has a sane state after the boot loader.
@@ -255,6 +255,15 @@ wait_ready_for_write:
 	jnz	wait_ready_for_write
 	ret
 %endif
+
+clear_buffer:
+	mov	di, KEY_DATA
+	call	inb
+	mov	di, KEY_CMD
+	call	inb
+	test	al, 1
+	jnz	clear_buffer
+.ret	ret
 
 IS_SHIFTED	equ	1
 
