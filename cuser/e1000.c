@@ -649,10 +649,6 @@ void start() {
 	uintptr_t descriptorPhysAddr =
 		(uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE, (void*)&descriptors,
 			0, sizeof(descriptors));
-	uintptr_t physAddr = descriptorPhysAddr + offsetof(struct descriptors, receive);
-	debug("RX descriptor ring space at %p phys\n", physAddr);
-	mmiospace[RDBAL] = physAddr;
-	mmiospace[RDBAH] = physAddr >> 32;
 
 	for (size_t i = 0; i < N_DESC; i++) {
 		// Note: DMA memory must still be allocated page by page
@@ -672,6 +668,11 @@ void start() {
 		buffer_addr[i] = physAddr;
 		debug("transmit_buffer %u: %p -> phys %p\n", i, buffers[i], physAddr);
 	}
+
+	uintptr_t physAddr = descriptorPhysAddr + offsetof(struct descriptors, receive);
+	debug("RX descriptor ring space at %p phys\n", physAddr);
+	mmiospace[RDBAL] = physAddr;
+	mmiospace[RDBAH] = physAddr >> 32;
 
 	mmiospace[RDLEN] = sizeof(receive_descriptors);
 	rdhead = 0; rdtail = N_DESC - 1;
