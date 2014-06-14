@@ -116,7 +116,8 @@ reg_irq:
 	push	rsi
 %if log
 	push	rdi
-lodstr	edi,	'PIC registering IRQ %x', 10
+	mov	rdx, rdi
+lodstr	edi,	'PIC registering IRQ %x to %x', 10
 	call	printf
 
 	pop	rdi
@@ -132,18 +133,34 @@ lodstr	edi,	'PIC registering IRQ %x', 10
 	mov	edi, [rsp]
 	call	unmask
 
+%if log
+	mov	rsi, [rsp]
+lodstr	edi,	'PIC: IRQ %x registered', 10
+	call	printf
+%endif
+
 	; Send response to tell caller they're registered
+%if log
+	mov	rdi, [rsp]
+%else
 	pop	rdi
+%endif
 	add	edi, PIC_IRQ_BASE
 	mov	eax, msg_send(MSG_REG_IRQ)
 	syscall
+
+%if log
+lodstr	edi,	'PIC: registration acknowledged', 10
+	pop	rsi
+	call	printf
+%endif
 
 	jmp	rcv_loop
 
 irq:
 %if log
 	push	rdi
-	mov	esi, edi
+	lea	esi, [rdi - IN_IRQ_BASE]
 lodstr	edi, 'PIC: IRQ %x triggered', 10
 	call	printf
 	pop	rdi
@@ -184,9 +201,6 @@ lodstr	edi, 'PIC: IRQ %x triggered', 10
 
 	; Unmask later when we get a response from the handler.
 
-	; Since this send is blocking, there's a time here where we are left
-	; unable to respond to interrupts. Bad stuff. I think something will
-	; be done elsewhere to allow interrupts to be queued.
 	pop	rsi
 	lea	edi, [rsi + PIC_IRQ_BASE]
 	zero	esi
@@ -214,6 +228,14 @@ lodstr	edi, 'PIC: IRQ %x acknowledged', 10
 	jmp	rcv_loop
 
 unmask:
+%if log
+	push	rdi
+	mov	esi, edi
+lodstr	edi, 'PIC: unmasking %x', 10
+	call	printf
+	pop	rdi
+%endif
+
 	cmp	edi, 8
 	jae	unmask_slave
 
