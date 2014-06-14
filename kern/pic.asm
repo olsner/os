@@ -93,7 +93,7 @@ lodstr	edi, 'PIC received %x from %x: %x', 10
 	jae	irq
 
 .not_irq:
-	cmp	al, MSG_REG_IRQ
+	cmp	ax, MSG_KIND_CALL | MSG_REG_IRQ
 	je	reg_irq
 
 	cmp	al, MSG_IRQ_ACK
