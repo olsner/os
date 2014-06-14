@@ -10,7 +10,6 @@
 %define log_page_fault 0
 %define log_find_mapping 0
 %define log_find_backing 0
-%define log_unmap 0
 %define log_find_handle 0
 %define log_new_handle 0
 %define log_hmod 0
