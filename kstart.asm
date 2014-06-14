@@ -2915,13 +2915,16 @@ syscall_send:
 	jz	.no_target
 
 %if log_messages
+	mov	rsi, [rbp + gseg.process]
+	cmp	[rsi + proc.rdi], byte 3
+	je	.skip_log
 	push	rax
 lodstr	rdi,	'%p send via %x to %p', 10
-	mov	rsi, [rbp + gseg.process]
 	mov	rdx, [rsi + proc.rdi]
 	mov	rcx, [rax + handle.proc]
 	call	printf
 	pop	rax
+.skip_log:
 %endif
 
 	mov	rsi, [rbp + gseg.process]
@@ -2986,14 +2989,17 @@ lodstr	rdi, '%p: recv from any', 10
 	jz	.from_fresh
 
 %if log_messages
+	mov	rdx, [rax + handle.other]
+	mov	rdx, [rdx + handle.key]
+	cmp	edx, 3
+	je	.skip_log
 	push	rax
 lodstr	rdi, '%p: recv from %x in %p', 10
 	mov	rsi, [rbp + gseg.process]
-	mov	rdx, [rax + handle.other]
 	mov	rcx, [rax + handle.proc]
-	mov	rdx, [rdx + handle.key]
 	call	printf
 	pop	rax
+.skip_log:
 %endif
 
 	; non-fresh specific source, we know what we want
@@ -3083,9 +3089,11 @@ syscall_call:
 	mov	[rsi + proc.rdi], rax
 
 %if log_messages
+	mov	rdx, [rax + handle.key]
+	cmp	edx, 3
+	je	.skip_log
 	push	rax
 lodstr	rdi,	'%p: call through %x to %p (%x)', 10
-	mov	rdx, [rax + handle.key]
 	mov	rcx, [rax + handle.proc]
 	mov	r8, [rax + handle.other]
 	test	r8, r8
@@ -3095,6 +3103,7 @@ lodstr	rdi,	'%p: call through %x to %p (%x)', 10
 	call	printf
 	pop	rax
 	mov	rsi, [rbp + gseg.process]
+.skip_log:
 %endif
 
 	; 1. Set IN_SEND and IN_RECV for this process
