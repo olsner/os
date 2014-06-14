@@ -6,8 +6,9 @@ CP=cp
 
 # gold generates broken modules (and/or the linker script is broken)
 LD := ld.bfd
-CC := ccache gcc
-CXX := ccache g++
+CCACHE ?= ccache
+CC := $(CCACHE) gcc
+CXX := $(CCACHE) g++
 export CC CXX
 
 SYSTEM := $(shell uname -s)
