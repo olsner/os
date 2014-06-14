@@ -2098,12 +2098,13 @@ aspace_find_mapcard:
 	push	rsi
 	call	dict_find_lessthan
 	push	rax
-lodstr	rdi,	'find_mapcard: %p -> %x.. +%x (%x)', 10
+lodstr	rdi,	'find_mapcard: %p -> %x.. +%x (%x) h=%x', 10
 	pop	rax ; mapcard
 	pop	rsi
 	zero	edx
 	zero	ecx
 	zero	r8
+	zero	r9
 	test	rax, rax
 	jz	.nothing
 	mov	rdx, [rax + mapcard.vaddr]
@@ -2111,6 +2112,7 @@ lodstr	rdi,	'find_mapcard: %p -> %x.. +%x (%x)', 10
 	mov	r8, rsi
 	and	r8w, ~0xfff
 	add	r8, rcx
+	mov	r9, [rax + mapcard.handle]
 .nothing:
 	push	rax
 	call	printf
