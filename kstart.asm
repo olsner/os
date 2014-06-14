@@ -7,7 +7,6 @@
 %define log_runqueue 0
 %define log_runqueue_panic 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
-%define log_timer_interrupt 0
 %define log_page_fault 0
 %define log_find_mapping 0
 %define log_find_backing 0
@@ -23,8 +22,9 @@
 %define log_irq 0
 %define log_alloc 0
 %define log_pulses 0
+%define log_prefault 0
 %define verbose_procstate 0
-%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders | log_timer_interrupt)
+%assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders)
 
 ; print each word of the mbootinfo block on bootup
 %define log_mbi 0
@@ -1543,11 +1543,6 @@ map_range:
 	mov	rdx, [rsp + 32]
 	mov	rcx, [rsp + 24]
 	call	mapcard_set
-
-%if log_mappings
-lodstr	rdi, 'map_range: removing old range', 10
-	call	printf
-%endif
 
 	; Find all cards vaddr < key < end and remove them.
 .delete:
@@ -3673,6 +3668,14 @@ syscall_pfault:
 	; limit flags appropriately
 	and	edx, MAPFLAG_RWX
 	and	si, ~0xfff
+%if log_prefault
+	push	rdx
+	push	rsi
+lodstr	rdi,	'prefault: %x flags %x', 10
+	call	printf
+	pop	rsi
+	pop	rdx
+%endif
 	; set fault_addr to offset | flags
 	mov	rax, [rbp + gseg.process]
 	mov	[rax + proc.fault_addr], rsi
@@ -3692,7 +3695,7 @@ syscall_pfault:
 	; * get handle => proc.rdi
 	mov	rsi, [rcx + mapcard.handle]
 	test	rsi, rsi
-	jz	.no_op_ret
+	jz	.panic
 	mov	[rax + proc.rdi], rsi
 	; set PROC_PFAULT flag
 	or	byte [rax + proc.flags], PROC_PFAULT
