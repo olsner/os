@@ -15,6 +15,7 @@
 %define log_hmod 0
 %define log_find_senders 0
 %define log_mappings 0
+%define log_map_range 0
 %define log_add_pte 0
 %define log_waiters 0
 %define log_messages 0
@@ -1500,6 +1501,24 @@ map_range:
 	push	rdx
 	push	rdi
 	push	rsi
+	; stack: 0 .. 32 | 40
+	; +0: vaddr start
+	; +8: aspace
+	; +16: vaddr end
+	; +24: handle
+	; +32: offset + flags
+
+%if log_map_range
+lodstr	rdi, 'map_range %x..%x to %x:%x', 10
+	mov	rsi, [rsp + 0]
+	mov	rdx, [rsp + 16]
+	mov	rcx, [rsp + 24]
+	mov	r8, [rsp + 32]
+	add	r8, rsi
+	call	printf
+	mov	rdx, [rsp + 16]
+	mov	rdi, [rsp + 8]
+%endif
 
 	; Get mapcard for end address
 	; Must get before inserting at vaddr (may be covered by a card that
@@ -1516,23 +1535,33 @@ map_range:
 	cmp	rdx, [rsp + 32]
 	jne	.change_end
 	cmp	rcx, [rsp + 24]
-	je	.no_change_end
+	je	.remove_end
 
 	; Insert (overwriting) the start and end cards.
 	;if endcard != card {
 	;	self.mappings.insert(end, endcard);
 	;}
 .change_end:
-	mov	rdi, [rsp + 8]
+	mov	rdi, [rsp + 8] ; aspace
 	mov	rsi, [rsp + 16] ; end address
 	; rdx = offset of old end-of-range card
 	; rcx = handle
 	call	mapcard_set
-	jmp	.set_start
-.no_change_end:
-	;remove end card, it's equivalent to the start-card we're adding
+
+%if log_map_range
+lodstr	rdi,	'Confirming set end-card %x', 10
+	mov	rsi, [rsp + 16]
+	call	printf
+
 	mov	rdi, [rsp + 8]
 	mov	rsi, [rsp + 16]
+	call	aspace_find_mapcard
+%endif
+	jmp	.set_start
+.remove_end:
+	;remove end card, it's equivalent to the start-card we're adding
+	mov	rdi, [rsp + 8]
+	mov	rsi, [rsp + 16] ; end address
 	lea	rdi, [rdi + aspace.mapcards]
 	call	dict_remove
 .set_start:
@@ -1554,7 +1583,7 @@ map_range:
 	jz	.ret
 	push	rax
 
-%if log_mappings
+%if log_map_range
 lodstr	rdi, 'map_range: removing %p', 10
 	mov	rsi, rax
 	call	printf
@@ -1565,7 +1594,7 @@ lodstr	rdi, 'map_range: removing %p', 10
 	jmp	.delete
 
 .ret:
-%if log_find_mapping
+%if log_map_range && log_find_mapping
 lodstr	rdi, 'map_range done?', 10
 	call	printf
 	mov	rdi, [rsp + 8] ; aspace
@@ -1927,7 +1956,7 @@ add_pte:
 %macro do_table 2 ; shift and name
 	index_table [rsp], %1, rdi, r12
 
-%if log_mappings
+%if log_add_pte
 lodstr	rdi,	'Found ', %2, ' %p at %p', 10
 	mov	rsi, [r12]
 	mov	rdx, r12
@@ -1946,7 +1975,7 @@ lodstr	rdi,	'Found ', %2, ' %p at %p', 10
 	lea	rdi, [rax - kernel_base]
 	mov	[r12], rdi
 
-%if log_mappings
+%if log_add_pte
 lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	mov	rsi, rax
 	call	printf
@@ -1978,8 +2007,11 @@ lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	pop	rsi
 	mov	[r12], rsi
 %if (log_mappings || log_add_pte)
-lodstr	rdi, 'Mapping %p to %p (at %p)!', 10
+STR 'Mapping %p to %p (at %p)!', 10
 mapping_page_to_frame equ _STR
+%endif
+%if log_add_pte
+	lea	rdi, [mapping_page_to_frame]
 	mov	rcx, r12
 	call	printf
 %endif
@@ -2200,6 +2232,14 @@ aspace_add_shared_backing:
 not_hosed_yet:
 	PANIC
 kernel_fault:
+%if log_page_fault
+lodstr	rdi,	'Kernel PF: cr2=%x error=%x rip=%x', 10
+	mov	rsi, cr2
+	; Fault
+	mov	rdx, [rsp]
+	mov	rcx, [rsp + 8]
+	call printf
+%endif
 	PANIC
 hosed:
 	cli
@@ -3905,7 +3945,7 @@ panic:
 	; Offset from rsp to start of pre-panic frame
 	%assign spoff 16
 	mov	rsi, [rsp + spoff]
-lodstr	rdi, 'PANIC @ rip=%x', 10 ; Decimal output would be nice...
+lodstr	rdi, 'PANIC @ rip=%x', 10
 	call	printf
 	cli
 	hlt
