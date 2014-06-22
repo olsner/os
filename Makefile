@@ -177,6 +177,8 @@ $(OUTDIR)/grub.iso: $(GRUB_CFG) $(GRUBDIR)/kstart.b $(MODFILES)
 	grub-mkrescue $(GRUB_MODULES) -o $@ $(GRUBDIR) >/dev/null
 	@echo '$@: \\' > $@.d
 	@find $(GRUBDIR) | sed 's/$$/ \\/' >> $@.d
+	@echo >> $@.d
+	@find $(GRUBDIR) | sed 's/$$/:/' >> $@.d
 
 -include $(OUTDIR)/grub.iso.d
 
