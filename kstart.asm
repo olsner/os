@@ -1525,8 +1525,9 @@ lodstr	rdi, 'map_range %x..%x to %x:%x', 10
 	; lies before vaddr).
 	mov	rsi, rdx
 	call	aspace_find_mapcard
-	test	rax, rax
 	zero	edx
+	zero	ecx
+	test	rax, rax
 	jz	.no_end_mapcard
 	mov	rcx, [rax + mapcard.handle]
 	mov	rdx, [rax + mapcard.offset]
