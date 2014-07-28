@@ -592,7 +592,7 @@ void start() {
 	uintptr_t arg = 0x8086100e; // 8086:100e PCI ID for 82540EM PRO/1000
 	log("e1000: looking for PCI device...\n");
 	sendrcv1(MSG_ACPI_FIND_PCI, acpi_handle, &arg);
-	if (!arg)
+	if (arg == ACPI_PCI_NOT_FOUND)
 	{
 		log("e1000: No devices found\n");
 		goto fail;

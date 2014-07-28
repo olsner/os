@@ -91,6 +91,8 @@ enum msg_acpi {
 	MSG_ACPI_CLAIM_PCI,
 	MSG_ACPI_READ_PCI,
 };
+// Return from MSG_ACPI_FIND_PCI when no device is found.
+static const uintptr_t ACPI_PCI_NOT_FOUND = -1;
 
 enum msg_ethernet {
 	/**
