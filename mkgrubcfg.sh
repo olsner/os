@@ -35,7 +35,18 @@ menuentry "lwIP" {
     boot
 }
 
-menuentry "user-apic" {
+menuentry "fbtest" {
+    multiboot (cd)/$kernel
+    module (cd)/kern/irq.mod
+    module (cd)/kern/pic.mod
+    module (cd)/kern/console.mod
+    module (cd)/cuser/acpica.mod acpica
+    module (cd)/cuser/bochsvga.mod bochs
+    module (cd)/cuser/fbtest.mod fbtest
+    boot
+}
+
+menuentry "timer_test" {
     multiboot (cd)/$kernel
     module (cd)/kern/irq.mod
     module (cd)/kern/pic.mod

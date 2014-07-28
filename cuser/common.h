@@ -140,7 +140,7 @@ enum
 	ETHERTYPE_ANY = 0,
 };
 
-enum
+enum msg_timer
 {
 	/**
 	 * Register a timer to trigger in approximately N nanoseconds.
@@ -153,6 +153,28 @@ enum
 	 * unless you re-register a new timeout.
 	 */
 	MSG_TIMER_T,
+};
+
+enum msg_fb
+{
+	/**
+	 * Set video mode (size and bpp).
+	 *
+	 * arg1: width << 32 | height
+	 * arg2: bits per pixel
+	 *
+	 * The user should map the handle, as much memory as needed for the given
+	 * resolution. (Or more, to support use of MSG_PRESENT.)
+	 */
+	MSG_SET_VIDMODE = MSG_USER,
+	/**
+	 * Placeholder for future (window manager driven) api - present a frame.
+	 *
+	 * arg1: origin of frame to present, relative mapped memory area.
+	 * (an id? some way for the client to know when this has been presented and
+	 * the previous frame will not be used by the window manager again)
+	 */
+	MSG_PRESENT,
 };
 
 enum msg_kind {
@@ -400,6 +422,15 @@ static void prefault(void* addr, int prot) {
 	uintptr_t arg2 = prot;
 	uintptr_t rcpt = 0;
 	(void)ipc2(MSG_PFAULT, &rcpt, &arg1, &arg2);
+}
+
+static void prefault_range(void* start, size_t size, int prot) {
+	u8* p = (u8*)start;
+	u8* end = p + size;
+	while (p < end) {
+		prefault(p, prot);
+		p += 4096;
+	}
 }
 
 static void grant(uintptr_t rcpt, void* addr, int prot) {

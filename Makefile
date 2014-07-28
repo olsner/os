@@ -45,7 +45,7 @@ MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm user/shell.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
-MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
+MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c cuser/bochsvga.c cuser/fbtest.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
 MOD_ELFS     += $(OUTDIR)/cuser/acpica.elf $(OUTDIR)/cuser/lwip.elf
@@ -154,7 +154,7 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 
 WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
-WANT_REAL_PRINTF = e1000 apic
+WANT_REAL_PRINTF = e1000 apic bochsvga fbtest
 
 $(WANT_PRINTF:%=$(OUTDIR)/cuser/%.elf): $(OUTDIR)/cuser/printf.o
 $(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
