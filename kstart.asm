@@ -1957,7 +1957,7 @@ add_pte:
 %macro do_table 2 ; shift and name
 	index_table [rsp], %1, rdi, r12
 
-%if log_add_pte
+%if log_add_pte > 1
 lodstr	rdi,	'Found ', %2, ' %p at %p', 10
 	mov	rsi, [r12]
 	mov	rdx, r12
@@ -1976,7 +1976,7 @@ lodstr	rdi,	'Found ', %2, ' %p at %p', 10
 	lea	rdi, [rax - kernel_base]
 	mov	[r12], rdi
 
-%if log_add_pte
+%if log_add_pte > 1
 lodstr	rdi,	'Allocated ', %2, ' at %p', 10
 	mov	rsi, rax
 	call	printf
