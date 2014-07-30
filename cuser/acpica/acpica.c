@@ -544,13 +544,6 @@ void start() {
 	// devices (call _DIS). Then we'll enable them as we go along.
 	PrintDevices();
 	EnumeratePCI();
-	ACPI_PCI_ID temp;
-	status = FindPCIDevByVendor(0x8086, 0x100e, &temp);
-	CHECK_STATUS();
-	int irq;
-	status = RouteIRQ(&temp, 0, &irq);
-	CHECK_STATUS();
-	printf("e1000 pin 0 got routed to %#x\n", irq);
 
 	AcpiWriteBitRegister(ACPI_BITREG_SCI_ENABLE, 1);
 	AcpiWriteBitRegister(ACPI_BITREG_POWER_BUTTON_ENABLE, 1);
