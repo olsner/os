@@ -32,7 +32,7 @@
 %define bochs_con 1
 ; configuration for pages.inc and start32.inc, use a single 1GB mapping instead
 ; of 512 2MB-pages.
-%define use_1gb_pages 1
+%define use_1gb_pages 0
 
 %define debug_tcalls 0
 
