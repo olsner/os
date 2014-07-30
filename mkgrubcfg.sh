@@ -15,70 +15,70 @@ mkgrubcfg1() {
 
 cat <<EOF
 menuentry "irq+pic+console+shell" {
-    multiboot (cd)/$kernel
-    module (cd)/kern/irq.mod
-    module (cd)/kern/pic.mod
-    module (cd)/kern/console.mod
-    module (cd)/user/shell.mod
+    multiboot /$kernel
+    module /kern/irq.mod
+    module /kern/pic.mod
+    module /kern/console.mod
+    module /user/shell.mod
     boot
 }
 
 menuentry "lwIP" {
-    multiboot (cd)/$kernel
-    module (cd)/kern/irq.mod irq
-    module (cd)/kern/pic.mod pic
-    module (cd)/kern/console.mod console
-    module (cd)/cuser/acpica.mod acpica
-    module (cd)/cuser/e1000.mod e1000
-    module (cd)/cuser/apic.mod apic
-    module (cd)/cuser/lwip.mod lwip
+    multiboot /$kernel
+    module /kern/irq.mod irq
+    module /kern/pic.mod pic
+    module /kern/console.mod console
+    module /cuser/acpica.mod acpica
+    module /cuser/e1000.mod e1000
+    module /cuser/apic.mod apic
+    module /cuser/lwip.mod lwip
     boot
 }
 
 menuentry "fbtest" {
-    multiboot (cd)/$kernel
-    module (cd)/kern/irq.mod
-    module (cd)/kern/pic.mod
-    module (cd)/kern/console.mod
-    module (cd)/cuser/acpica.mod acpica
-    module (cd)/cuser/bochsvga.mod bochs
-    module (cd)/cuser/fbtest.mod fbtest
+    multiboot /$kernel
+    module /kern/irq.mod
+    module /kern/pic.mod
+    module /kern/console.mod
+    module /cuser/acpica.mod acpica
+    module /cuser/bochsvga.mod bochs
+    module /cuser/fbtest.mod fbtest
     boot
 }
 
 menuentry "timer_test" {
-    multiboot (cd)/$kernel
-    module (cd)/kern/irq.mod
-    module (cd)/kern/pic.mod
-    module (cd)/kern/console.mod
-    module (cd)/cuser/apic.mod
-    module (cd)/cuser/timer_test.mod
+    multiboot /$kernel
+    module /kern/irq.mod
+    module /kern/pic.mod
+    module /kern/console.mod
+    module /cuser/apic.mod
+    module /cuser/timer_test.mod
     boot
 }
 
 menuentry "zeropage+test_maps" {
-    multiboot (cd)/$kernel
-    module (cd)/kern/irq.mod
-    module (cd)/kern/pic.mod
-    module (cd)/kern/console.mod
-    module (cd)/cuser/zeropage.mod
-    module (cd)/cuser/test_maps.mod
+    multiboot /$kernel
+    module /kern/irq.mod
+    module /kern/pic.mod
+    module /kern/console.mod
+    module /cuser/zeropage.mod
+    module /cuser/test_maps.mod
     boot
 }
 
 menuentry "ACPICA" {
-    multiboot (cd)/$kernel
-    module (cd)/kern/irq.mod
-    module (cd)/kern/pic.mod
-    module (cd)/kern/console.mod
-    module (cd)/cuser/acpica.mod
+    multiboot /$kernel
+    module /kern/irq.mod
+    module /kern/pic.mod
+    module /kern/console.mod
+    module /cuser/acpica.mod
     boot
 }
 
 menuentry "puts+xmm" {
-    multiboot (cd)/$kernel
-    module (cd)/user/test_puts.mod
-    module (cd)/user/test_xmm.mod
+    multiboot /$kernel
+    module /user/test_puts.mod
+    module /user/test_xmm.mod
     boot
 }
 
@@ -86,8 +86,8 @@ EOF
 
 while [ $# -gt 0 ]; do
     echo "menuentry \"${1#user/}\" {"
-    echo "    multiboot (cd)/$kernel"
-    echo "    module (cd)/$1.mod"
+    echo "    multiboot /$kernel"
+    echo "    module /$1.mod"
     echo "    boot"
     echo "}"
     shift
@@ -95,7 +95,7 @@ done
 
 cat <<EOF
 menuentry "idle" {
-    multiboot (cd)/$kernel
+    multiboot /$kernel
     boot
 }
 EOF
