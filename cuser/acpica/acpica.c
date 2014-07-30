@@ -506,6 +506,18 @@ static void debugger_pre_cmd() {
 	AcpiDbSetOutputDestination(ACPI_DB_CONSOLE_OUTPUT);
 }
 
+void GlobalEventHandler(UINT32 EventType, ACPI_HANDLE Device,
+		UINT32 EventNumber, void *Context) {
+	if (EventType == ACPI_EVENT_TYPE_FIXED &&
+		EventNumber == ACPI_EVENT_POWER_BUTTON) {
+
+		printf("POWER BUTTON! Shutting down.\n");
+
+		AcpiEnterSleepStatePrep(ACPI_STATE_S5);
+		AcpiEnterSleepState(ACPI_STATE_S5);
+	}
+}
+
 void start() {
 	ACPI_STATUS status = AE_OK;
 
@@ -551,7 +563,9 @@ void start() {
 	EnumeratePCI();
 
 	AcpiWriteBitRegister(ACPI_BITREG_SCI_ENABLE, 1);
-	AcpiWriteBitRegister(ACPI_BITREG_POWER_BUTTON_ENABLE, 1);
+	//AcpiWriteBitRegister(ACPI_BITREG_POWER_BUTTON_ENABLE, 1);
+	AcpiInstallGlobalEventHandler(GlobalEventHandler, NULL);
+	AcpiEnableEvent(ACPI_EVENT_POWER_BUTTON, 0);
 
 	printf("Waiting for SCI interrupts...\n");
 	for (;;) {
