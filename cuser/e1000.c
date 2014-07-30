@@ -647,8 +647,7 @@ void start() {
 		mmiobase |= bar1 << 32;
 	}
 	debug("Mapping mmiospace %p to BAR %p\n", (void*)mmiospace, mmiobase);
-	// TODO Map unprefetchable!
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE,
+	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		(void*)mmiospace, mmiobase, sizeof(mmiospace));
 
 	debug("Status: %x\n", mmiospace[STATUS]);
@@ -672,7 +671,8 @@ void start() {
 
 	for (size_t i = 0; i < N_DESC; i++) {
 		// Note: DMA memory must still be allocated page by page
-		uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
+		uintptr_t physAddr = (uintptr_t)map(0,
+				MAP_DMA | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 				(void*)receive_buffers[i], 0, sizeof(receive_buffers[i]));
 		init_descriptor((union desc*)receive_descriptors + i, physAddr);
 		// Associated to buffers on-demand.
@@ -681,6 +681,7 @@ void start() {
 
 	for (size_t i = 0; i < NBUFS; i++) {
 		// Note: DMA memory must still be allocated page by page
+		// TODO Should the buffers be uncachable too?
 		uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
 				(void*)buffers[i], 0, sizeof(buffers[i]));
 		// Just to fault the pages in so we can forward them later.

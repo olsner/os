@@ -450,6 +450,7 @@ enum prot {
 	MAP_ANON = 8,
 	MAP_PHYS = 16,
 	MAP_DMA = MAP_PHYS | MAP_ANON,
+	PROT_NO_CACHE = 32,
 };
 // Maximum end-address of user mappings.
 static const uintptr_t USER_MAP_MAX = 0x800000000000;

@@ -2382,6 +2382,10 @@ lodstr	rdi,	'Backing found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 	jz	.no_write_access
 	or	rsi, 2
 .no_write_access:
+	test	eax, MAPFLAG_PCD
+	jz	.cacheable
+	or	rsi, 16
+.cacheable:
 	mov	rdi, [rbp + gseg.process]
 	mov	rdi, [rdi + proc.aspace]
 	mov	rdx, cr2 ; Note: lower 12 bits will be ignored automatically
@@ -3650,8 +3654,6 @@ syscall_map:
 	; mov	rsi, [rax + proc.rdx]
 	; mov	rdx, [rax + proc.r9]
 	; call	unback_range
-
-	and	qword [rbx + proc.rsi], byte MAPFLAG_USER_ALLOWED
 
 	; region = null (in case we skip the allocating region bit because we're mapping a handle)
 	zero	esi

@@ -15,7 +15,8 @@ MAPFLAG_PHYS	equ 16
 ; that it's allocated at map time and the physical address is returned to the
 ; user).
 MAPFLAG_DMA	equ (MAPFLAG_PHYS | MAPFLAG_ANON)
-MAPFLAG_USER_ALLOWED equ MAPFLAG_PHYS | (MAPFLAG_PHYS - 1)
+MAPFLAG_PCD	equ 32
+; PWT (page write-through) too?
 
 ; mapcard: the handle, offset and flags for the range of virtual addresses until
 ; the next card.

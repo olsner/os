@@ -525,8 +525,8 @@ void start() {
 
 	// NB! Must be at least as large as physical memory - the ACPI tables could
 	// be anywhere. (Could be handled by AcpiOsMapMemory though.)
-	// TODO Should be mapped uncacheable since it can get used for MMIO.
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE, (void*)ACPI_PHYS_BASE, 0, USER_MAP_MAX - ACPI_PHYS_BASE);
+	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+		(void*)ACPI_PHYS_BASE, 0, USER_MAP_MAX - ACPI_PHYS_BASE);
 	char* p = ((char*)ACPI_PHYS_BASE) + 0x100000;
 	printf("Testing physical memory access: %p (0x100000): %x\n", p, *(u32*)p);
 
