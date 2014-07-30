@@ -493,6 +493,15 @@ failed:
 	send2(MSG_ACPI_CLAIM_PCI, rcpt, 0, 0);
 }
 
+static size_t debugger_buffer_pos = 0;
+
+static void debugger_pre_cmd() {
+	debugger_buffer_pos = 0;
+	AcpiGbl_MethodExecuting = FALSE;
+	AcpiGbl_StepToNextCall = FALSE;
+	AcpiDbSetOutputDestination(ACPI_DB_CONSOLE_OUTPUT);
+}
+
 void start() {
 	ACPI_STATUS status = AE_OK;
 
@@ -542,23 +551,17 @@ void start() {
 	status = RouteIRQ(&temp, 0, &irq);
 	CHECK_STATUS();
 	printf("e1000 pin 0 got routed to %#x\n", irq);
-	printf("OSI executed successfullly, now initializing debugger.\n");
-	//status = AcpiDbUserCommands (ACPI_DEBUGGER_COMMAND_PROMPT, NULL);
-	//CHECK_STATUS();
 
 	AcpiWriteBitRegister(ACPI_BITREG_SCI_ENABLE, 1);
 	AcpiWriteBitRegister(ACPI_BITREG_POWER_BUTTON_ENABLE, 1);
 
 	printf("Waiting for SCI interrupts...\n");
 	for (;;) {
-		// Do some kind of trick with AcpiOsGetLine and the debugger to let us
-		// loop around here, processing interrupts and what-not, then calling
-		// into the debugger when we have received a full line.
 		uintptr_t rcpt = 0x100;
 		uintptr_t arg = 0;
 		uintptr_t arg2 = 0;
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
-		printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
+		//printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
 		if (msg == MSG_PULSE) {
 			if (AcpiOsCheckInterrupt(rcpt, arg)) {
 				printf("acpica: Handled interrupt.\n", msg, rcpt, arg);
@@ -581,6 +584,26 @@ void start() {
 		case MSG_ACPI_READ_PCI:
 			arg = PciReadWord((arg & 0x7ffffffc) | 0x80000000);
 			send1(MSG_ACPI_READ_PCI, rcpt, arg);
+			break;
+		case MSG_ACPI_DEBUGGER_INIT:
+			debugger_pre_cmd();
+			send0(MSG_ACPI_DEBUGGER_INIT, rcpt);
+			break;
+		case MSG_ACPI_DEBUGGER_BUFFER:
+			assert(debugger_buffer_pos < ACPI_DB_LINE_BUFFER_SIZE);
+			AcpiGbl_DbLineBuf[debugger_buffer_pos++] = arg;
+			send0(MSG_ACPI_DEBUGGER_BUFFER, rcpt);
+			break;
+		case MSG_ACPI_DEBUGGER_CMD:
+			assert(debugger_buffer_pos < ACPI_DB_LINE_BUFFER_SIZE);
+			AcpiGbl_DbLineBuf[debugger_buffer_pos++] = 0;
+			AcpiDbCommandDispatch(AcpiGbl_DbLineBuf, NULL, NULL);
+			debugger_pre_cmd();
+			send0(MSG_ACPI_DEBUGGER_CMD, rcpt);
+			break;
+		case MSG_ACPI_DEBUGGER_CLR_BUFFER:
+			debugger_pre_cmd();
+			send0(MSG_ACPI_DEBUGGER_CLR_BUFFER, rcpt);
 			break;
 		}
 		// TODO Handle other stuff.

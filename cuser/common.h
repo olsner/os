@@ -90,6 +90,28 @@ enum msg_acpi {
 	 */
 	MSG_ACPI_CLAIM_PCI,
 	MSG_ACPI_READ_PCI,
+
+	/**
+	 * Wait for ACPI init and initialize debugger.
+	 */
+	MSG_ACPI_DEBUGGER_INIT,
+	/**
+	 * Add a character to the debugger command buffer.
+	 *
+	 * arg1: number of characters to add. Currently only 1 is supported, but
+	 * more characters could be encoded in fun ways.
+	 * arg2: character to add
+	 */
+	MSG_ACPI_DEBUGGER_BUFFER,
+	/**
+	 * Interpret the command currently in the command buffer, and clear the
+	 * buffer.
+	 */
+	MSG_ACPI_DEBUGGER_CMD,
+	/**
+	 * Clear the command buffer without running the command in it.
+	 */
+	MSG_ACPI_DEBUGGER_CLR_BUFFER,
 };
 // Return from MSG_ACPI_FIND_PCI when no device is found.
 static const uintptr_t ACPI_PCI_NOT_FOUND = -1;
@@ -349,7 +371,15 @@ static inline uintptr_t ipc1(uintptr_t msg, uintptr_t* src, uintptr_t* arg1)
 
 static inline uintptr_t recv1(uintptr_t* src, uintptr_t* arg1)
 {
-	return ipc1(0, src, arg1);
+	uintptr_t msg;
+	__asm__ __volatile__ ("syscall"
+		:	/* return value(s) */
+			"=a" (msg),
+			/* in/outputs */
+			"=D" (*src), "=S" (*arg1)
+		: "a" (0), "D" (*src)
+		: "r8", "r9", "r10", "r11", "%rcx", "%rdx", "memory");
+	return msg;
 }
 
 static inline uintptr_t recv0(uintptr_t src)
@@ -364,12 +394,20 @@ static inline uintptr_t send2(uintptr_t msg, uintptr_t dst, uintptr_t arg1, uint
 
 static inline uintptr_t send1(uintptr_t msg, uintptr_t dst, uintptr_t arg1)
 {
-	return ipc1(msg_send(msg), &dst, &arg1);
+	return syscall2(msg_send(msg), dst, arg1);
+}
+static inline uintptr_t send0(uintptr_t msg, uintptr_t dst)
+{
+	return syscall1(msg_send(msg), dst);
 }
 
 static inline uintptr_t sendrcv1(uintptr_t msg, uintptr_t dst, uintptr_t* arg1)
 {
 	return ipc1(msg_call(msg), &dst, arg1);
+}
+static inline uintptr_t sendrcv0(uintptr_t msg, uintptr_t dst)
+{
+	return syscall1(msg_call(msg), dst);
 }
 
 static const u64 CONSOLE_HANDLE = 3; /* Hardcode galore */

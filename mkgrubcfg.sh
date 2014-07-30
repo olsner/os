@@ -57,22 +57,13 @@ menuentry "timer_test" {
     boot
 }
 
-menuentry "zeropage+test_maps" {
-    multiboot /$kernel
-    module /kern/irq.mod
-    module /kern/pic.mod
-    module /kern/console.mod
-    module /cuser/zeropage.mod
-    module /cuser/test_maps.mod
-    boot
-}
-
-menuentry "ACPICA" {
+menuentry "ACPICA debugger" {
     multiboot /$kernel
     module /kern/irq.mod
     module /kern/pic.mod
     module /kern/console.mod
     module /cuser/acpica.mod
+    module /cuser/acpi_debugger.mod
     boot
 }
 
