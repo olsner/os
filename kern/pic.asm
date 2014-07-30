@@ -60,6 +60,13 @@ lodstr	edi, 'PIC booting...', 10
 	zero	edx
 	syscall
 
+	mov	edi, PIC1_CMD
+	mov	esi, PIC_EOI
+	call	outb
+	mov	edi, PIC2_CMD
+	mov	esi, PIC_EOI
+	call	outb
+
 %if log
 	mov	rsi, [rsp]
 lodstr	edi, 'PIC boot complete. rawIRQ is %x', 10
