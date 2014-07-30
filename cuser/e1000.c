@@ -652,11 +652,14 @@ void start() {
 
 	debug("Status: %x\n", mmiospace[STATUS]);
 
-	hwaddr0 = read_eeprom(0) | (read_eeprom(1) << 16) | (read_eeprom(2) << (u64)32);
-	log("e1000: EEPROM hardware address %012lx\n", hwaddr0 & 0xffffffffffff);
-
-	mmiospace[RAL0] = hwaddr0;
-	mmiospace[RAH0] = (hwaddr0 >> 32) | 0x80000000;
+	log("e1000: mmiospace hardware address %04x%08x, valid=%d\n", mmiospace[RAH0] & 0xffff, mmiospace[RAL0], !!(mmiospace[RAH0] & 0x80000000));
+	if (!(mmiospace[RAH0] & 0x80000000)) {
+		log("e1000: No valid hwaddr (yet), trying to read from EEPROM.\n");
+		hwaddr0 = read_eeprom(0) | (read_eeprom(1) << 16) | (read_eeprom(2) << (u64)32);
+		log("e1000: EEPROM hardware address %012lx\n", hwaddr0 & 0xffffffffffff);
+		mmiospace[RAL0] = hwaddr0;
+		mmiospace[RAH0] = (hwaddr0 >> 32) | 0x80000000;
+	}
 
 	hwaddr0 = mmiospace[RAL0] | ((u64)mmiospace[RAH0] << 32);
 	log("e1000: hardware address %012lx\n", hwaddr0 & 0xffffffffffff);
