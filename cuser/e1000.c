@@ -594,14 +594,28 @@ static u64 read_eeprom(u8 word) {
 	return (mmiospace[EERD] >> 16) & 0xffff;
 }
 
+// Supported PCI device ids (all with vendor 0x8086)
+static const u16 pci_dev_ids[] = {
+	// 82540EM PRO/1000 (emulated by bochs and qemu)
+	0x100e,
+	// 82579LM (Thinkpad x220)
+	0x1502,
+};
+#define ARRAY_SIZE(xs) (sizeof(xs) / sizeof(*xs))
+
 void start() {
 	__default_section_init();
 
-	uintptr_t arg = 0x8086100e; // 8086:100e PCI ID for 82540EM PRO/1000
+	uintptr_t arg;
 	log("e1000: looking for PCI device...\n");
-	sendrcv1(MSG_ACPI_FIND_PCI, acpi_handle, &arg);
-	if (arg == ACPI_PCI_NOT_FOUND)
-	{
+	for (size_t i = 0; i < ARRAY_SIZE(pci_dev_ids); i++) {
+		arg = 0x80860000 | pci_dev_ids[i];
+		sendrcv1(MSG_ACPI_FIND_PCI, acpi_handle, &arg);
+		if (arg != ACPI_PCI_NOT_FOUND) {
+			break;
+		}
+	}
+	if (arg == ACPI_PCI_NOT_FOUND) {
 		log("e1000: No devices found\n");
 		goto fail;
 	}
@@ -610,8 +624,7 @@ void start() {
 	const uintptr_t pci_id = arg;
 	uintptr_t arg2 = 1; // Just claim pin 0
 	sendrcv2(MSG_ACPI_CLAIM_PCI, acpi_handle, &arg, &arg2);
-	if (!arg)
-	{
+	if (!arg) {
 		log("e1000: failed :(\n");
 		goto fail;
 	}
