@@ -145,7 +145,10 @@ ExecuteOSI (void)
     return Status;
 }
 
-#define CHECK_STATUS() do { if (ACPI_FAILURE(status)) { goto failed; } } while(0)
+#define CHECK_STATUS(fmt, ...) do { if (ACPI_FAILURE(status)) { \
+	printf("ACPI failed (%d): " fmt "\n", status, ## __VA_ARGS__); \
+	goto failed; \
+	} } while(0)
 
 #pragma pack(1)
 typedef union acpi_apic_struct
@@ -165,7 +168,7 @@ typedef union acpi_apic_struct
 static ACPI_STATUS PrintAPICTable(void) {
 	ACPI_TABLE_MADT* table = NULL;
 	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiGetTable");
 
 	printf("Found APIC table: %p\n", table);
 	printf("Address of Local APIC: %#x\n", table->Address);
@@ -249,11 +252,11 @@ static ACPI_STATUS PrintDevices(void) {
 
 	printf("Searching for PNP0A03\n");
 	status = AcpiGetDevices("PNP0A03", PrintDeviceCallback, NULL, NULL);
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiGetDevices PNP0A03");
 
 	printf("Searching for PNP0C0F\n");
 	status = AcpiGetDevices("PNP0C0F", PrintDeviceCallback, NULL, NULL);
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiGetDevices PNP0C0F");
 
 failed:
 	return_ACPI_STATUS(status);
@@ -283,14 +286,13 @@ static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE
 
 	printf("Routing IRQ Link device %s\n", found->Source);
 	status = AcpiGetHandle(Device, found->Source, &LinkDevice);
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiGetHandle %s", found->Source);
 
 	ResetBuffer(&buffer);
 	status = AcpiGetCurrentResources(LinkDevice, &buffer);
-	CHECK_STATUS();
-	printf("Got %lu bytes of current resources\n", buffer.Length);
+	CHECK_STATUS("AcpiGetCurrentResources");
+	//printf("Got %lu bytes of current resources\n", buffer.Length);
 	ACPI_RESOURCE* resource = (ACPI_RESOURCE*)buffer.Pointer;
-	printf("Got resource %p (status %#x), type %d\n", resource, status, resource->Type);
 	switch (resource->Type) {
 	case ACPI_RESOURCE_TYPE_EXTENDED_IRQ:
 		// There are more attributes here, e.g. triggering, polarity and
@@ -308,11 +310,12 @@ static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE
 		data->gsi = resource->Data.Irq.Interrupts[0];
 		break;
 	default:
+		printf("RouteIRQLinkDevice: unknown resource type %d\n", resource->Type);
 		status = AE_BAD_DATA;
 		goto failed;
 	}
 	status = AcpiSetCurrentResources(LinkDevice, &buffer);
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiSetCurrentResources");
 
 failed:
 	ACPI_FREE_BUFFER(buffer);
@@ -330,13 +333,14 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 
 	ACPI_DEVICE_INFO* info = NULL;
 	status = AcpiGetObjectInfo(Device, &info);
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiGetObjectInfo");
 
 	if (!(info->Flags & ACPI_PCI_ROOT_BRIDGE)) {
+		printf("RouteIRQCallback: not a root bridge.\n");
 		goto failed;
 	}
 
-	printf("Root bridge with address %#x:\n", info->Address);
+	printf("RouteIRQ: Root bridge with address %#x:\n", info->Address);
 	int rootBus = -1;
 
 	// Get _CRS, parse, check if the bus number range includes the one in
@@ -344,19 +348,19 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 	// Though this might actually be a lot more complicated if we allow for
 	// multiple root pci bridges.
 	status = AcpiGetCurrentResources(Device, &buffer);
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiGetCurrentResources");
 	//printf("Got %lu bytes of current resources\n", buffer.Length);
 	//status = AcpiBufferToResource(buffer.Pointer, buffer.Length, &resource);
 	resource = (ACPI_RESOURCE*)buffer.Pointer;
 	//printf("Got resources %p (status %#x)\n", resource, status);
-	CHECK_STATUS();
+	//CHECK_STATUS();
 	while (resource->Type != ACPI_RESOURCE_TYPE_END_TAG) {
-		printf("Got resource type %d\n", resource->Type);
+		//printf("Got resource type %d\n", resource->Type);
 		ACPI_RESOURCE_ADDRESS64 addr64;
 		ACPI_STATUS status = AcpiResourceToAddress64(resource, &addr64);
 		if (status == AE_OK && addr64.ResourceType == ACPI_BUS_NUMBER_RANGE)
 		{
-			printf("Root bridge bus range %#x..%#x\n",
+			printf("RouteIRQ: Root bridge bus range %#x..%#x\n",
 					addr64.Minimum,
 					addr64.Maximum);
 			if (data->pci.Bus < addr64.Minimum ||
@@ -388,11 +392,11 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 
 	ResetBuffer(&buffer);
 	status = AcpiGetIrqRoutingTable(Device, &buffer);
-	CHECK_STATUS();
-	printf("Got %u bytes of IRQ routing table\n", buffer.Length);
+	CHECK_STATUS("AcpiGetIrqRoutingTable");
+	//printf("Got %u bytes of IRQ routing table\n", buffer.Length);
 	ACPI_PCI_ROUTING_TABLE* route = buffer.Pointer;
 	ACPI_PCI_ROUTING_TABLE* const end = buffer.Pointer + buffer.Length;
-	printf("Routing table: %p..%p\n", route, end);
+	//printf("Routing table: %p..%p\n", route, end);
 	UINT64 pciAddr = data->pci.Device;
 	while (route < end && route->Length) {
 		if ((route->Address >> 16) == pciAddr && route->Pin == data->pin) {
@@ -405,16 +409,16 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 		goto failed;
 	}
 
-	printf("Found route: %#x pin %d -> %s:%d\n",
-		found->Address >> 16,
+	printf("RouteIRQ: %02x:%02x.%d pin %d -> %s:%d\n",
+		data->pci.Bus, data->pci.Device, data->pci.Function,
 		found->Pin,
 		found->Source[0] ? found->Source : NULL,
 		found->SourceIndex);
 
 	if (found->Source[0]) {
 		status = RouteIRQLinkDevice(Device, found, data);
-		printf("status %#x irq %#x\n", status, data->gsi);
-		CHECK_STATUS();
+		//printf("status %#x irq %#x\n", status, data->gsi);
+		CHECK_STATUS("RouteIRQLinkDevice");
 	} else {
 		data->gsi = found->SourceIndex;
 	}
@@ -477,7 +481,7 @@ static void MsgClaimPci(uintptr_t rcpt, uintptr_t addr, uintptr_t pins)
 		if (!(pins & (1 << pin))) continue;
 
 		ACPI_STATUS status = RouteIRQ(&id, 0, &irqs[pin]);
-		CHECK_STATUS();
+		CHECK_STATUS("RouteIRQ");
 		printf("acpica: %02x:%02x.%x pin %d routed to IRQ %#x\n",
 			id.Bus, id.Device, id.Function,
 			pin, irqs[pin]);
@@ -509,7 +513,8 @@ void start() {
 
 	// NB! Must be at least as large as physical memory - the ACPI tables could
 	// be anywhere. (Could be handled by AcpiOsMapMemory though.)
-	map(0, MAP_PHYS | PROT_READ, (void*)ACPI_PHYS_BASE, 0, USER_MAP_MAX - ACPI_PHYS_BASE);
+	// TODO Should be mapped uncacheable since it can get used for MMIO.
+	map(0, MAP_PHYS | PROT_READ | PROT_WRITE, (void*)ACPI_PHYS_BASE, 0, USER_MAP_MAX - ACPI_PHYS_BASE);
 	char* p = ((char*)ACPI_PHYS_BASE) + 0x100000;
 	printf("Testing physical memory access: %p (0x100000): %x\n", p, *(u32*)p);
 
@@ -518,7 +523,7 @@ void start() {
 
     ACPI_DEBUG_INITIALIZE (); /* For debug version only */
 	status = InitializeFullAcpi ();
-	CHECK_STATUS();
+	CHECK_STATUS("InitializeFullAcpi");
 
     /* Enable debug output, example debug print */
 
@@ -526,7 +531,7 @@ void start() {
     AcpiDbgLevel = ACPI_LV_ALL_EXCEPTIONS | ACPI_LV_INTERRUPTS;
 
     status = ExecuteOSI ();
-	CHECK_STATUS();
+	CHECK_STATUS("ExecuteOSI");
 	// Tables we get in Bochs:
 	// * DSDT: All the AML code
 	// * FACS
@@ -606,10 +611,10 @@ void start() {
 		}
 	}
 	status = AcpiTerminate();
-	CHECK_STATUS();
+	CHECK_STATUS("AcpiTerminate");
 	printf("Acpi terminated... Halting.\n");
 
 failed:
 	printf("ACPI failed :( (status %x)\n", status);
-	for (;;);
+	abort();
 }

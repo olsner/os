@@ -276,6 +276,7 @@ AcpiOsWriteMemory (
     UINT32                  Width)
 {
 	printf("AcpiOsWriteMemory %p := %x (width %x)\n", Address, Value, Width);
+	assert(!"unimpl");
     return (AE_OK);
 }
 

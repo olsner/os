@@ -43,7 +43,7 @@ static ACPI_STATUS EnumPCIDevice(u8 bus, u8 dev, PCIEnum* cb);
 
 static ACPI_STATUS EnumPCIBus(u8 bus, PCIEnum* cb) {
 	u8 dev = 0;
-	printf("Enumerating bus %02x...\n", bus);
+	//printf("acpica: Enumerating bus %02x...\n", bus);
 	for (; dev < 32; dev++) {
 		ACPI_RETURN_IF(EnumPCIDevice(bus, dev, cb));
 	}
@@ -59,17 +59,21 @@ static ACPI_STATUS EnumPCIFunction(u8 bus, u8 dev, u8 func, PCIEnum* cb) {
 	u8 baseClass = getBaseClass(bus, dev, func);
 	u8 subClass = getSubClass(bus, dev, func);
 	u16 device = getDeviceID(bus, dev, func);
-	printf("%02x:%02x.%x: Found device %#04x:%#04x class %#x:%#x\n", bus, dev, func,
-			vendor, device,
-			baseClass, subClass);
+	ACPI_STATUS status = AE_OK;
 	if (cb)
 	{
 		ACPI_PCI_ID id = { 0, bus, dev, func };
 		cb->cur.pci_id = id;
 		cb->cur.vendor = vendor;
 		cb->cur.device = device;
-		ACPI_RETURN_IF(cb->cb(cb));
+		status = cb->cb(cb);
 	}
+	if (!cb || status == AE_CTRL_TERMINATE)
+	{
+		printf("%02x:%02x.%x: Found device %#04x:%#04x class %#x:%#x\n",
+			bus, dev, func, vendor, device, baseClass, subClass);
+	}
+	ACPI_RETURN_IF(status);
 	if (baseClass == 6 && subClass == 4)
 	{
 		if ((headerType & 0x7f) != 1) {
@@ -121,10 +125,6 @@ ACPI_STATUS FindPCIDevByVendor(u16 vendor, u16 device, ACPI_PCI_ID* id) {
 	}
 	else if (status == AE_CTRL_TERMINATE)
 	{
-		printf("Found device %02x:%02x.%x\n",
-			cb.cur.pci_id.Bus,
-			cb.cur.pci_id.Device,
-			cb.cur.pci_id.Function);
 		*id = cb.cur.pci_id;
 		return AE_OK;
 	}
