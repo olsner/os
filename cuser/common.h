@@ -168,6 +168,12 @@ enum msg_fb
 	 */
 	MSG_SET_VIDMODE = MSG_USER,
 	/**
+	 * For 4- or 8-bit modes, update a palette entry.
+	 *
+	 * arg1: index << 24 | r << 16 | g << 8 | b
+	 */
+	MSG_SET_PALETTE,
+	/**
 	 * Placeholder for future (window manager driven) api - present a frame.
 	 *
 	 * arg1: origin of frame to present, relative mapped memory area.

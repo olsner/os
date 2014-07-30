@@ -58,6 +58,10 @@ static const uintptr_t fresh = 0x100;
 
 static u8 mmiospace[LFB_SIZE] PLACEHOLDER_SECTION;
 
+static void outb(u16 port, u8 data) {
+	portio(port, 0x11, data);
+}
+
 static u16 read_reg(enum Index i) {
 	portio(VBE_DISPI_IOPORT_INDEX, 0x12, (u16)i);
 	return portio(VBE_DISPI_IOPORT_DATA, 0x2, 0);
@@ -135,16 +139,26 @@ void start() {
 			log("bochsvga: %x setting video mode to %ux%u %ubpp\n", rcpt, w, h, bpp);
 			assert(w <= VBE_DISPI_MAX_XRES && h <= VBE_DISPI_MAX_YRES);
 			assert(bpp <= VBE_DISPI_MAX_BPP);
-#if 1
 			write_reg(INDEX_ENABLE, VBE_DISPI_DISABLED);
 			write_reg(INDEX_XRES, w);
 			write_reg(INDEX_YRES, h);
 			write_reg(INDEX_BPP, bpp);
-			write_reg(INDEX_ENABLE, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
-#endif
+			write_reg(INDEX_ENABLE, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED
+				| VBE_DISPI_8BIT_DAC);
 			debug("bochsvga: mode updated!\n");
 			send2(MSG_SET_VIDMODE, rcpt, arg, arg2);
 			hmod_rename(rcpt, the_client);
+			break;
+		}
+		case MSG_SET_PALETTE: {
+			u8 c = arg >> 24;
+			u8 r = arg >> 16;
+			u8 g = arg >> 8;
+			u8 b = arg;
+			outb(0x3c8, c);
+			outb(0x3c9, r);
+			outb(0x3c9, g);
+			outb(0x3c9, b);
 			break;
 		}
 		case MSG_PFAULT: {
