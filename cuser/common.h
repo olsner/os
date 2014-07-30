@@ -413,6 +413,8 @@ enum prot {
 	MAP_PHYS = 16,
 	MAP_DMA = MAP_PHYS | MAP_ANON,
 };
+// Maximum end-address of user mappings.
+static const uintptr_t USER_MAP_MAX = 0x800000000000;
 static void* map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
 	if (size < 0x1000) { size = 0x1000; }
 	return (void*)syscall5(MSG_MAP,
