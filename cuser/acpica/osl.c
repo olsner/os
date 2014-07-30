@@ -432,7 +432,7 @@ AcpiOsInstallInterruptHandler (
 
 	hmod(pic_handle, pic_handle, (uintptr_t)reg);
 	uintptr_t irq = InterruptNumber;
-	uintptr_t msg = sendrcv1(MSG_REG_IRQ, (uintptr_t)reg, &irq);
+	sendrcv1(MSG_REG_IRQ, (uintptr_t)reg, &irq);
 	printf("Registered IRQ %#x to %p/%p\n", InterruptNumber, ServiceRoutine, Context);
 	return (AE_OK);
 }
