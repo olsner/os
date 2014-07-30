@@ -173,9 +173,11 @@ init_frames:
 	; 0x8000..0x13000 for kernel crap,
 	; 0x13000..0x100000 because it contains fiddly legacy stuff
 	; 0x100000..[memory_start] contains multiboot modules and other data
+	; r10: max. supported physical memory address
+	;      (currently 1GB because of the kernel_base stuff)
 	mov	r8, phys_vaddr(0)
 	mov	r9d, [memory_start]
-	zero	r10
+	mov	r10, -kernel_base
 
 	mov	esi, [mbi_pointer]
 	add	rsi, r8
@@ -201,6 +203,8 @@ init_frames:
 	jne	.loop
 	cmp	rdi, r9
 	cmovb	rdi, r9
+	cmp	rdx, r10
+	cmovge	rdx, r10
 
 	; rdi..rdx is a range of pages we should link into the garbage-page list
 
@@ -214,7 +218,6 @@ init_frames:
 
 	mov	[rdi], rcx
 	mov	rcx, rdi
-	inc	r10
 
 	add	rdi, 4096
 	jmp	.inner
