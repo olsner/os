@@ -343,16 +343,21 @@ static bool incoming_packet(int start, int end) {
 
 void print_dev_state(void) {
 	static const int link_speed[] = { 10, 100, 1000, 1000 };
-	u32 status = mmiospace[STATUS];
-	debug("STATUS: %#x link %s %dMb/s %s\n",
-		status,
-		status & STATUS_LU ? "up":"down",
-		link_speed[(status & STATUS_SPEED_MASK) >> STATUS_SPEED_SHIFT],
-		status & STATUS_FD ? "FD":"HD");
+	static u32 last_status;
+
 	gprc_total += mmiospace[GPRC];
 	mpc_total += mmiospace[MPC];
 	gptc_total += mmiospace[GPTC];
-	debug("GPRC: %lu MPC: %lu GPTC: %lu\n", gprc_total, mpc_total, gptc_total);
+	u32 status = mmiospace[STATUS];
+	if (status != last_status) {
+		last_status = status;
+		log("STATUS: %#x link %s %dMb/s %s\n",
+			status,
+			status & STATUS_LU ? "up":"down",
+			link_speed[(status & STATUS_SPEED_MASK) >> STATUS_SPEED_SHIFT],
+			status & STATUS_FD ? "FD":"HD");
+		log("GPRC: %lu MPC: %lu GPTC: %lu\n", gprc_total, mpc_total, gptc_total);
+	}
 }
 
 static void recv_poll(void) {
@@ -436,7 +441,10 @@ void handle_icr(u32 icr) {
 	if (icr & IM_TXDW) {
 		tx_done();
 	}
-	if (!(icr & (IM_TXDW | IM_RXT0))) {
+	if (icr & IM_LSC) {
+		log("e1000: link status change.\n");
+	}
+	if (!(icr & (IM_TXDW | IM_RXT0 | IM_LSC))) {
 		debug("Interrupt but I did nothing.\n");
 	}
 }
@@ -630,8 +638,7 @@ void start() {
 	map(0, MAP_PHYS | PROT_READ | PROT_WRITE,
 		(void*)mmiospace, mmiobase, sizeof(mmiospace));
 
-	u32 status = mmiospace[STATUS];
-	debug("Status: %x\n", status);
+	debug("Status: %x\n", mmiospace[STATUS]);
 
 	hwaddr0 = read_eeprom(0) | (read_eeprom(1) << 16) | (read_eeprom(2) << (u64)32);
 	log("e1000: EEPROM hardware address %012lx\n", hwaddr0 & 0xffffffffffff);
@@ -718,7 +725,7 @@ void start() {
 	// * RXT0. With the receive timer set to 0 (disabled), this trigger for
 	//   every received package.
 	// * TXDW. Fires when transmit descriptors have been written back.
-	mmiospace[IMS] = IM_RXT0 | IM_TXDW;
+	mmiospace[IMS] = IM_RXT0 | IM_TXDW | IM_LSC;
 
 	for(;;) {
 		print_dev_state();
