@@ -42,6 +42,7 @@ menuentry "fbtest" {
     module /kern/console.mod
     module /cuser/acpica.mod acpica
     module /cuser/bochsvga.mod bochs
+    module /cuser/apic.mod
     module /cuser/fbtest.mod fbtest
     boot
 }

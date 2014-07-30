@@ -159,6 +159,7 @@ void start() {
 			outb(0x3c9, r);
 			outb(0x3c9, g);
 			outb(0x3c9, b);
+			debug("bochsvga: palette %x := (%x,%x,%x)\n", c, r, g, b);
 			break;
 		}
 		case MSG_PFAULT: {
