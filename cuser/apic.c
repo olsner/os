@@ -130,8 +130,8 @@ static struct {
 	u64 ms_counter;
 	u64 ns_counter;
 	// pad to a full page to avoid exposing anything we don't have to
-	u64 padding[510];
-} static_data;
+	u64 padding[509];
+} static_data ALIGN(4096);
 
 static u64 ticks_to_millis(u64 ticks) {
 	return ticks / (apic_ticks / 1000);
