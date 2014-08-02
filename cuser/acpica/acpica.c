@@ -487,6 +487,15 @@ static void MsgClaimPci(uintptr_t rcpt, uintptr_t addr, uintptr_t pins)
 			pin, irqs[pin]);
 	}
 
+	if (pins & ACPI_PCI_CLAIM_MASTER) {
+		u64 value;
+		AcpiOsReadPciConfiguration(&id, PCI_COMMAND, &value, 16);
+		if (!(value & PCI_COMMAND_MASTER)) {
+			value |= PCI_COMMAND_MASTER;
+			AcpiOsWritePciConfiguration(&id, PCI_COMMAND, value, 16);
+		}
+	}
+
 	pins = irqs[3] << 24 | irqs[2] << 16 | irqs[1] << 8 | irqs[0];
 
 	send2(MSG_ACPI_CLAIM_PCI, rcpt, addr, pins);

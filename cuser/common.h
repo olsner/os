@@ -87,8 +87,16 @@ enum msg_acpi {
 	 * arg1: pci bus/device/function
 	 * arg2: flags (etc)
 	 *   low 4 bits: mask of pins to route IRQs for
+	 *   bit 5: set to enable bus master if possible
 	 */
 	MSG_ACPI_CLAIM_PCI,
+	/**
+	 * Read a 32-bit word from PCI config space.
+	 *
+	 * arg1: upper 24 bits: pci bus/device/function
+	 *       lower 8 bits: config-space address, must be 32-bit aligned.
+	 * returns 32-bit value in arg1
+	 */
 	MSG_ACPI_READ_PCI,
 
 	/**
@@ -115,6 +123,7 @@ enum msg_acpi {
 };
 // Return from MSG_ACPI_FIND_PCI when no device is found.
 static const uintptr_t ACPI_PCI_NOT_FOUND = -1;
+static const uintptr_t ACPI_PCI_CLAIM_MASTER = 16;
 
 enum msg_ethernet {
 	/**
@@ -566,10 +575,33 @@ static void hexdump(char* data, size_t length) {
 	printf("\n");
 }
 
+// For header type 0 (!)
 enum pci_regs
 {
-	PCI_BAR_0 = 0x10,
-	PCI_BAR_1 = 0x14,
+	PCI_VENDOR_ID = 0x00,
+	PCI_DEVICE_ID = 0x02,
+	PCI_COMMAND   = 0x04,
+	PCI_STATUS    = 0x06,
+	PCI_REV_ID    = 0x08,
+	PCI_PROG_IF   = 0x09,
+	PCI_SUBCLASS  = 0x0a,
+	PCI_CLASS     = 0x0b,
+	PCI_CL_SIZE   = 0x0c,
+	PCI_LATENCY_TIMER = 0x0d,
+	PCI_HEADER_TYPE = 0x0e,
+	PCI_BIST      = 0x0f,
+	PCI_BAR_0     = 0x10,
+	PCI_BAR_1     = 0x14,
+	// .. BAR5
+	// Cardbus CIS Pointer
+	PCI_SS_VENDOR_ID = 0x2c,
+	PCI_SUBSYSTEM_ID = 0x2e,
+};
+enum pci_command_bits
+{
+	PCI_COMMAND_IOSPACE = 1,
+	PCI_COMMAND_MEMSPACE = 2,
+	PCI_COMMAND_MASTER = 4,
 };
 
 /**

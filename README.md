@@ -51,8 +51,4 @@ tun/tap networking using tap0 is required for bochs.
 
 ## Known issues ##
 
-* qemu from Ubuntu 13.10 doesn't quite work - something appears to be up with
-  the PIC code and/or the PIC emulation. qemu from 12.10 appears to work fine
-  though.
-  * Ubuntu 12.10: qemu-kvm-1.2.0+noroms-0ubuntu2.12.10.6 (works)
-  * Ubuntu 13.10: Debian 1.5.0+dfsg-3ubuntu5.4 (doesn't)
+Only unknown issues left. Yay!

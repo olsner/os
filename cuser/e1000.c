@@ -238,9 +238,20 @@ static size_t free_protocol;
 
 u32 readpci32(u32 addr, u8 reg)
 {
-	uintptr_t arg = addr << 8 | (reg & 0xfc);
+	assert(!(reg & 3));
+	uintptr_t arg = addr << 8 | reg;
 	sendrcv1(MSG_ACPI_READ_PCI, acpi_handle, &arg);
 	return arg;
+}
+
+u16 readpci16(u32 addr, u8 reg)
+{
+	assert(!(reg & 1));
+	u32 val = readpci32(addr, reg & 0xfc);
+	if (reg & 2) {
+		val >>= 16;
+	}
+	return val;
 }
 
 void init_descriptor(union desc* desc, uintptr_t physAddr)
@@ -622,7 +633,7 @@ void start() {
 	log("e1000: found %x\n", arg);
 	// bus << 8 | dev << 3 | func
 	const uintptr_t pci_id = arg;
-	uintptr_t arg2 = 1; // Just claim pin 0
+	uintptr_t arg2 = ACPI_PCI_CLAIM_MASTER | 1; // Just claim pin 0
 	sendrcv2(MSG_ACPI_CLAIM_PCI, acpi_handle, &arg, &arg2);
 	if (!arg) {
 		log("e1000: failed :(\n");
@@ -632,6 +643,10 @@ void start() {
 	log("e1000: claimed! irq %x\n", irq);
 	hmod(pic_handle, pic_handle, pin0_irq_handle);
 	sendrcv1(MSG_REG_IRQ, pin0_irq_handle, &arg2);
+
+	u32 cmd = readpci16(pci_id, PCI_COMMAND);
+	debug("PCI CMD: %04x master=%d\n", cmd, !!(cmd & PCI_COMMAND_MASTER));
+	//writepci16(pci_id, PCI_COMMAND, cmd | PCI_COMMAND_MASTER);
 
 	u32 bar0 = readpci32(pci_id, PCI_BAR_0);
 	debug("BAR 0: %s %s %s: %x\n",
