@@ -26,6 +26,8 @@
 %define verbose_procstate 0
 %assign need_print_procstate (log_switch_to | log_switch_next | log_runqueue | log_runqueue_panic | log_waiters | log_find_senders)
 
+%define probes 0
+
 ; print each word of the mbootinfo block on bootup
 %define log_mbi 0
 %define kernel_vga_console 1
@@ -780,6 +782,7 @@ new_proc:
 ; rdi: process being waited for
 ; rsi: process that should start waiting
 add_to_waiters:
+	PROBE	entry
 	push	rdi
 	push	rsi
 %if log_waiters
@@ -808,6 +811,7 @@ lodstr rdi, 'Waiting for %p (%x)', 10
 	cmp	[rdi + proc.waiting_for], rsi
 	je	.deadlock
 
+	PROBE	actually_add
 	mov	[rsi + proc.waiting_for], rdi
 	add	rdi, proc.waiters
 	add	rsi, proc.node
@@ -836,6 +840,7 @@ lodstr	rdi,	'Waiting for %p (%x)', 10
 ; rdi: process that was being waited for
 ; rsi: process that might need waking up
 stop_waiting:
+	PROBE	entry
 	push	rsi
 %if log_waiters
 	push	rdi
@@ -854,6 +859,7 @@ lodstr rdi, 'Unblocked %p (%x)', 10
 	cmp	[rsi + proc.waiting_for], rdi
 	jne	.not_waiting
 
+	PROBE	actually_remove
 	zero	eax
 	mov	[rsi + proc.waiting_for], rax
 	add	rdi, proc.waiters
@@ -861,6 +867,7 @@ lodstr rdi, 'Unblocked %p (%x)', 10
 	call	dlist_remove
 
 .not_waiting:
+	PROBE	not_waiting
 %if log_waiters
 	mov	rdi, [rsp]
 	call	runqueue_append
@@ -928,6 +935,8 @@ runqueue_pop:
 	ret
 
 idle:
+	PROBE	entry
+.re_idle:
 %if log_idle
 lodstr	rdi, 'Idle: proc=%p', 10
 	mov	rsi, [rbp + gseg.process]
@@ -949,9 +958,11 @@ lodstr	rdi, 'Idle: proc=%p', 10
 lodstr	rdi,	'Idle: hlt fell through?', 10
 	call	printf
 %endif
-	jmp idle
+	PROBE	fallthrough
+	jmp	.re_idle
 
 block_and_switch:
+	PROBE	entry
 	btr	dword [rdi + proc.flags], PROC_RUNNING_BIT
 	jnc	switch_next
 	zero	edi
@@ -965,6 +976,7 @@ lodstr rdi, 'Blocked %p (%x)', 10
 
 
 switch_next:
+	PROBE	entry
 %if log_switch_next
 lodstr	rdi, 'switch_next', 10
 	call	printf
@@ -1074,6 +1086,7 @@ print_proc:
 ; All registers other than rax will be ignored, trampled, and replaced with the
 ; new stuff from the switched-to process
 switch_to:
+	PROBE	entry
 %if log_switch_to
 	mov	rbx, rax
 lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
@@ -2031,6 +2044,7 @@ mapping_page_to_frame equ _STR
 ; rsp, rip, rflags are on the stack in "iretq format"
 ; returns with ret; call with call
 save_from_iret:
+	PROBE	entry
 	; Save the rsp so we can fiddle with it here and restore before ret.
 	mov	[rax+proc.rcx], rcx
 	mov	rcx, rsp
@@ -2073,6 +2087,7 @@ save_from_iret:
 	ret
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
+	PROBE	entry
 	push	rbp
 	push	rax
 	; FIXME If we get here in kernel mode?
@@ -2113,6 +2128,7 @@ lodstr	rdi,	'FPU-switch: %p to %p', 10
 	mov	[rbp+gseg.fpu_process], rax
 
 .no_restore_state:
+	PROBE	no_restore_needed
 	pop	rax
 	pop	rbp
 	swapgs
@@ -2251,6 +2267,7 @@ hosed:
 	mov	al,0xe
 
 handler_PF:
+	PROBE	entry
 	; TODO Put the kernel stack in virtual memory so we can add a sentinel
 	; page.
 	cmp	rsp, phys_vaddr(pages.kernel_stack + 0xf00)

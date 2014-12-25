@@ -12,5 +12,6 @@
 %include "syscalls.inc"
 %include "messages.inc"
 %include "pic.inc"
+%include "probes.inc"
 
 %endif
