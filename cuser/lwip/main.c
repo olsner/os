@@ -40,19 +40,20 @@ static ip_addr_t ipaddr, netmask, gw;
 static u64 hwaddr;
 
 // Should be a struct somewhere we can share it with the apic implementation.
-static struct {
+static volatile const struct {
 	u64 tick_counter;
 	u64 ms_counter;
 } timer_data PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
 
 u32 sys_now() {
-	u32 res = timer_data.ms_counter;
-	//debug("sys_now: %u\n", res);
+	u64 res = timer_data.ms_counter;
+	debug("sys_now: %lu ms (%lu ticks)\n", res, timer_data.tick_counter);
 	return res;
 }
 void check_timers() {
 	u64 timeout_ms = sys_check_timeouts();
 	if (timeout_ms != (u32)-1) {
+		debug("lwip: timeout %lums\n", timeout_ms);
 		hmod(apic_handle, apic_handle, timer_handle);
 		send2(MSG_REG_TIMER, timer_handle, timeout_ms * 1000000, 0);
 	}
