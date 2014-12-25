@@ -14,6 +14,11 @@ export CC CXX
 SYSTEM := $(shell uname -s)
 
 YASM ?= yasm/yasm
+ifeq ($(wildcard $(YASM)), $(YASM))
+YASMDEP := $(YASM)
+else
+YASMDEP := $(shell which $(YASM))
+endif
 
 ifeq ($(VERBOSE),YES)
 CP=cp -v
@@ -77,18 +82,18 @@ clean:
 
 -include $(DEPFILES)
 
-$(OUTDIR)/%.d: %.asm
+$(OUTDIR)/%.d: %.asm $(YASMDEP)
 	@mkdir -p $(@D)
 	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $(@:.d=.b) > $(@)
 
-$(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d
+$(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d $(YASMDEP)
 	@mkdir -p $(@D)
 	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $(OUTDIR)/$*.lst --mapfile=$(OUTDIR)/$*.map
 	$(SIZE_ASM)
 
 -include $(OUTDIR)/start32.d
 
-$(OUTDIR)/start32.o: start32.asm
+$(OUTDIR)/start32.o: start32.asm $(YASMDEP)
 	@mkdir -p $(@D)
 	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.o=.d)
 	$(HUSH_ASM) $(YASM) -i . -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUTDIR)/start32.lst
@@ -98,7 +103,7 @@ all: $(OUTDIR)/start32.o
 
 $(OUTDIR)/kstart.b: $(INLINE_MODULES)
 
-%.asm.pp: %.asm
+%.asm.pp: %.asm $(YASMDEP)
 	$(YASM) -i . -f bin -o $@ -e -L nasm $<
 
 $(GRUBDIR)/%.b: $(OUTDIR)/%.b
@@ -164,7 +169,7 @@ $(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
 	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
-$(OUTDIR)/cuser/printf.o: cuser/printf.asm
+$(OUTDIR)/cuser/printf.o: cuser/printf.asm $(YASMDEP)
 	@mkdir -p $(@D)
 	$(YASM) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
 
