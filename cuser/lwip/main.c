@@ -52,6 +52,7 @@ u32 sys_now() {
 }
 void check_timers() {
 	u64 timeout_ms = sys_check_timeouts();
+	if (timeout_ms == (u32)-1) timeout_ms = 500;
 	if (timeout_ms != (u32)-1) {
 		debug("lwip: timeout %lums\n", timeout_ms);
 		hmod(apic_handle, apic_handle, timer_handle);
