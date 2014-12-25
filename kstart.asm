@@ -1,3 +1,5 @@
+[map all]
+;
 ; Configuration
 ; NB: Enable too many of these and the kernel pops too close to 8kB and stops
 ; working.
