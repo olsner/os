@@ -1,4 +1,4 @@
-%define probesection .bss
+%define probesection .stats
 %macro DEFPROBE 1
 [section probesection]
 %xdefine _PROBE .probe_ %+ %1

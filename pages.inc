@@ -26,6 +26,7 @@ struc pages, 0x100000
 .kernel_pd	respage
 %endif
 .gseg_cpu0	respage
+.stats		respage
 endstruc
 
 kernel_stack_end equ pages.kernel_stack_end

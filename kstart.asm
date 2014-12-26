@@ -108,6 +108,7 @@ endstruc
 section .text vstart=pages.kernel
 section .rodata vfollows=.text follows=.text align=4
 section .bss nobits align=8 vfollows=.rodata
+section .stats nobits align=4 vstart=pages.stats
 
 %include "sections.inc"
 
