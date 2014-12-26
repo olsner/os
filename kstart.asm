@@ -2740,14 +2740,6 @@ syscall_portio:
 	out	dx, eax
 	ret
 
-syscall_yield:
-	mov	rdi, [rbp + gseg.process]
-	; Set the fast return flag to return quickly after the yield
-	or	[rdi + proc.flags], byte PROC_FASTRET
-	and	[rdi + proc.flags], byte ~PROC_RUNNING
-	call	runqueue_append
-	jmp	switch_next
-
 syscall_hmod:
 	; inputs:
 	; rdi = source handle
