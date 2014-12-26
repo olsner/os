@@ -471,7 +471,7 @@ enum prot {
 };
 // Maximum end-address of user mappings.
 static const uintptr_t USER_MAP_MAX = 0x800000000000;
-static void* map(uintptr_t handle, enum prot prot, void *local_addr, uintptr_t offset, uintptr_t size) {
+static void* map(uintptr_t handle, enum prot prot, const volatile void *local_addr, uintptr_t offset, uintptr_t size) {
 	if (size < 0x1000) { size = 0x1000; }
 	return (void*)syscall5(MSG_MAP,
 		handle, prot, (uintptr_t)local_addr, offset, size);
@@ -481,7 +481,7 @@ static void map_anon(int prot, void *local_addr, uintptr_t size) {
 	map(0, MAP_ANON | prot, local_addr, 0, size);
 }
 
-static void prefault(void* addr, int prot) {
+static void prefault(const volatile void* addr, int prot) {
 	uintptr_t arg1 = (uintptr_t)addr;
 	uintptr_t arg2 = prot;
 	uintptr_t rcpt = 0;
