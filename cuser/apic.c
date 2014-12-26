@@ -292,6 +292,17 @@ void start() {
 			// FIXME Check if the rcpt is already registered as a timer.
 			hmod_rename(rcpt, (uintptr_t)reg_timer(arg1, arg2));
 			break;
+		case MSG_TIMER_GETTIME:
+			if (msg_get_kind(msg) == MSG_KIND_CALL) {
+				u64 ticks = get_tick_counter();
+				send2(msg & 0xff, rcpt, static_data.ms_counter, ticks);
+			} else {
+				printf("apic: gettime must be a sendrcv call\n");
+			}
+			if (rcpt == fresh_handle) {
+				hmod_delete(rcpt);
+			}
+			break;
 		case MSG_PFAULT:
 			*(volatile u64*)&static_data;
 			grant(rcpt, &static_data, PROT_READ);

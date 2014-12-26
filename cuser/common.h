@@ -184,6 +184,14 @@ enum msg_timer
 	 * unless you re-register a new timeout.
 	 */
 	MSG_TIMER_T,
+	/**
+	 * Two-argument sendrcv.
+	 *
+	 * returns:
+	 * arg1: milliseconds
+	 * arg2: ticks
+	 */
+	MSG_TIMER_GETTIME,
 };
 
 enum msg_fb

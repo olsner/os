@@ -45,11 +45,21 @@ static volatile const struct {
 	u64 ms_counter;
 } timer_data PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
 
+#if 1
+u32 sys_now() {
+	u64 ms = 0, ticks = 0;
+	sendrcv2(MSG_TIMER_GETTIME, apic_handle, &ms, &ticks);
+	debug("sys_now: %lu ms (%lu ticks)\n", ms, ticks);
+	return ms;
+}
+#else
 u32 sys_now() {
 	u64 res = timer_data.ms_counter;
 	debug("sys_now: %lu ms (%lu ticks)\n", res, timer_data.tick_counter);
 	return res;
 }
+#endif
+
 void check_timers() {
 	u64 timeout_ms = sys_check_timeouts();
 	if (timeout_ms == (u32)-1) timeout_ms = 500;
