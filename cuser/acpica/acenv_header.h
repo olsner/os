@@ -33,3 +33,5 @@ uint32_t AcpiOsAcquireGlobalLock(struct acpi_table_facs* facs);
 #define ACPI_ACQUIRE_GLOBAL_LOCK(GLptr, Acquired) Acquired = AcpiOsAcquireGlobalLock(GLptr)
 #define ACPI_RELEASE_GLOBAL_LOCK(GLptr, Pending) Pending = AcpiOsReleaseGlobalLock(GLptr)
 
+#define COMPILER_DEPENDENT_UINT64 uint64_t
+#define COMPILER_DEPENDENT_UINT32 uint32_t
