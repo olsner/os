@@ -23,6 +23,19 @@ menuentry "irq+pic+console+shell" {
     boot
 }
 
+menuentry "USB" {
+    multiboot /$kernel
+    module /kern/irq.mod irq
+    module /kern/pic.mod pic
+    module /kern/console.mod console
+    module /cuser/acpica.mod acpica
+    # e1000?
+    module /cuser/apic.mod apic
+    module /cuser/usb USB
+    module /cuser/usb/xhci.mod xHCI
+    boot
+}
+
 menuentry "lwIP" {
     multiboot /$kernel
     module /kern/irq.mod irq

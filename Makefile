@@ -53,10 +53,16 @@ ASMFILES     := kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c
 MOD_CFILES   += cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
 MOD_CFILES   += cuser/bochsvga.c cuser/fbtest.c cuser/acpi_debugger.c
+MOD_CFILES   += cuser/usb/xhci.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
-MOD_ELFS     += $(OUTDIR)/cuser/acpica.elf $(OUTDIR)/cuser/lwip.elf
-MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod) $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod) $(GRUBDIR)/cuser/acpica.mod $(GRUBDIR)/cuser/lwip.mod
+BIG_MODS     := acpica lwip usb
+MOD_ELFS     += $(BIG_MODS:%=$(OUTDIR)/cuser/%.elf)
+
+MODFILES     := $(MOD_ASMFILES:%.asm=$(GRUBDIR)/%.mod)
+MODFILES     += $(MOD_CFILES:%.c=$(GRUBDIR)/%.mod)
+MODFILES     += $(BIG_MODS:%=$(GRUBDIR)/cuser/%.mod)
+
 DEPFILES     := $(ASMFILES:%.asm=$(OUTDIR)/%.d) $(MOD_OFILES:.o=.d)
 ASMOUTS      := \
 	$(GRUBDIR)/kstart.b \
@@ -66,7 +72,7 @@ ASMOUTS      := \
 	$(DEPFILES)
 
 all: cpuid rflags $(OUTDIR)/grub.iso
-all: $(MOD_ELFS)
+all: $(MOD_ELFS) $(MODFILES)
 
 .SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_OFILES)
 
@@ -161,7 +167,7 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 
 WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
-WANT_REAL_PRINTF = e1000 apic bochsvga fbtest
+WANT_REAL_PRINTF = e1000 apic bochsvga fbtest usb/xhci
 
 WANT_STRING = acpica
 
@@ -315,7 +321,16 @@ $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
-all: $(GRUBDIR)/cuser/lwip.mod
+USB_SRCS := $(USB)/main.c
+USB_OBJS := $(USB_SRCS:%.c:$(OUTDIR)/%.o)
+
+-include $(USB_OBJS:.o=.d)
+
+USB_DEP_OBJS := $(USB_OBJS) $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+
+$(OUTDIR)/cuser/usb.elf: cuser/linker.ld $(USB_DEP_OBJS)
+	@mkdir -p $(@D)
+	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
 yasm/yasm: yasm/Makefile
 	$(MAKE) -C yasm
