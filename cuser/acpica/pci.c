@@ -14,21 +14,21 @@ typedef struct PCIEnum
 {
 	// Return AE_CTRL_TERMINATE to stop iterating
 	ACPI_STATUS (*cb)(struct PCIEnum* context);
-	union {
-		struct { u16 vendor, device; };
+	struct {
+		u16 vendor, device;
+		u32 class;
 	} in;
 	struct {
 		ACPI_PCI_ID pci_id;
 		u16 vendor;
 		u16 device;
+		u32 class;
 	} cur;
 } PCIEnum;
 
 #define getVendorID(b,d,f) getPCIConfig(b,d,f, 0, 16)
 #define getDeviceID(b,d,f) getPCIConfig(b,d,f, 2, 16)
 #define getHeaderType(b,d,f) getPCIConfig(b,d,f, 14, 8)
-#define getSubClass(b,d,f) getPCIConfig(b,d,f, 10, 8)
-#define getBaseClass(b,d,f) getPCIConfig(b,d,f, 11, 8)
 #define getSecondaryBus(b,d,f) getPCIConfig(b,d,f, 0x19, 8)
 
 #define ACPI_RETURN_IF(e) \
@@ -56,8 +56,11 @@ static ACPI_STATUS EnumPCIFunction(u8 bus, u8 dev, u8 func, PCIEnum* cb) {
 		return AE_OK;
 	}
 	u8 headerType = getHeaderType(bus, dev, func);
-	u8 baseClass = getBaseClass(bus, dev, func);
-	u8 subClass = getSubClass(bus, dev, func);
+	u32 classRevision = getPCIConfig(bus, dev, func, 8, 32);
+	u32 class = classRevision >> 8;
+	u8 baseClass = (class >> 16) & 0xff;
+	u8 subClass = (class >> 8) & 0xff;
+	u8 programInterface = class & 0xff;
 	u16 device = getDeviceID(bus, dev, func);
 	ACPI_STATUS status = AE_OK;
 	if (cb)
@@ -66,12 +69,14 @@ static ACPI_STATUS EnumPCIFunction(u8 bus, u8 dev, u8 func, PCIEnum* cb) {
 		cb->cur.pci_id = id;
 		cb->cur.vendor = vendor;
 		cb->cur.device = device;
+		cb->cur.class = class;
 		status = cb->cb(cb);
 	}
 	if (!cb || status == AE_CTRL_TERMINATE)
 	{
-		printf("%02x:%02x.%x: Found device %#04x:%#04x class %#x:%#x\n",
-			bus, dev, func, vendor, device, baseClass, subClass);
+		printf("%02x:%02x.%x: Found device %#04x:%#04x class %#x:%#x pi %#x\n",
+			bus, dev, func, vendor, device, baseClass, subClass,
+			programInterface);
 	}
 	ACPI_RETURN_IF(status);
 	if (baseClass == 6 && subClass == 4)
@@ -105,11 +110,38 @@ ACPI_STATUS EnumeratePCI(void) {
 }
 
 static ACPI_STATUS FindPCIDevCB(PCIEnum* context) {
-	if (context->cur.vendor == context->in.vendor &&
-		context->cur.device == context->in.device) {
+	if ((context->cur.vendor == context->in.vendor &&
+		context->cur.device == context->in.device) ||
+		context->cur.class == context->in.class) {
 		return AE_CTRL_TERMINATE;
 	}
 	return AE_OK;
+}
+
+static ACPI_STATUS FindPCIDev(PCIEnum *cb, ACPI_PCI_ID* id) {
+	ACPI_STATUS status = EnumPCIBus(0, cb);
+	if (status == AE_OK)
+	{
+		return AE_NOT_FOUND;
+	}
+	else if (status == AE_CTRL_TERMINATE)
+	{
+		*id = cb->cur.pci_id;
+		return AE_OK;
+	}
+	else
+	{
+		return status;
+	}
+}
+
+ACPI_STATUS FindPCIDevByClass(u32 class, ACPI_PCI_ID* id) {
+	PCIEnum cb;
+	memset(&cb, 0, sizeof(cb));
+	cb.cb = FindPCIDevCB;
+	cb.in.class = class;
+	printf("acpica: Looking for %#06x devices...\n", class);
+	return FindPCIDev(&cb, id);
 }
 
 ACPI_STATUS FindPCIDevByVendor(u16 vendor, u16 device, ACPI_PCI_ID* id) {
@@ -119,18 +151,5 @@ ACPI_STATUS FindPCIDevByVendor(u16 vendor, u16 device, ACPI_PCI_ID* id) {
 	cb.in.vendor = vendor;
 	cb.in.device = device;
 	printf("acpica: Looking for %#04x:%#04x devices...\n", vendor, device);
-	ACPI_STATUS status = EnumPCIBus(0, &cb);
-	if (status == AE_OK)
-	{
-		return AE_NOT_FOUND;
-	}
-	else if (status == AE_CTRL_TERMINATE)
-	{
-		*id = cb.cur.pci_id;
-		return AE_OK;
-	}
-	else
-	{
-		return status;
-	}
+	return FindPCIDev(&cb, id);
 }

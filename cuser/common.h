@@ -71,13 +71,13 @@ enum msg_irq {
 enum msg_acpi {
 	/* Find (unclaimed) PCI device.
 	 *
-	 * arg1: pci vendor/device
-	 * arg2: index (0..)
+	 * arg1: pci vendor/device or class code
+	 *  class code = (arg1 >> 32) & 0xffffff (24-bit class code)
+	 *  vendor = (arg >> 16) & 0xffff
+	 *  device = arg & 0xffff
+	 *  The class code is used for search if both vendor and device are 0.
 	 * Returns:
 	 * arg1: pci bus/device/function, or -1 if not found
-	 *
-	 * Iterate index upwards to find multiple matching PCI devices until -1 is
-	 * returned.
 	 */
 	MSG_ACPI_FIND_PCI = MSG_USER,
 	/* Wrappers around PCI IRQ routing (to PIC or I/O APIC) */
