@@ -86,6 +86,10 @@ clean:
 %: %.c
 	$(HUSH_CC) $(CC) $(CFLAGS) -o $@ $<
 
+# Disable these builtin pattern rules
+%.o: %.mod
+%: %.mod
+
 -include $(DEPFILES)
 
 $(OUTDIR)/%.d: %.asm $(YASMDEP)
