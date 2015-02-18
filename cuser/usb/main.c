@@ -12,5 +12,6 @@
 
 void start()
 {
+	__default_section_init();
 	for (;;);
 }

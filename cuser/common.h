@@ -585,6 +585,10 @@ enum pci_command_bits
 	PCI_COMMAND_MEMSPACE = 2,
 	PCI_COMMAND_MASTER = 4,
 };
+enum pci_status_bits
+{
+	PCI_STATUS_INTERRUPT = 8,
+};
 
 /**
  * A simple (compiler) barrier. Memory writes to volatile variables before the

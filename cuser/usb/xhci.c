@@ -49,6 +49,7 @@ enum OperationalRegisters
 	PAGESIZE,
 	// 3,4: RsvdZ
 	DNCTRL = 5,
+	// Command Ring Control Register
 	CRCR = 6, // u64
 	CRCRH = 7,
 	// 8..11, RsvdZ
@@ -57,6 +58,24 @@ enum OperationalRegisters
 	CONFIG,
 	// RsvdZ up to 0x400
 	PORTREGSET = 256,
+};
+enum USBCMDBits
+{
+	USBCMD_Run = 1,
+	USBCMD_Reset = 2,
+	USBCMD_IntEnable = 4,
+};
+enum USBSTSBits
+{
+	USBSTS_Halted = 1,
+	USBSTS_NotReady = 1 << 11,
+};
+enum CRCRBits
+{
+	CRCR_RingCycleState = 1,
+	CRCR_CommandStop = 2,
+	CRCR_CommandAbort = 4,
+	CRCR_CommandRingRunning = 8
 };
 enum PortStatusRegisters
 {
@@ -72,7 +91,23 @@ enum RuntimeRegs
 {
 	MFINDEX = 0,
 };
-static volatile u32* interruptregs;
+enum InterruptRegs
+{
+	IMAN = 0,
+	IMOD = 1,
+	ERSTSZ = 2,
+	// reserved
+	ERSTBA = 4,
+	ERSTBAH = 5,
+	ERDP = 6,
+	ERDPH = 7,
+};
+enum IMANBits
+{
+	IMAN_IntPending = 1,
+	IMAN_IntEnabled = 2,
+};
+static volatile u32 *interruptregs;
 
 static u32 read_mmio32(unsigned byte_offset)
 {
@@ -87,13 +122,102 @@ static u16 read_mmio16(unsigned byte_offset)
 	return res;
 }
 
-struct command_trb
+typedef struct command_trb
 {
 	u64 address;
 	u32 status;
 	u32 command;
+} command_trb;
+_Static_assert(sizeof(struct command_trb) == 16, "command TRB size doesn't match spec");
+
+typedef struct erse
+{
+	u64 base;
+	// number of TRBs in this Event Ring Segment, >= 16, < 4096, rounded up to
+	// nearest multiple of 4 to make the Event Ring size 64 byte aligned.
+	u64 size;
+} erse;
+static erse create_erse(uintptr_t physAddr, u16 ringSize)
+{
+	erse res;
+	res.base = physAddr;
+	res.size = ringSize;
+	return res;
 };
-static struct command_trb command_ring[256] PLACEHOLDER_SECTION ALIGN(4096);
+
+struct normal_trb
+{
+	u64 address;
+	u16 length;
+	u8 td_size;
+	u8 interrupter_target;
+	u16 flags;
+	u16 reserved;
+};
+_Static_assert(sizeof(struct normal_trb) == 16, "normal TRB size doesn't match spec");
+
+enum TRBTypes
+{
+	// 0 = reserved
+	// 1..8: generally transfer ring only
+	TRB_Normal = 1,
+	TRB_SetupStage = 2,
+	TRB_DataStage = 3,
+	TRB_StatusStage = 4,
+	TRB_Isoch = 5,
+	// Link: Command and Transfer but not Event Ring
+	TRB_Link = 6,
+	TRB_EventData = 7,
+	TRB_NoOp = 8,
+	// 9..23: commmands
+	TRB_CMD_EnableSlot = 9,
+	TRB_CMD_DisableSlot = 10,
+	TRB_CMD_AddressDevice = 11,
+	TRB_CMD_ConfigureEndpoint = 12,
+	TRB_CMD_NoOp = 23,
+
+	TRB_PortStatusChange = 34,
+};
+enum TRBFlags
+{
+	TRB_Cycle = 1,
+	TRB_ToggleC = 2,
+	TRB_Chain = 1 << 4,
+	TRB_IOC = 1 << 5,
+};
+typedef union trb
+{
+	struct command_trb cmd;
+	struct normal_trb normal;
+	struct {
+		u64 parameter;
+		u32 status;
+		u32 control;
+	};
+} trb;
+
+static union trb create_link_trb(u64 address, u8 flags)
+{
+	union trb res;
+	res.parameter = address;
+	res.status = 0;
+	res.control = flags | (TRB_Link << 10);
+	return res;
+}
+
+#define COMMAND_RING_SIZE 16
+#define EVENT_RING_SIZE 16
+// The Event Ring Segment Table also has 16-byte entries
+#define ERST_SIZE 1
+static struct page1 {
+	command_trb command_ring[COMMAND_RING_SIZE];
+	trb event_ring[EVENT_RING_SIZE];
+	erse erst[ERST_SIZE];
+} page1 PLACEHOLDER_SECTION ALIGN(4096);
+static volatile struct command_trb *command_enqueue = page1.command_ring;
+// The PCS bit to put into created TRBs
+static bool command_pcs;
+static volatile u64 device_context_addrs[256] PLACEHOLDER_SECTION ALIGN(4096);
 
 enum EcpCapIds
 {
@@ -206,9 +330,13 @@ void start()
 	hmod(pic_handle, pic_handle, pin0_irq_handle);
 	sendrcv1(MSG_REG_IRQ, pin0_irq_handle, &arg2);
 
-	u32 cmd = readpci16(pci_id, PCI_COMMAND);
-	debug("PCI CMD: %04x master=%d\n", cmd, !!(cmd & PCI_COMMAND_MASTER));
-	//writepci16(pci_id, PCI_COMMAND, cmd | PCI_COMMAND_MASTER);
+	{
+		u32 cmd = readpci16(pci_id, PCI_COMMAND);
+		debug("PCI CMD: %04x master=%d\n", cmd, !!(cmd & PCI_COMMAND_MASTER));
+		//writepci16(pci_id, PCI_COMMAND, cmd | PCI_COMMAND_MASTER);
+		u16 status = readpci16(pci_id, PCI_STATUS);
+		debug("PCI STATUS: %04x int=%d\n", status, !!(status & PCI_STATUS_INTERRUPT));
+	}
 
 	u32 bar0 = readpci32(pci_id, PCI_BAR_0);
 	debug("BAR 0: %s %s %s: %x\n",
@@ -248,6 +376,8 @@ void start()
 	u32 max_scratchpads =
 		((hcsparams2 >> (21 - 5)) & (0x1f << 5)) | ((hcsparams2 >> 27) & 0x1f);
 	debug("Max Scratchpad Buffers = %u\n", max_scratchpads);
+	// Scratchpads not supported - need to allocate the Scratchpad Buffer Array
+	assert(max_scratchpads == 0);
 	debug("IST: %u %s\n", hcsparams2 & 7, hcsparams2 & 8 ? "Frames" : "Microframes");
 	u32 hccparams1 = read_mmio32(HCCPARAMS1);
 	debug("hccparams1: %#x\n", hccparams1 & 0xffff);
@@ -256,31 +386,103 @@ void start()
 	debug("xECP: %#x (%p)\n", xECP, mmiospace + (xECP * 4));
 	iterate_ecps((u32*)mmiospace + xECP);
 
+	// 4kB pages *must* be supported.
+	assert(opregs[PAGESIZE] & 1);
+
 	// Initialization - section 4.2 of xhci reference
 
-	// 1. wait until the Controller Not Ready (CNR) flag in the USBSTS is ‘0’
-	// before writing any xHC Operational or Runtime registers.
+	debug("Resetting...\n");
+	opregs[USBCMD] = (opregs[USBCMD] & ~USBCMD_Run) | USBCMD_Reset;
+	unsigned counter = 0;
+	for (;;) {
+		u32 status = opregs[USBSTS];
+		u32 cmd = opregs[USBCMD];
+		debug("Waiting for reset (%u): status %#x cmd %#x\n", counter++, status, cmd);
+		if (status & USBSTS_NotReady) {
+			debug("USB status: controller not ready\n");
+		} else if (cmd & USBCMD_Reset) {
+			debug("USB command: reset still set\n");
+		} else if (!(status & USBSTS_Halted)) {
+			debug("USB status: still running\n");
+		} else {
+			debug("Reset complete!\n");
+			break;
+		}
+	}
 
 	// 2. Program the Max Device Slots Enabled
 	// TODO We probably need to allocate structures for these somewhere.
 	opregs[CONFIG] = device_maxports;
 
 	// 3. Program the Device Context Base Address Array Pointer
+	uintptr_t dcbaaPhysAddr =
+		(uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+			&device_context_addrs, 0, sizeof(device_context_addrs));
+	opregs[DCBAAP] = dcbaaPhysAddr;
+	opregs[DCBAAPH] = dcbaaPhysAddr >> 32;
+	// The DCBAA has MaxSlotsEn+1 entries, entry 0 has the scratchpad entries.
 
 	// 4. Define the Command Ring Dequeue Pointer by programming the Command
 	// Ring Control Register (5.4.5) with a 64-bit address pointing to the
 	// starting address of the first TRB of the Command Ring.
+	uintptr_t page1p =
+		(uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+			&page1, 0, sizeof(page1));
+	uintptr_t commandRingPhys = page1p + offsetof(struct page1, command_ring);
+	page1.command_ring[COMMAND_RING_SIZE - 1] =
+		create_link_trb(commandRingPhys, TRB_ToggleC).cmd;
+	u32 flags = opregs[CRCR] & 0x38;
+	// The command ring should be stopped here.
+	opregs[CRCR] = commandRingPhys | flags | CRCR_RingCycleState;
+	opregs[CRCRH] = commandRingPhys >> 32;
+	command_pcs = true;
 
-	// 5. Initialize interrupters (requires(?) MSI)
+	// 5. Initialize interrupters
+	// The primary interrupter must be initialized before enabling Run, the
+	// other interrupters may be ignored. I believe because they are not used
+	// unless something is configured to use that interrupter for notifications.
+	u32 erstsz = interruptregs[ERSTSZ];
+	interruptregs[ERSTSZ] = (erstsz & ~0xffff) | 1;
+	uintptr_t eventRingPhys = page1p + offsetof(struct page1, event_ring);
+	page1.erst[0] = create_erse(eventRingPhys, EVENT_RING_SIZE);
+	uintptr_t erstbaPhys = page1p + offsetof(struct page1, erst);
+	*(volatile u64 *)(interruptregs + ERDP) = eventRingPhys;
+	*(volatile u64 *)(interruptregs + ERSTBA) = erstbaPhys;
+	// Enable the primary interrupter, and clear pending interrupts by writing
+	// a 1 to the IP bit.
+	interruptregs[IMAN] = IMAN_IntEnabled | IMAN_IntPending;
+	// Disable moderation, just spam the interrupts please.
+	interruptregs[IMOD] = 0;
+
+	__barrier();
 
 	// 6. Write the USBCMD (5.4.1) to turn the host controller ON via setting
 	// the Run/Stop (R/S) bit to ‘1’. This operation allows the xHC to begin
 	// accepting doorbell references.
+	u32 cmd = opregs[USBCMD];
+	cmd |= USBCMD_Run | USBCMD_IntEnable;
+	opregs[USBCMD] = cmd;
+
+	counter = 0;
+	for (;;) {
+		u32 status = opregs[USBSTS];
+		u32 cmd = opregs[USBCMD];
+		debug("Waiting for running state (%u): status %#x cmd %#x\n", counter++, status, cmd);
+		if (status & USBSTS_NotReady) {
+			debug("USB status: controller not ready\n");
+		} else if (status & USBSTS_Halted) {
+			debug("USB status: not running yet\n");
+		} else {
+			debug("Initialization complete!\n");
+			break;
+		}
+	}
 
 	for(;;) {
 		uintptr_t rcpt = fresh;
 		arg = 0;
 		arg2 = 0;
+		debug("receiving...\n");
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
