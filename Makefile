@@ -14,10 +14,10 @@ export CC CXX
 SYSTEM := $(shell uname -s)
 
 YASM ?= yasm/yasm
-ifeq ($(wildcard $(YASM)), $(YASM))
-YASMDEP := $(YASM)
-else
+ifeq (yasm, $(YASM))
 YASMDEP := $(shell which $(YASM))
+else
+YASMDEP := $(YASM)
 endif
 
 ifeq ($(VERBOSE),YES)
@@ -316,3 +316,12 @@ $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
 all: $(GRUBDIR)/cuser/lwip.mod
+
+yasm/yasm: yasm/Makefile
+	$(MAKE) -C yasm
+
+yasm/Makefile: yasm/configure
+	cd yasm && ./configure --enable-python
+
+yasm/configure:
+	cd yasm && ./autogen.sh
