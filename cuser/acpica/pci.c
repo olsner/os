@@ -113,7 +113,8 @@ static ACPI_STATUS FindPCIDevCB(PCIEnum* context) {
 }
 
 ACPI_STATUS FindPCIDevByVendor(u16 vendor, u16 device, ACPI_PCI_ID* id) {
-	PCIEnum cb = {0};
+	PCIEnum cb;
+	memset(&cb, 0, sizeof(cb));
 	cb.cb = FindPCIDevCB;
 	cb.in.vendor = vendor;
 	cb.in.device = device;

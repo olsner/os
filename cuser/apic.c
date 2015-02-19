@@ -14,7 +14,7 @@ static const u8 apic_timer_irq = 48;
 #define REG(name, offset) \
 	static const size_t name = (offset) / sizeof(u32)
 
-REG(TPR, 0x80);
+//REG(TPR, 0x80);
 REG(EOI, 0xb0);
 REG(SPURIOUS, 0xf0);
 enum SpuriousReg {

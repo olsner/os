@@ -8,6 +8,7 @@ void start(uintptr_t pmstart, uintptr_t pmend) {
 	const uintptr_t fresh = 256;
 	uintptr_t pmsize = pmend - pmstart;
 	puts("physmem: init complete\n");
+	(void)pmsize;
 	//printf("physmem: init complete, %p..%p (%x bytes)\n", pmstart, pmend, pmsize);
 	for (;;) {
 		uintptr_t arg1, arg2;

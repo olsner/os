@@ -2,7 +2,6 @@
 
 /* Test some stuff - map some physical memory and inspect it. */
 
-static const uintptr_t ALLOWED_FLAGS = PROT_READ | PROT_EXECUTE;
 static const uintptr_t zeropage = 4;
 
 void inspect(const char* start, const char* end) {

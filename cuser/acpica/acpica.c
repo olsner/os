@@ -282,7 +282,7 @@ static void ResetBuffer(ACPI_BUFFER* buffer) {
 static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE* found, IRQRouteData* data) {
 	ACPI_STATUS status = AE_OK;
 	ACPI_HANDLE LinkDevice = NULL;
-	ACPI_BUFFER buffer = {0};
+	ACPI_BUFFER buffer = {0, NULL};
 
 	printf("Routing IRQ Link device %s\n", found->Source);
 	status = AcpiGetHandle(Device, found->Source, &LinkDevice);
@@ -327,7 +327,7 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 	IRQRouteData* data = (IRQRouteData*)Context;
 	ACPI_STATUS status = AE_OK;
 	ACPI_RESOURCE* resource = NULL;
-	ACPI_BUFFER buffer = {0};
+	ACPI_BUFFER buffer = {0, NULL};
 	buffer.Length = ACPI_ALLOCATE_BUFFER;
 	ACPI_PCI_ROUTING_TABLE* found = NULL;
 
@@ -456,7 +456,7 @@ static const char pci_device_handles[65536] PLACEHOLDER_SECTION;
 
 static void MsgFindPci(uintptr_t rcpt, uintptr_t arg)
 {
-	ACPI_PCI_ID temp = {0};
+	ACPI_PCI_ID temp = { 0, 0, 0, 0 };
 	u16 vendor = arg >> 16;
 	u16 device = arg;
 	uintptr_t addr = -1;

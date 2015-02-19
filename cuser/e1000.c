@@ -645,8 +645,8 @@ void start() {
 	sendrcv1(MSG_REG_IRQ, pin0_irq_handle, &arg2);
 
 	u32 cmd = readpci16(pci_id, PCI_COMMAND);
+	assert(cmd & PCI_COMMAND_MASTER);
 	debug("PCI CMD: %04x master=%d\n", cmd, !!(cmd & PCI_COMMAND_MASTER));
-	//writepci16(pci_id, PCI_COMMAND, cmd | PCI_COMMAND_MASTER);
 
 	u32 bar0 = readpci32(pci_id, PCI_BAR_0);
 	debug("BAR 0: %s %s %s: %x\n",

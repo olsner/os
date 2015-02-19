@@ -25,7 +25,7 @@ static const uintptr_t proto_handle = 0x100;
 static const uintptr_t timer_handle = 0x101;
 static const uintptr_t fresh_handle = 0x200;
 
-static const u16 ETHERTYPE_ARP = 0x0806;
+// static const u16 ETHERTYPE_ARP = 0x0806;
 
 #define NBUFS 4
 #define BUFFER_SIZE 4096

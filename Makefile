@@ -163,10 +163,15 @@ WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
 WANT_REAL_PRINTF = e1000 apic bochsvga fbtest
 
+WANT_STRING = acpica
+
 $(WANT_PRINTF:%=$(OUTDIR)/cuser/%.elf): $(OUTDIR)/cuser/printf.o
 $(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
 	$(OUTDIR)/cuser/acpica/printf.o \
 	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+
+$(WANT_STRING:%=$(OUTDIR)/cuser/%.elf): \
+	$(OUTDIR)/cuser/string.o
 
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm $(YASMDEP)
@@ -262,6 +267,10 @@ ACPI_OBJS += $(addprefix $(OUTDIR)/cuser/acpica/, \
 ACPI_CFLAGS := -Icuser -Icuser/acpica -I$(ACPICA_INCLUDE)
 ACPI_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
 ACPI_CFLAGS += -DACPI_FULL_DEBUG
+ifeq ($(filter clang,$(CC)), clang)
+# Triggers a lot on the ACPI_MODULE_NAME construct, when the name is not used.
+ACPI_CFLAGS += -Wno-unused-const-variable
+endif
 
 $(ACPI_OBJS): USER_CFLAGS += $(ACPI_CFLAGS)
 

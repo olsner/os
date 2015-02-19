@@ -8,7 +8,6 @@
 #endif
 
 static const uintptr_t acpi_handle = 4;
-static const uintptr_t fresh = 0x100;
 
 static void prompt() {
 	puts("Enter debugger command: (Esc cancels)\n");

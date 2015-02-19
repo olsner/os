@@ -50,7 +50,6 @@ enum Index {
 #define VBE_DISPI_NOCLEARMEM             0x80
 
 static const uintptr_t acpi_handle = 4;
-static const uintptr_t pic_handle = 2;
 static const uintptr_t the_client = 0xff;
 static const uintptr_t fresh = 0x100;
 

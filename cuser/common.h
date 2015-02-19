@@ -478,7 +478,9 @@ static void* map(uintptr_t handle, enum prot prot, const volatile void *local_ad
 }
 
 static void map_anon(int prot, void *local_addr, uintptr_t size) {
-	map(0, MAP_ANON | prot, local_addr, 0, size);
+	if (size) {
+		map(0, MAP_ANON | prot, local_addr, 0, size);
+	}
 }
 
 static void prefault(const volatile void* addr, int prot) {
@@ -503,44 +505,11 @@ static void grant(uintptr_t rcpt, void* addr, int prot) {
 	(void)ipc2(MSG_GRANT, &rcpt, &arg1, &arg2);
 }
 
-static void memcpy(void* dest, const void* src, size_t n) {
-	asm("rep movsb": "+D"(dest), "+S"(src), "+c"(n), "=m"(dest) : : "memory");
-}
-
-static void memset(void* dest, int c, size_t n) {
-	asm("rep stosb": "+D"(dest), "+c"(n), "=m"(dest) : "a"(c) : "memory");
-}
-
-static int memcmp(const void* a_, const void* b_, size_t n) {
-	const char* a = a_, *b = b_;
-	while (n--) {
-		int diff = *a++ - *b++;
-		if (diff) return diff;
-	}
-	return 0;
-}
-
-static int strcmp(const char* a, const char* b) {
-	while (*a && *b && *a == *b) {
-		a++, b++;
-	}
-	return *a - *b;
-}
-
-static size_t strlen(const char* s) {
-	size_t res = 0;
-	while (*s++) res++;
-	return res;
-}
-
-static void strcat(char* dest, const char* src) {
-	memcpy(dest + strlen(dest), src, strlen(src));
-}
+#define STRING_INL_LINKAGE static
+#include "string.c"
 
 static void __default_section_init(void) {
-	if (__bss_start < __bss_end) {
-		map_anon(PROT_READ | PROT_WRITE, __bss_start, __bss_end - __bss_start);
-	}
+	map_anon(PROT_READ | PROT_WRITE, __bss_start, __bss_end - __bss_start);
 	memcpy(__data_vma, __data_lma, (uintptr_t)&__data_size);
 }
 
