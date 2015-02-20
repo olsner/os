@@ -83,7 +83,21 @@ enum PortStatusRegisters
 	PORTPMSC = 1,
 	PORTLI = 2,
 	PORTHLPMC = 3,
-	NUMREGS = 4, // Number of dwords per port - 0x10 bytes => 4 dwords.
+	PORT_NUMREGS = 4, // Number of dwords per port - 0x10 bytes => 4 dwords.
+};
+enum PSCRBits
+{
+	PSCR_CurentConnectStatus = 1 << 0,
+	PSCR_Enabled = 1 << 1,
+	// 2: RsvdZ
+	PSCR_OverCurrentActive = 1 << 3,
+	PSCR_Reset = 1 << 4,
+	// 5..8: link state
+	PSCR_PortPower = 1 << 9,
+	// 10..13: port speed
+	// 14..15: Port Indicator (LED color)
+	PSCR_LinkStateWriteStrobe = 1 << 16,
+	PSCR_ConnectStatusChange = 1 << 17,
 };
 static volatile u32* doorbells;
 static volatile u32* runtimeregs;
@@ -297,7 +311,9 @@ u8 readpci8(u32 addr, u8 reg)
 
 static void handle_irq()
 {
-	log("IRQ");
+	log("TODO: Handle IRQ\n");
+	// TODO Handle the reason for the interrupt here...
+	//send1(MSG_IRQ_ACK, rcpt, arg);
 }
 
 void start()
@@ -369,7 +385,7 @@ void start()
 	debug("HCI version %#x\n", read_mmio16(HCIVERSION));
 
 	u32 hcsparams1 = read_mmio32(HCSPARAMS1);
-	u8 device_maxports = hcsparams1 & 0xff;
+	const u8 device_maxports = hcsparams1 & 0xff;
 	debug("Max ports/slots/intrs: %u/%u/%u\n", device_maxports,
 			(hcsparams1 >> 24) & 0xff, (hcsparams1 >> 8) & 0x7ff);
 	u32 hcsparams2 = read_mmio32(HCSPARAMS2);
@@ -478,6 +494,28 @@ void start()
 		}
 	}
 
+	// FIXME device_maxports does not agree with the controller's real number
+	// (qemu: device_maxports = 64, number of ports = 8)
+	for (unsigned port = 0; port < device_maxports; port++) {
+		u32 pscr = opregs[PORTREGSET + port * PORT_NUMREGS + PSCR];
+		u8 linkState = (pscr >> 5) & 0xf;
+		u32 knownbits = PSCR_Reset | PSCR_ConnectStatusChange | PSCR_Enabled
+			| PSCR_PortPower | (0xf << 5);
+		debug("port %d: reset=%d enabled=%d power=%d statuschange=%d linkState=%d other=%#x\n",
+			port, !!(pscr & PSCR_Reset), !!(pscr & PSCR_Enabled),
+			!!(pscr & PSCR_PortPower), !!(pscr & PSCR_ConnectStatusChange),
+			linkState, pscr & ~knownbits);
+		//pscr |= PSCR_ConnectStatusChange;
+		pscr |= PSCR_Reset;
+		opregs[PORTREGSET + port * PORT_NUMREGS + PSCR] = pscr;
+
+		pscr = opregs[PORTREGSET + port * PORT_NUMREGS + PSCR];
+		debug("port %d: reset=%d enabled=%d power=%d statuschange=%d linkState=%d other=%#x\n",
+			port, !!(pscr & PSCR_Reset), !!(pscr & PSCR_Enabled),
+			!!(pscr & PSCR_PortPower), !!(pscr & PSCR_ConnectStatusChange),
+			(pscr >> 5) & 0xf, pscr & ~knownbits);
+	}
+
 	for(;;) {
 		uintptr_t rcpt = fresh;
 		arg = 0;
@@ -486,8 +524,6 @@ void start()
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
-			// Disable all interrupts, then ACK receipt to PIC
-			send1(MSG_IRQ_ACK, rcpt, arg);
 			handle_irq();
 			continue;
 		}
