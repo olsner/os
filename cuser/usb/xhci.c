@@ -90,17 +90,22 @@ enum PortStatusRegisters
 };
 enum PSCRBits
 {
-	PSCR_CurentConnectStatus = 1 << 0,
+	PSCR_CurrentConnectStatus = 1 << 0,
 	PSCR_Enabled = 1 << 1,
 	// 2: RsvdZ
 	PSCR_OverCurrentActive = 1 << 3,
 	PSCR_Reset = 1 << 4,
 	// 5..8: link state
+	PSCR_LinkStateShift = 5,
+	PSCR_LinkStateMask = 0xf << PSCR_LinkStateShift,
 	PSCR_PortPower = 1 << 9,
 	// 10..13: port speed
+	PSCR_PortSpeedShift = 10,
+	PSCR_PortSpeedMask = 0xf << PSCR_PortSpeedShift,
 	// 14..15: Port Indicator (LED color)
 	PSCR_LinkStateWriteStrobe = 1 << 16,
 	PSCR_ConnectStatusChange = 1 << 17,
+	PSCR_ResetChange = 1 << 21,
 };
 static volatile u32* doorbells;
 static volatile u32* runtimeregs;
@@ -123,6 +128,11 @@ enum IMANBits
 {
 	IMAN_IntPending = 1,
 	IMAN_IntEnabled = 2,
+};
+enum ERDPBits
+{
+	// bits 0..2: Dequeue ERST Segment Index
+	ERDP_EHB = 8,
 };
 static volatile u32 *interruptregs;
 
@@ -173,7 +183,7 @@ struct normal_trb
 };
 _Static_assert(sizeof(struct normal_trb) == 16, "normal TRB size doesn't match spec");
 
-enum TRBTypes
+enum TRBType
 {
 	// 0 = reserved
 	// 1..8: generally transfer ring only
@@ -193,7 +203,14 @@ enum TRBTypes
 	TRB_CMD_ConfigureEndpoint = 12,
 	TRB_CMD_NoOp = 23,
 
+	// 32..39: events
+	TRB_TransferEvent = 32,
+	TRB_CommandCompleted = 33,
 	TRB_PortStatusChange = 34,
+	// 35 = bandwidth request, 36 = doorbell event (for virtualization)
+	TRB_HostControllerEvent = 37,
+	TRB_DeviceNotification = 38,
+	TRB_MFIndexWrap = 39,
 };
 enum TRBFlags
 {
@@ -212,9 +229,12 @@ typedef union trb
 		u32 control;
 	};
 } trb;
+typedef trb event_trb;
+static enum TRBType trb_type(trb *trb_) {
+	return (trb_->control >> 10) & 0x3f;
+}
 
-static union trb create_link_trb(u64 address, u8 flags)
-{
+static union trb create_link_trb(u64 address, u8 flags) {
 	union trb res;
 	res.parameter = address;
 	res.status = 0;
@@ -231,9 +251,14 @@ static struct page1 {
 	trb event_ring[EVENT_RING_SIZE];
 	erse erst[ERST_SIZE];
 } page1 PLACEHOLDER_SECTION ALIGN(4096);
+
 static volatile struct command_trb *command_enqueue = page1.command_ring;
 // The PCS bit to put into created TRBs
 static bool command_pcs;
+
+static u8 event_ring_dequeue;
+static bool event_ring_pcs = true;
+
 static volatile u64 device_context_addrs[256] PLACEHOLDER_SECTION ALIGN(4096);
 
 enum EcpCapIds
@@ -320,11 +345,74 @@ u8 readpci8(u32 addr, u8 reg)
 	return val;
 }
 
-static void handle_irq()
+static void print_pscr(u8 port, u32 pscr);
+
+static void handle_event(event_trb* ev)
 {
-	log("TODO: Handle IRQ\n");
-	// TODO Handle the reason for the interrupt here...
-	//send1(MSG_IRQ_ACK, rcpt, arg);
+	u8 type = trb_type(ev);
+	switch (type) {
+	case TRB_PortStatusChange:
+	{
+		u8 port = ev->parameter >> 24;
+		volatile u32* regs = opregs + PORTREGSET + (port - 1) * PORT_NUMREGS;
+		debug("Port status change: port=%d\n", port);
+		print_pscr(port, regs[PSCR]);
+		regs[PSCR] = PSCR_ResetChange | PSCR_ConnectStatusChange | PSCR_PortPower;
+		print_pscr(port, regs[PSCR]);
+		break;
+	}
+	default:
+		debug("Unknown event %d\n", type);
+		break;
+	}
+}
+
+static void handle_irq(uintptr_t rcpt, uintptr_t arg)
+{
+	// For each interrupter (but since we're not MSI-X capable, there is only
+	// one, the Primary Interrupter).
+	if (interruptregs[IMAN] & IMAN_IntPending) {
+		bool event = false;
+		while (!!(page1.event_ring[event_ring_dequeue].control & TRB_Cycle) ==
+			event_ring_pcs) {
+			event = true;
+			debug("Event at %d\n", event_ring_dequeue);
+			handle_event(&page1.event_ring[event_ring_dequeue]);
+			if (++event_ring_dequeue == EVENT_RING_SIZE) {
+				debug("Event ring wrapped!\n");
+				event_ring_pcs ^= 1;
+				event_ring_dequeue = 0;
+			}
+		}
+		volatile u64 *erdpp = (u64 *)(interruptregs + ERDP);
+		if (event) {
+			u64 erdp = *erdpp, prev_erdp = erdp;
+			u8 new_erdp = event_ring_dequeue;
+			erdp &= ~(0xf << 4);
+			erdp |= (new_erdp << 4) | ERDP_EHB;
+			debug("ERDP %#lx -> %#lx\n", prev_erdp, erdp);
+			*erdpp = erdp;
+		}
+		interruptregs[IMAN] = IMAN_IntPending | IMAN_IntEnabled;
+	}
+
+	send1(MSG_IRQ_ACK, rcpt, arg);
+}
+
+static void print_pscr(u8 port, u32 pscr) {
+	u8 linkState = (pscr >> PSCR_LinkStateShift) & 0xf;
+	u8 portSpeed = (pscr >> PSCR_PortSpeedShift) & 0xf;
+	u32 knownbits = PSCR_CurrentConnectStatus | PSCR_Reset |
+		PSCR_ConnectStatusChange | PSCR_ResetChange | PSCR_Enabled |
+		PSCR_PortPower | PSCR_LinkStateMask | PSCR_PortSpeedMask;
+	debug("port %d: reset=%d resetchange=%d enabled=%d power=%d status=%d statuschange=%d\n",
+			port, !!(pscr & PSCR_Reset), !!(pscr & PSCR_ResetChange),
+			!!(pscr & PSCR_Enabled),
+			!!(pscr & PSCR_PortPower),
+			!!(pscr & PSCR_CurrentConnectStatus),
+			!!(pscr & PSCR_ConnectStatusChange));
+	debug("... linkState=%d portSpeed=%d other=%#x\n",
+			linkState, portSpeed, pscr & ~knownbits);
 }
 
 void start()
@@ -509,26 +597,22 @@ void start()
 		}
 	}
 
-	// FIXME device_maxports does not agree with the controller's real number
-	// (qemu: device_maxports = 64, number of ports = 8)
-	for (unsigned port = 0; port < device_maxports; port++) {
-		u32 pscr = opregs[PORTREGSET + port * PORT_NUMREGS + PSCR];
-		u8 linkState = (pscr >> 5) & 0xf;
-		u32 knownbits = PSCR_Reset | PSCR_ConnectStatusChange | PSCR_Enabled
-			| PSCR_PortPower | (0xf << 5);
-		debug("port %d: reset=%d enabled=%d power=%d statuschange=%d linkState=%d other=%#x\n",
-			port, !!(pscr & PSCR_Reset), !!(pscr & PSCR_Enabled),
-			!!(pscr & PSCR_PortPower), !!(pscr & PSCR_ConnectStatusChange),
-			linkState, pscr & ~knownbits);
-		//pscr |= PSCR_ConnectStatusChange;
-		pscr |= PSCR_Reset;
-		opregs[PORTREGSET + port * PORT_NUMREGS + PSCR] = pscr;
+	// TODO Don't need to do this - just check the connect= status, then start
+	// enumeration for each connected port.
+	for (unsigned port = 1; port <= maxport; port++) {
+		volatile u32* regs = opregs + PORTREGSET + (port - 1) * PORT_NUMREGS;
+		u32 pscr = regs[PSCR];
+		if (!(pscr & PSCR_PortPower)) {
+			debug("port %d: not powered\n", port);
+			continue;
+		}
 
-		pscr = opregs[PORTREGSET + port * PORT_NUMREGS + PSCR];
-		debug("port %d: reset=%d enabled=%d power=%d statuschange=%d linkState=%d other=%#x\n",
-			port, !!(pscr & PSCR_Reset), !!(pscr & PSCR_Enabled),
-			!!(pscr & PSCR_PortPower), !!(pscr & PSCR_ConnectStatusChange),
-			(pscr >> 5) & 0xf, pscr & ~knownbits);
+		print_pscr(port, pscr);
+		// Assume that when this is set, all other bits are ignored. There are
+		// many bits in the PSCR that are e.g. write-1-to-clear or similar...
+		regs[PSCR] = PSCR_Reset;
+
+		print_pscr(port, regs[PSCR]);
 	}
 
 	for(;;) {
@@ -539,7 +623,7 @@ void start()
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
-			handle_irq();
+			handle_irq(rcpt, arg);
 			continue;
 		}
 
