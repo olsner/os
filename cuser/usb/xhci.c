@@ -36,7 +36,10 @@ enum HostCntrlCapRegs
 };
 enum HCCP1Bits
 {
-	HCCP1_AC64 = 1,
+	HCCP1_AC64 = 1 << 0,
+	// Bandwidth negotiation capability
+	HCCP1_ContextSize = 1 << 2,
+	HCCP1_PowerPowerControl = 1 << 3,
 	// Plus others... I'm not sure those are interesting.
 };
 // Offset into mmiospace based on values in capability registers
@@ -237,6 +240,7 @@ enum EcpCapIds
 {
 	CAPID_SUPPORTED_PROTOCOL = 2,
 };
+static uint8_t maxport, numports;
 static void iterate_ecps(volatile const u32* ecp)
 {
 	while (ecp)
@@ -250,9 +254,16 @@ static void iterate_ecps(volatile const u32* ecp)
 		{
 			u64 nm = ecp[1];
 			u32 ports = ecp[2];
-			debug("%p: Supported protocol %s %x.%x, %u ports at %u\n", ecp,
+			u8 portcount = ports >> 8;
+			u8 firstport = ports;
+			u8 lastport = firstport + portcount - 1;
+			debug("%p: Supported protocol %s %x.%x, ports %u..%u\n", ecp,
 				&nm, ecpr >> 24, (ecpr >> 16) & 0xff,
-				(ports >> 8) & 0xff, ports & 0xff);
+				firstport, lastport);
+			if (lastport > maxport) {
+				maxport = lastport;
+			}
+			numports += portcount;
 			break;
 		}
 		default:
@@ -398,6 +409,7 @@ void start()
 	u32 hccparams1 = read_mmio32(HCCPARAMS1);
 	debug("hccparams1: %#x\n", hccparams1 & 0xffff);
 	assert(hccparams1 & HCCP1_AC64);
+	assert(!(hccparams1 & HCCP1_ContextSize));
 	u16 xECP = hccparams1 >> 16;
 	debug("xECP: %#x (%p)\n", xECP, mmiospace + (xECP * 4));
 	iterate_ecps((u32*)mmiospace + xECP);
@@ -427,8 +439,11 @@ void start()
 	}
 
 	// 2. Program the Max Device Slots Enabled
-	// TODO We probably need to allocate structures for these somewhere.
-	opregs[CONFIG] = device_maxports;
+	// FIXME Are these the same as the DCBAA entries? Then we can have 256.
+	// I'm not sure if the number of ports is the appropriate value (= only
+	// root-port-connected devices have slots), or if we'd rather enable all
+	// the slots we can, so that we can support devices on hubs.
+	opregs[CONFIG] = numports;
 
 	// 3. Program the Device Context Base Address Array Pointer
 	uintptr_t dcbaaPhysAddr =
