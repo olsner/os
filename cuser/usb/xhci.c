@@ -347,6 +347,51 @@ u8 readpci8(u32 addr, u8 reg)
 
 static void print_pscr(u8 port, u32 pscr);
 
+static void proceed_port(u8 port) {
+	volatile u32* regs = opregs + PORTREGSET + (port - 1) * PORT_NUMREGS;
+	u32 pscr = regs[PSCR];
+	if (!(pscr & PSCR_PortPower)) {
+		debug("port %d: not powered\n", port);
+		return;
+	}
+	if (!(pscr & PSCR_CurrentConnectStatus) || (pscr & PSCR_Reset)) {
+		return;
+	}
+
+	u8 linkState = (pscr & PSCR_LinkStateMask) >> PSCR_LinkStateShift;
+	// Failed USB3 device. Ignore. (Would it help to reset the port here?)
+	if (!(pscr & PSCR_Enabled) && linkState == 5) {
+		return;
+	}
+
+	// USB3:
+	// a) successful: enabled=1 reset=0 linkstate=0
+	// b) unsuccessful: enabled=0 reset=0 linkstate=5 (RxDetect)
+	// USB2:
+	// 1. enabled=0 reset=0 linkstate=7 (Polling)
+	// 2. reset it
+	// 3. enabled=1 reset=0 linkstate=0 (U0)
+
+	regs[PSCR] = PSCR_ResetChange | PSCR_ConnectStatusChange | PSCR_PortPower;
+	print_pscr(port, pscr);
+
+	if (pscr & PSCR_Enabled) {
+		if (!(pscr & (PSCR_Reset | PSCR_LinkStateMask))) {
+			debug("port %d: Connected!\n", port);
+			// Connected! Proceed to set up a device slot etc.
+			// Section 4.3 step 4)
+		}
+	} else {
+		if (linkState == 7) {
+			debug("port %d: USB2 device, resetting to proceed to Enabled\n", port);
+			// Assume that when this is set, all other bits are ignored.
+			// There are many bits in the PSCR that are e.g.
+			// write-1-to-clear or similar...
+			regs[PSCR] = PSCR_Reset;
+		}
+	}
+}
+
 static void handle_event(event_trb* ev)
 {
 	u8 type = trb_type(ev);
@@ -356,9 +401,7 @@ static void handle_event(event_trb* ev)
 		u8 port = ev->parameter >> 24;
 		volatile u32* regs = opregs + PORTREGSET + (port - 1) * PORT_NUMREGS;
 		debug("Port status change: port=%d\n", port);
-		print_pscr(port, regs[PSCR]);
-		regs[PSCR] = PSCR_ResetChange | PSCR_ConnectStatusChange | PSCR_PortPower;
-		print_pscr(port, regs[PSCR]);
+		proceed_port(port);
 		break;
 	}
 	default:
@@ -597,22 +640,8 @@ void start()
 		}
 	}
 
-	// TODO Don't need to do this - just check the connect= status, then start
-	// enumeration for each connected port.
 	for (unsigned port = 1; port <= maxport; port++) {
-		volatile u32* regs = opregs + PORTREGSET + (port - 1) * PORT_NUMREGS;
-		u32 pscr = regs[PSCR];
-		if (!(pscr & PSCR_PortPower)) {
-			debug("port %d: not powered\n", port);
-			continue;
-		}
-
-		print_pscr(port, pscr);
-		// Assume that when this is set, all other bits are ignored. There are
-		// many bits in the PSCR that are e.g. write-1-to-clear or similar...
-		regs[PSCR] = PSCR_Reset;
-
-		print_pscr(port, regs[PSCR]);
+		proceed_port(port);
 	}
 
 	for(;;) {
