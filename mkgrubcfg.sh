@@ -31,7 +31,7 @@ menuentry "USB" {
     module /cuser/acpica.mod acpica
     # e1000?
     module /cuser/apic.mod apic
-    module /cuser/usb USB
+    module /cuser/usb.mod USB
     module /cuser/usb/xhci.mod xHCI
     boot
 }

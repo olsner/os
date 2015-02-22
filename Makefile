@@ -171,7 +171,7 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 
 WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
-WANT_REAL_PRINTF = e1000 apic bochsvga fbtest usb/xhci
+WANT_REAL_PRINTF = e1000 apic bochsvga fbtest usb/xhci usb
 
 WANT_STRING = acpica
 
@@ -325,14 +325,13 @@ $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
+USB := cuser/usb
 USB_SRCS := $(USB)/main.c
-USB_OBJS := $(USB_SRCS:%.c:$(OUTDIR)/%.o)
+USB_OBJS := $(USB_SRCS:%.c=$(OUTDIR)/%.o)
 
 -include $(USB_OBJS:.o=.d)
 
-USB_DEP_OBJS := $(USB_OBJS) $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
-
-$(OUTDIR)/cuser/usb.elf: cuser/linker.ld $(USB_DEP_OBJS)
+$(OUTDIR)/cuser/usb.elf: cuser/linker.ld $(USB_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 

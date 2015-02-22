@@ -7,6 +7,7 @@
 #define debug(...) (void)0
 #endif
 
+static const uintptr_t usb_handle = 6;
 static const uintptr_t acpi_handle = 4;
 static const uintptr_t pic_handle = 2;
 static const uintptr_t pin0_irq_handle = 0x100;
@@ -613,6 +614,7 @@ static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
 		if (ccode == CC_Success) {
 			// Device is addressed, now what?
 			debug("AddressDevice completed! slot %d port %d ready to configure\n", slot, port);
+			send1(MSG_USB_NEW_DEVICE, usb_handle, slot);
 		} else {
 			debug("AddressDevice failed! freeing slot %d port %d\n", slot, port);
 			command_trb cmd = { 0, 0, 0 };
