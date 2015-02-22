@@ -151,9 +151,9 @@ static u16 read_mmio16(unsigned byte_offset)
 
 typedef struct command_trb
 {
-	u64 address;
+	u64 parameter;
 	u32 status;
-	u32 command;
+	u32 control;
 } command_trb;
 _Static_assert(sizeof(struct command_trb) == 16, "command TRB size doesn't match spec");
 
@@ -212,6 +212,7 @@ enum TRBType
 	TRB_DeviceNotification = 38,
 	TRB_MFIndexWrap = 39,
 };
+typedef enum TRBType TRBType;
 enum TRBFlags
 {
 	TRB_Cycle = 1,
@@ -230,7 +231,7 @@ typedef union trb
 	};
 } trb;
 typedef trb event_trb;
-static enum TRBType trb_type(trb *trb_) {
+static TRBType trb_type(trb *trb_) {
 	return (trb_->control >> 10) & 0x3f;
 }
 
@@ -252,9 +253,10 @@ static struct page1 {
 	erse erst[ERST_SIZE];
 } page1 PLACEHOLDER_SECTION ALIGN(4096);
 
-static volatile struct command_trb *command_enqueue = page1.command_ring;
+static u8 command_data[COMMAND_RING_SIZE];
+static u8 command_enqueue = 0;
 // The PCS bit to put into created TRBs
-static bool command_pcs;
+static bool command_pcs = true;
 
 static u8 event_ring_dequeue;
 static bool event_ring_pcs = true;
@@ -347,6 +349,22 @@ u8 readpci8(u32 addr, u8 reg)
 
 static void print_pscr(u8 port, u32 pscr);
 
+static bool enqueue_command(struct command_trb *cmd, TRBType command, u8 data) {
+	cmd->control |= (command << 10) | (command_pcs ? TRB_Cycle : 0);
+	if (!!(page1.command_ring[command_enqueue].control & TRB_Cycle) ==
+		command_pcs) {
+		debug("Eww... Command ring is full.\n");
+		return false;
+	}
+	page1.command_ring[command_enqueue] = *cmd;
+	command_data[command_enqueue] = data;
+	if (++command_enqueue == COMMAND_RING_SIZE) {
+		command_enqueue = 0;
+		command_pcs ^= 1;
+	}
+	doorbells[0] = 0;
+}
+
 static void proceed_port(u8 port) {
 	volatile u32* regs = opregs + PORTREGSET + (port - 1) * PORT_NUMREGS;
 	u32 pscr = regs[PSCR];
@@ -378,8 +396,10 @@ static void proceed_port(u8 port) {
 	if (pscr & PSCR_Enabled) {
 		if (!(pscr & (PSCR_Reset | PSCR_LinkStateMask))) {
 			debug("port %d: Connected!\n", port);
-			// Connected! Proceed to set up a device slot etc.
-			// Section 4.3 step 4)
+			// TODO Should copy the slot type form the Supported Protocol
+			// capability for the port, 0 works only for USB2 and USB3.
+			struct command_trb cmd = { 0, 0, 0 };
+			enqueue_command(&cmd, TRB_CMD_EnableSlot, port);
 		}
 	} else {
 		if (linkState == 7) {
@@ -392,16 +412,48 @@ static void proceed_port(u8 port) {
 	}
 }
 
+static void address_device(u8 port, u8 slot) {
+	debug("address device: port %d -> slot %d\n", port, slot);
+	// Section 4.3.3 ...
+}
+
+static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
+	command_trb trb = page1.command_ring[cmdpos];
+	u8 cmd = trb_type(&trb);
+	u8 data = command_data[cmdpos];
+	switch (cmd) {
+	case TRB_CMD_EnableSlot:
+	{
+		// TODO if (ccode == 1 /*Successful*/)
+		address_device(data, slot);
+		break;
+	}
+	default:
+		debug("Command %d completed, but I don't know what I did?", cmd);
+		break;
+	}
+}
+
 static void handle_event(event_trb* ev)
 {
 	u8 type = trb_type(ev);
+	// Not all applicable to all events, but they are always in the same place.
+	u8 ccode = ev->status >> 24;
+	u32 cparam = ev->status & 0xffffff;
+	u8 slot = ev->control >> 24;
 	switch (type) {
 	case TRB_PortStatusChange:
 	{
 		u8 port = ev->parameter >> 24;
-		volatile u32* regs = opregs + PORTREGSET + (port - 1) * PORT_NUMREGS;
 		debug("Port status change: port=%d\n", port);
 		proceed_port(port);
+		break;
+	}
+	case TRB_CommandCompleted:
+	{
+		u8 cmdpos = (ev->parameter >> 4) & (COMMAND_RING_SIZE - 1);
+		debug("Command completed: %d completion code=%d,param=%#x slot %d\n", cmdpos, ccode, cparam, slot);
+		command_complete(cmdpos, ccode, slot);
 		break;
 	}
 	default:
