@@ -220,6 +220,11 @@ enum TRBFlags
 	TRB_Chain = 1 << 4,
 	TRB_IOC = 1 << 5,
 };
+enum CompletionCodes
+{
+	CC_Invalid = 0,
+	CC_Success = 1,
+};
 typedef union trb
 {
 	struct command_trb cmd;
@@ -262,6 +267,120 @@ static u8 event_ring_dequeue;
 static bool event_ring_pcs = true;
 
 static volatile u64 device_context_addrs[256] PLACEHOLDER_SECTION ALIGN(4096);
+// Bytes per context entry.
+static u8 context_size;
+typedef struct input_context {
+	u32 drop;
+	u32 add;
+	u32 rsvd[5];
+	u32 control;
+} input_context;
+_Static_assert(sizeof(input_context) == 32, "input context size doesn't match spec");
+typedef struct slot_context {
+	u32 route : 20;
+	u32 speed : 4;
+	u32 : 1;
+	u32 mtt : 1;
+	u32 hub : 1;
+	u32 entries : 5;
+	u16 exit_latency;
+	u8 root_hub_port;
+	u8 num_ports;
+	u8 tt_hub_slot;
+	u8 tt_port;
+	u16 ttt : 2;
+	u16 : 4;
+	u16 interrupter : 10;
+	u32 device_address : 8;
+	u32 : 19;
+	u32 slot_state : 5;
+	u32 rsvdO[4];
+} slot_context;
+_Static_assert(sizeof(slot_context) == 32, "slot context size doesn't match spec");
+typedef struct endpoint_context {
+	// u32 #0
+	u8 ep_state; // Really just 3 bits
+	u8 mult : 2;
+	u8 max_primary_streams : 5;
+	u8 linear_stream_array : 1;
+	u8 interval;
+	u8 max_esit_payload_hi;
+	// u32 #1
+	u8 : 1;
+	u8 error_count : 2;
+	u8 type : 3;
+	u8 : 1;
+	u8 hid : 1;
+	u8 max_burst_size;
+	u16 max_packet_size;
+	// u32 #2, #3
+	u64 trdp;
+	// u32 #4
+	u16 avg_trb_length;
+	u16 max_esit_payload_lo;
+	// u32 5..8
+	u32 rsvd[3];
+} endpoint_context;
+_Static_assert(sizeof(endpoint_context) == 32, "endpoint context size doesn't match spec");
+enum EPType
+{
+	EP_NotValid = 0,
+	EP_IsochOut,
+	EP_BulkOut,
+	EP_InterruptOut,
+	EP_Control = 4,
+	EP_IsochIn,
+	EP_BulkIn,
+	EP_InterruptIn,
+};
+enum TRDPBits
+{
+	TRDP_DCS = 1,
+};
+
+static u64 dma_map(const volatile void* addr, size_t size) {
+	const enum prot flags = MAP_DMA | PROT_READ | PROT_WRITE | PROT_NO_CACHE;
+	return (u64)map(0, flags, addr, 0, size);
+}
+#define dma_map(obj) dma_map(&(obj), sizeof(obj))
+
+#define MAX_DMA_BUFFERS 16
+static u8 dma_buffer_space[MAX_DMA_BUFFERS][4096] PLACEHOLDER_SECTION ALIGN(4096);
+typedef struct dma_buffer {
+	u64 phys; // 0 for unmapped buffers
+} dma_buffer;
+static dma_buffer dma_buffers[MAX_DMA_BUFFERS];
+typedef struct dma_buffer_ref {
+	u64 phys;
+	u8 *virtual;
+} dma_buffer_ref;
+static dma_buffer_ref allocate_dma_buffer() {
+	dma_buffer_ref res = { 0, NULL };
+	for (unsigned i = 0; i < MAX_DMA_BUFFERS; i++) {
+		dma_buffer *buf = dma_buffers + i;
+		if (buf->phys & 1) continue;
+
+		if (!buf->phys) {
+			buf->phys = dma_map(dma_buffer_space[i]);
+		}
+		res.phys = buf->phys;
+		res.virtual = dma_buffer_space[i];
+		memset(res.virtual, 0, 4096);
+
+		buf->phys |= 1;
+		return res;
+	}
+	assert(!"Ran out of DMA buffers...");
+	return res;
+}
+static void free_dma_buffer(u64 phys) {
+	for (unsigned i = 0; i < MAX_DMA_BUFFERS; i++) {
+		dma_buffer *buf = dma_buffers + i;
+		if (buf->phys != (phys | 1)) continue;
+		buf->phys ^= 1;
+		return;
+	}
+}
 
 enum EcpCapIds
 {
@@ -349,8 +468,7 @@ u8 readpci8(u32 addr, u8 reg)
 
 static void print_pscr(u8 port, u32 pscr);
 
-static bool enqueue_command(struct command_trb *cmd, TRBType command, u8 data) {
-	cmd->control |= (command << 10) | (command_pcs ? TRB_Cycle : 0);
+static bool enqueue_command2(struct command_trb *cmd, u8 data) {
 	if (!!(page1.command_ring[command_enqueue].control & TRB_Cycle) ==
 		command_pcs) {
 		debug("Eww... Command ring is full.\n");
@@ -359,10 +477,19 @@ static bool enqueue_command(struct command_trb *cmd, TRBType command, u8 data) {
 	page1.command_ring[command_enqueue] = *cmd;
 	command_data[command_enqueue] = data;
 	if (++command_enqueue == COMMAND_RING_SIZE) {
+		debug("enqueue_command: command ring wrapped!\n");
 		command_enqueue = 0;
 		command_pcs ^= 1;
 	}
 	doorbells[0] = 0;
+	return true;
+}
+
+// TODO warn_unused_result
+static bool enqueue_command(struct command_trb *cmd, TRBType command, u8 data) {
+	assert(cmd);
+	cmd->control |= (command << 10) | (command_pcs ? TRB_Cycle : 0);
+	return enqueue_command2(cmd, data);
 }
 
 static void proceed_port(u8 port) {
@@ -396,7 +523,7 @@ static void proceed_port(u8 port) {
 	if (pscr & PSCR_Enabled) {
 		if (!(pscr & (PSCR_Reset | PSCR_LinkStateMask))) {
 			debug("port %d: Connected!\n", port);
-			// TODO Should copy the slot type form the Supported Protocol
+			// TODO Should copy the slot type from the Supported Protocol
 			// capability for the port, 0 works only for USB2 and USB3.
 			struct command_trb cmd = { 0, 0, 0 };
 			enqueue_command(&cmd, TRB_CMD_EnableSlot, port);
@@ -412,20 +539,94 @@ static void proceed_port(u8 port) {
 	}
 }
 
+#if 0
+static void disable_slot(u8 slot) {
+	// Do a TRB_CMD_DisableSlot
+}
+#endif
+
+static slot_context *get_slot_ctx(void *p) {
+	return (slot_context*)((u8*)p + context_size);
+}
+static endpoint_context *get_ep_ctx(void *p, unsigned ep) {
+	return (endpoint_context*)((u8*)p + (ep + 2) * context_size);
+}
+
 static void address_device(u8 port, u8 slot) {
 	debug("address device: port %d -> slot %d\n", port, slot);
+	dma_buffer_ref input = allocate_dma_buffer();
+	dma_buffer_ref devctx = allocate_dma_buffer();
+	dma_buffer_ref ring = allocate_dma_buffer();
+	device_context_addrs[slot] = devctx.phys;
+
 	// Section 4.3.3 ...
+	input_context* ic = (input_context*)input.virtual;
+	ic->add = 3; // slot context and one endpoint context
+
+	slot_context* sc = get_slot_ctx(ic);
+	sc->root_hub_port = port;
+	sc->route = 0;
+	sc->entries = 1; // One, the control endpoint
+
+	endpoint_context* ep = get_ep_ctx(ic, 0);
+	ep->type = EP_Control;
+	// TODO Check PORTSC Port Speed, set the appropriate max packet size for the control endpoint.
+	ep->max_packet_size = 8;
+	ep->max_burst_size = 0;
+	ep->trdp = ring.phys | TRDP_DCS;
+	ep->interval = 0;
+	ep->max_primary_streams = 0;
+	ep->mult = 0;
+	ep->error_count = 3;
+
+	trb* ring_trbs = (trb *)ring.virtual;
+	ring_trbs[(4096 / sizeof(trb)) - 1] =
+		create_link_trb(ring.phys, TRB_ToggleC);
+
+	// TODO More barrier to make sure input changes are in RAM before we submit
+	// the command.
+	__barrier();
+
+	command_trb cmd = { input.phys, 0, slot << 24 };
+	enqueue_command(&cmd, TRB_CMD_AddressDevice, port);
 }
 
 static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
 	command_trb trb = page1.command_ring[cmdpos];
-	u8 cmd = trb_type(&trb);
+	u8 cmd = trb_type((union trb *)&trb);
 	u8 data = command_data[cmdpos];
+	if (ccode != CC_Success) {
+		debug("Command %d failed: completion code %d\n", cmdpos, ccode);
+	}
 	switch (cmd) {
 	case TRB_CMD_EnableSlot:
 	{
-		// TODO if (ccode == 1 /*Successful*/)
-		address_device(data, slot);
+		if (ccode == CC_Success) {
+			address_device(data, slot);
+		}
+		break;
+	}
+	case TRB_CMD_AddressDevice:
+	{
+		u8 port = data;
+		free_dma_buffer(trb.parameter);
+		if (ccode == CC_Success) {
+			// Device is addressed, now what?
+			debug("AddressDevice completed! slot %d port %d ready to configure\n", slot, port);
+		} else {
+			debug("AddressDevice failed! freeing slot %d port %d\n", slot, port);
+			command_trb cmd = { 0, 0, 0 };
+			enqueue_command(&cmd, TRB_CMD_DisableSlot, port);
+		}
+	}
+	case TRB_CMD_DisableSlot:
+	{
+		u8 port = data;
+		// TODO Find the transfer rings and free them.
+		free_dma_buffer(device_context_addrs[slot]);
+		device_context_addrs[slot] = 0;
+		// More?
+		// Disable the port that the device was connected on?
 		break;
 	}
 	default:
@@ -464,6 +665,8 @@ static void handle_event(event_trb* ev)
 
 static void handle_irq(uintptr_t rcpt, uintptr_t arg)
 {
+	send1(MSG_IRQ_ACK, rcpt, arg);
+
 	// For each interrupter (but since we're not MSI-X capable, there is only
 	// one, the Primary Interrupter).
 	if (interruptregs[IMAN] & IMAN_IntPending) {
@@ -490,8 +693,6 @@ static void handle_irq(uintptr_t rcpt, uintptr_t arg)
 		}
 		interruptregs[IMAN] = IMAN_IntPending | IMAN_IntEnabled;
 	}
-
-	send1(MSG_IRQ_ACK, rcpt, arg);
 }
 
 static void print_pscr(u8 port, u32 pscr) {
@@ -592,7 +793,7 @@ void start()
 	u32 hccparams1 = read_mmio32(HCCPARAMS1);
 	debug("hccparams1: %#x\n", hccparams1 & 0xffff);
 	assert(hccparams1 & HCCP1_AC64);
-	assert(!(hccparams1 & HCCP1_ContextSize));
+	context_size = (hccparams1 & HCCP1_ContextSize) ? 64 : 32;
 	u16 xECP = hccparams1 >> 16;
 	debug("xECP: %#x (%p)\n", xECP, mmiospace + (xECP * 4));
 	iterate_ecps((u32*)mmiospace + xECP);
@@ -629,9 +830,7 @@ void start()
 	opregs[CONFIG] = numports;
 
 	// 3. Program the Device Context Base Address Array Pointer
-	uintptr_t dcbaaPhysAddr =
-		(uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
-			&device_context_addrs, 0, sizeof(device_context_addrs));
+	uintptr_t dcbaaPhysAddr = dma_map(device_context_addrs);
 	opregs[DCBAAP] = dcbaaPhysAddr;
 	opregs[DCBAAPH] = dcbaaPhysAddr >> 32;
 	// The DCBAA has MaxSlotsEn+1 entries, entry 0 has the scratchpad entries.
@@ -639,9 +838,7 @@ void start()
 	// 4. Define the Command Ring Dequeue Pointer by programming the Command
 	// Ring Control Register (5.4.5) with a 64-bit address pointing to the
 	// starting address of the first TRB of the Command Ring.
-	uintptr_t page1p =
-		(uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
-			&page1, 0, sizeof(page1));
+	uintptr_t page1p = dma_map(page1);
 	uintptr_t commandRingPhys = page1p + offsetof(struct page1, command_ring);
 	page1.command_ring[COMMAND_RING_SIZE - 1] =
 		create_link_trb(commandRingPhys, TRB_ToggleC).cmd;
