@@ -109,20 +109,29 @@ printf:
 	; cl = highest bit of first hex-digit to print (>= 4)
 	; rbx = number to print
 .print_digits:
-	lea	r14, [rel digits]
 .loop:
 	sub	cl, 4
-	mov	rdi, rbx
-	shr	rdi, cl
-	and	edi, 0xf
+	mov	rax, rbx
+	shr	rax, cl
+	and	eax, 0xf
 	jnz	.print
+	; digit is 0 - is this the last digit (cl = 0)? Then always print it.
 	test	cl, cl
 	jz	.print
+	; non-last zero digit - r15b is 1 if printing 'x' (not a pointer),
+	; meaning we should skip until the first non-zero digit.
 	test	r15b, r15b
-	jnz	.next_digit
+	jnz	.loop
 .print:
+	; al = digit to print
+	cmp	al, 10
+	jb	.low
+	add	al, 'a' - 10 - '0'
+.low:
+	add	al, '0'
+	mov	edi, eax
+	; we've printed, so make sure we print all following digits now
 	mov	r15b, 0
-	mov	dil, byte [r14 + rdi]
 	push	rcx
 	call	putchar
 	pop	rcx
@@ -154,8 +163,6 @@ puts:
 	ret
 
 pushsection .rodata
-digits:
-	db '0123456789abcdef'
 null_str:
 	db '(null)', 0
 popsection
