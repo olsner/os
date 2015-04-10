@@ -35,6 +35,15 @@ printf:
 	cmp	al,'%'
 	je	.handle_format
 
+.write_al:
+	mov	r12,rdi
+	mov	r13,rsi
+	movzx	edi,al
+	call	putchar
+	mov	rsi,r13
+	mov	rdi,r12
+	jmp	.nextchar
+
 .done:
 	pop	rbx
 	pop	r15
@@ -44,15 +53,6 @@ printf:
 	clear_clobbered
 	add	rsp,48
 	jmp	[rsp-48]
-
-.write_al:
-	mov	r12,rdi
-	mov	r13,rsi
-	movzx	edi,al
-	call	putchar
-	mov	rsi,r13
-	mov	rdi,r12
-	jmp	.nextchar
 
 .handle_format:
 	lodsb
