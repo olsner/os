@@ -46,6 +46,7 @@ void parse_regbit(const char* bitarg, int* reg, int* bit)
 
 void cpuid(u32 cpuid_num, u32* data)
 {
+	u32 cpuid_num2 = 0;
 	__asm__ __volatile__(
 		"cpuid"
 		: "=a" (data[0])
@@ -53,6 +54,7 @@ void cpuid(u32 cpuid_num, u32* data)
 		, "=c" (data[2])
 		, "=d" (data[3])
 		: "a" (cpuid_num)
+		, "c" (cpuid_num2)
 		: );
 }
 
