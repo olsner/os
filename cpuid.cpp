@@ -76,7 +76,7 @@ int main(int argc, const char *const argv[])
 	if (argc >= 3)
 		bitarg = argv[2];
 
-	u32 cpuid_num = parse_hex(idarg);
+	u32 cpuid_num = idarg ? parse_hex(idarg) : 0;
 	int bitnum = -1;
 	int reg = -1;
 	if (bitarg) parse_regbit(bitarg, &reg, &bitnum);
