@@ -78,3 +78,29 @@ enum usb_transfer_type
 	UTT_Isoch,
 	//UTT_NoOp
 };
+
+// Maybe bad name? For communication between USB class/device drviers and the
+// "main" USB system, which wrangles the host controller(s).
+// Should vaguely conform to libusb20's backend operations somehow.
+enum usb_device_msg
+{
+	/**
+	 * Find an unopened device with a given class or vendor:product. If
+	 * last-device-id is given, continue enumerating after the given device.
+	 *
+	 * arg1: class/vendor/product (encoded)
+	 * arg2: enumeration last-device-id (or 0)
+	 * returns:
+	 * arg1: If found: bus/device/etc identifier. Opaque 64-bit non-zero id.
+	 * If not found: 0
+	 */
+	USB_FIND_DEVICE,
+	/**
+	 * Open a device. Should be called on a fresh handle.
+	 *
+	 * arg1: device id to open
+	 *
+	 * TODO: should probably return some basic device info too?
+	 */
+	USB_OPEN_DEVICE,
+};
