@@ -35,6 +35,16 @@ printf:
 	cmp	al,'%'
 	je	.handle_format
 
+.done:
+	pop	rbx
+	pop	r15
+	pop	r14
+	pop	r13
+	pop	r12
+	clear_clobbered
+	add	rsp,48
+	jmp	[rsp-48]
+
 .write_al:
 	mov	r12,rdi
 	mov	r13,rsi
@@ -123,16 +133,6 @@ printf:
 	mov	rsi,r12
 	mov	rdi,r13
 	jmp	.nextchar
-
-.done:
-	pop	rbx
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
-	clear_clobbered
-	add	rsp,48
-	jmp	[rsp-48]
 
 puts:
 	; callee-save: rbp, rbx, r12-r15
