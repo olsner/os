@@ -5,6 +5,12 @@ SECTIONS
 	. = 1M;
 
 	.text : {
+		/* GCC expects the stack to be 16-byte aligned. It is 1MB-aligned
+		 * already, *but* the alignment that gcc is talking about is *before*
+		 * a return address is pushed by a 'call'. So, misalign the stack by
+		 * pushing a qword in place of the return address. */
+		/* 0x6a 0x00 = push byte 0 */
+		SHORT(0x6a);
 		*(.start);
 		*(.text*);
 		*(.rodata*);
