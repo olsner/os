@@ -455,6 +455,10 @@ static void hmod_rename(uintptr_t h, uintptr_t rename) {
 	hmod(h, rename, 0);
 }
 
+static void hmod_copy(uintptr_t h, uintptr_t copy) {
+	hmod(h, h, copy);
+}
+
 static void pulse(uintptr_t handle, u64 mask) {
 	send1(MSG_PULSE, handle, mask);
 }
