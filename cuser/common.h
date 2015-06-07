@@ -539,7 +539,8 @@ static void assert_failed(const char* file, int line, const char* msg) {
 	printf("%s:%d: ASSERT FAILED (%s)\n", file, line, msg);
 	abort();
 }
-#define assert(X) if ((X)); else { assert_failed(__FILE__, __LINE__, #X); }
+#define assert(X) \
+	do { if (!(X)) assert_failed(__FILE__, __LINE__, #X); } while (0)
 
 static void hexdump(char* data, size_t length) {
 	size_t pos = 0;
