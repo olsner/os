@@ -12,6 +12,7 @@ static const uintptr_t acpi_handle = 4;
 static const uintptr_t pic_handle = 2;
 static const uintptr_t pin0_irq_handle = 0x100;
 static const uintptr_t fresh = 0x101;
+static const uintptr_t bus_handle_base = 0x200;
 
 static volatile u8 mmiospace[128 * 1024] PLACEHOLDER_SECTION ALIGN(128*1024);
 // NB: Byte offsets
@@ -220,6 +221,8 @@ enum TRBFlags
 	TRB_ToggleC = 2,
 	TRB_Chain = 1 << 4,
 	TRB_IOC = 1 << 5,
+	// Block SetAddress Request
+	TRB_BSR = 1 << 9,
 };
 enum CompletionCodes
 {
@@ -487,8 +490,10 @@ static bool enqueue_command2(struct command_trb *cmd, u8 data) {
 }
 
 // TODO warn_unused_result
+static bool enqueue_command(struct command_trb *cmd, TRBType command, u8 data)
+	__attribute__((nonnull));
+
 static bool enqueue_command(struct command_trb *cmd, TRBType command, u8 data) {
-	assert(cmd);
 	cmd->control |= (command << 10) | (command_pcs ? TRB_Cycle : 0);
 	return enqueue_command2(cmd, data);
 }
@@ -553,7 +558,7 @@ static endpoint_context *get_ep_ctx(void *p, unsigned ep) {
 	return (endpoint_context*)((u8*)p + (ep + 2) * context_size);
 }
 
-static void address_device(u8 port, u8 slot) {
+static void address_device(u8 port, u8 slot, bool block_set) {
 	debug("address device: port %d -> slot %d\n", port, slot);
 	dma_buffer_ref input = allocate_dma_buffer();
 	dma_buffer_ref devctx = allocate_dma_buffer();
@@ -589,6 +594,9 @@ static void address_device(u8 port, u8 slot) {
 	__barrier();
 
 	command_trb cmd = { input.phys, 0, slot << 24 };
+	if (block_set) {
+		cmd.control |= TRB_BSR;
+	}
 	enqueue_command(&cmd, TRB_CMD_AddressDevice, port);
 }
 
@@ -603,7 +611,7 @@ static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
 	case TRB_CMD_EnableSlot:
 	{
 		if (ccode == CC_Success) {
-			address_device(data, slot);
+			address_device(data, slot, true);
 		}
 		break;
 	}
@@ -614,7 +622,7 @@ static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
 		if (ccode == CC_Success) {
 			// Device is addressed, now what?
 			debug("AddressDevice completed! slot %d port %d ready to configure\n", slot, port);
-			send1(MSG_USB_NEW_DEVICE, usb_handle, slot);
+			send1(MSG_USB_NEW_DEVICE, bus_handle_base + port, slot);
 		} else {
 			debug("AddressDevice failed! freeing slot %d port %d\n", slot, port);
 			command_trb cmd = { 0, 0, 0 };
@@ -891,9 +899,10 @@ void start()
 		}
 	}
 
-	for (unsigned port = 1; port <= maxport; port++) {
-		proceed_port(port);
-	}
+	// Ports are a bus each??
+	debug("Sending controller init for %u buses...\n", maxport);
+	send1(MSG_USB_CONTROLLER_INIT, usb_handle, maxport);
+	debug("Sent controller init\n");
 
 	for(;;) {
 		uintptr_t rcpt = fresh;
@@ -904,6 +913,12 @@ void start()
 		debug("received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
 			handle_irq(rcpt, arg);
+			continue;
+		}
+		if (rcpt == fresh && (msg & 0xff) == MSG_USB_CONTROLLER_INIT) {
+			uintptr_t bus = arg;
+			hmod_rename(rcpt, bus_handle_base + bus);
+			proceed_port(bus);
 			continue;
 		}
 

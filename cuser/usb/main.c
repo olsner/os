@@ -12,20 +12,40 @@
 
 static const uintptr_t xhci_handle = 7;
 static const uintptr_t fresh = 0x100;
+static const uintptr_t bus_handle_base = 0x200;
+static uintptr_t bus_handle_max;
 
-static void handle_xhci_msg(uintptr_t msg, uintptr_t arg, uintptr_t arg2) {
+static uintptr_t bus_from_handle(uintptr_t h) {
+	return h - bus_handle_base;
+}
+static uintptr_t handle_from_bus(uintptr_t b) {
+	return bus_handle_base + b;
+}
+
+static void handle_bus_msg(uintptr_t bus, uintptr_t msg, uintptr_t arg, uintptr_t arg2) {
 	switch (msg & 0xff)
 	{
 	case MSG_USB_NEW_DEVICE: {
-		debug("New device, slot %u\n", arg);
+		debug("New device, bus %u slot %u\n", bus_from_handle(bus), arg);
+		// TODO: Get (8 bytes of) descriptor 0, then address the device
 		break;
 	}
+	}
+}
+
+static void register_buses(uintptr_t rcpt, const size_t buses) {
+	log("%x: %d buses: %d..%d\n", rcpt, buses, bus_from_handle(bus_handle_max), bus_from_handle(bus_handle_max) + buses - 1);
+	for (uintptr_t n = 0; n < buses; n++) {
+		const uintptr_t bus = bus_handle_max++;
+		hmod_copy(rcpt, bus);
+		send1(MSG_USB_CONTROLLER_INIT, bus, n);
 	}
 }
 
 void start()
 {
 	__default_section_init();
+	bus_handle_max = bus_handle_base;
 	for (;;) {
 		uintptr_t rcpt = fresh;
 		uintptr_t arg = 0;
@@ -34,8 +54,11 @@ void start()
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 
-		if (rcpt == xhci_handle) {
-			handle_xhci_msg(msg, arg, arg2);
+		if (msg == MSG_USB_CONTROLLER_INIT) {
+			register_buses(rcpt, arg);
+		}
+		if (rcpt >= bus_handle_base && rcpt < bus_handle_max) {
+			handle_bus_msg(rcpt, msg, arg, arg2);
 		}
 	}
 }
