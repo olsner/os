@@ -130,6 +130,7 @@ GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
 USER_CFLAGS := -ffreestanding -g -Os -W -Wall -Wextra -march=native -mno-avx -std=gnu99
 USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
+USER_CFLAGS += -Werror=return-type
 USER_CFLAGS += -ffunction-sections -fdata-sections
 
 LDFLAGS := --check-sections
