@@ -217,12 +217,21 @@ enum TRBType
 typedef enum TRBType TRBType;
 enum TRBFlags
 {
-	TRB_Cycle = 1,
-	TRB_ToggleC = 2,
+	TRB_Cycle = 1 << 0,
+	TRB_ToggleC = 1 << 1,
+	TRB_ED = 1 << 2,
 	TRB_Chain = 1 << 4,
 	TRB_IOC = 1 << 5,
+	// ImmediateDaTa (or ImmeDiaTe?)
+	TRB_IDT = 1 << 6,
 	// Block SetAddress Request
 	TRB_BSR = 1 << 9,
+	TRB_DirectionIn = 1 << 16,
+};
+enum ControlTransferTypes
+{
+	TRT_DirectionIn = 3,
+	TRT_DirectionOut = 2,
 };
 enum CompletionCodes
 {
@@ -252,6 +261,7 @@ static union trb create_link_trb(u64 address, u8 flags) {
 	return res;
 }
 
+#define TRANSFER_RING_SIZE 255
 #define COMMAND_RING_SIZE 16
 #define EVENT_RING_SIZE 16
 // The Event Ring Segment Table also has 16-byte entries
@@ -270,6 +280,15 @@ static bool command_pcs = true;
 static u8 event_ring_dequeue;
 static bool event_ring_pcs = true;
 
+typedef struct transfer_ring
+{
+	trb *trbs;
+	u8 enqueue; // Max 256 entries per ring, sorry :D
+	bool pcs;
+	// data per TRB entry? Used for 'command' at least...
+} transfer_ring;
+
+static transfer_ring slot_rings[256];
 static volatile u64 device_context_addrs[256] PLACEHOLDER_SECTION ALIGN(4096);
 // Bytes per context entry.
 static u8 context_size;
@@ -472,12 +491,14 @@ u8 readpci8(u32 addr, u8 reg)
 
 static void print_pscr(u8 port, u32 pscr);
 
+// TODO Merge with enqueue_trb_ring, use transfer_ring struct, etc.
 static bool enqueue_command2(struct command_trb *cmd, u8 data) {
 	if (!!(page1.command_ring[command_enqueue].control & TRB_Cycle) ==
 		command_pcs) {
 		debug("Eww... Command ring is full.\n");
 		return false;
 	}
+	// FIXME What says cmd->control & TRB_Cycle is correct here?
 	page1.command_ring[command_enqueue] = *cmd;
 	command_data[command_enqueue] = data;
 	if (++command_enqueue == COMMAND_RING_SIZE) {
@@ -588,6 +609,11 @@ static void address_device(u8 port, u8 slot, bool block_set) {
 	trb* ring_trbs = (trb *)ring.virtual;
 	ring_trbs[(4096 / sizeof(trb)) - 1] =
 		create_link_trb(ring.phys, TRB_ToggleC);
+	// FIXME Each *endpoint* has its own transfer ring, this is just the
+	// control endpoint..
+	slot_rings[slot].trbs = ring_trbs;
+	slot_rings[slot].pcs = true;
+	slot_rings[slot].enqueue = 0;
 
 	// TODO More barrier to make sure input changes are in RAM before we submit
 	// the command.
@@ -619,6 +645,7 @@ static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
 	{
 		u8 port = data;
 		free_dma_buffer(trb.parameter);
+		// Check TRB_BSR
 		if (ccode == CC_Success) {
 			// Device is addressed, now what?
 			debug("AddressDevice completed! slot %d port %d ready to configure\n", slot, port);
@@ -665,6 +692,16 @@ static void handle_event(event_trb* ev)
 		u8 cmdpos = (ev->parameter >> 4) & (COMMAND_RING_SIZE - 1);
 		debug("Command completed: %d completion code=%d,param=%#x slot %d\n", cmdpos, ccode, cparam, slot);
 		command_complete(cmdpos, ccode, slot);
+		break;
+	}
+	case TRB_TransferEvent:
+	{
+		u64 trbptr = ev->parameter;
+		u32 residual = cparam;
+		u8 ep = (ev->control >> 16) & 31;
+		debug("Transfer to %d ep %d completed: %p ccode=%d ED=%d\n",
+			slot, ep, trbptr, ccode, !!(cparam & TRB_ED));
+
 		break;
 	}
 	default:
@@ -719,6 +756,113 @@ static void print_pscr(u8 port, u32 pscr) {
 			!!(pscr & PSCR_ConnectStatusChange));
 	debug("... linkState=%d portSpeed=%d other=%#x\n",
 			linkState, portSpeed, pscr & ~knownbits);
+}
+
+static const char *usb_transfer_type_name(usb_transfer_type type) {
+	switch (type) {
+	case UTT_ControlTransaction:
+		return "Control Transaction";
+	default:
+		return "Unknown";
+	}
+}
+
+static bool ring_enqueue(transfer_ring *ring, union trb* trb) __attribute__((nonnull));
+static bool ring_enqueue(transfer_ring *ring, union trb* trb) {
+	union trb* trbs = ring->trbs;
+	assert(trbs);
+	if (!!(trbs[ring->enqueue].control & TRB_Cycle) == ring->pcs) {
+		return false;
+	}
+	if (ring->pcs) trb->control |= TRB_Cycle;
+	trbs[ring->enqueue] = *trb;
+	//command_data[command_enqueue] = data;
+	if (++ring->enqueue == TRANSFER_RING_SIZE) {
+		debug("ring_enqueue: ring wrapped!\n");
+		ring->enqueue = 0;
+		ring->pcs ^= 1;
+	}
+	return true;
+}
+
+static bool enqueue_trb(u8 slot, u8 ep, union trb trb) {
+	if (ring_enqueue(&slot_rings[slot], &trb)) {
+		doorbells[slot] = ep;
+		return true;
+	}
+	debug("Eww... Ring for slot %u ep %u is full.\n", slot, ep);
+	return false;
+}
+
+static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
+	union trb trb;
+	usb_transfer_arg targ = { .i = arg1 };
+	switch (msg & 0xff) {
+	case MSG_USB_TRANSFER:
+		assert(targ.flags & UTF_ImmediateData);
+		log("transfer to %d:%d: flags %x type %x (%s) data %lx length %u\n", targ.addr, targ.ep,
+				targ.flags, targ.type,
+				usb_transfer_type_name(targ.type), arg2, targ.length);
+		u8 slot = targ.addr;
+		switch (targ.type) {
+		case UTT_ControlTransaction:
+			// Fill in some TRBs:
+			// ControlSetup data
+			trb.parameter = arg2;
+			// TRB Transfer length, always 8
+			trb.status = 8;
+			trb.control = TRB_IDT | (TRB_SetupStage << 10);
+			if (targ.flags & UTF_SetupHasData) {
+				trb.control |= (targ.flags & UTF_DirectionIn ?
+					TRT_DirectionIn : TRT_DirectionOut) << 16;
+			}
+			// IOC will only be set on the last TRB, ControlStatus
+			enqueue_trb(targ.addr, 1, trb);
+			// TODO If flags ask for ImmediateData and DirectionIn, we want to
+			// allow that even though it's not allowed by xhci. We need to have
+			// a buffer and copy it back before responding.
+			// Also need to free this buffer and have some sort of outstanding
+			// requests handling.
+			// if there's data: set up a ControlData stage
+			if (targ.flags & UTF_SetupHasData) {
+				trb.parameter = trb.status = trb.control = 0;
+				if (targ.flags & UTF_DirectionIn || !(targ.flags & UTF_ImmediateData)) {
+					// Err, should have a buffer index somewhere to shared
+					// memory with the client.
+					dma_buffer_ref buf = allocate_dma_buffer();
+					trb.normal.address = buf.phys;
+					log("Leaking a buffer...");
+				} else {
+					// Inline outgoing data. Would be arg2, but that's the
+					// setup-stage data.
+					//trb.normal.address = arg3;
+					assert(!"Immediate outgoing setup data unimplemented");
+				}
+				trb.normal.length = targ.length; // 8
+				log("SETUP data stage length is %u\n", trb.normal.length);
+				// Not sure about the TD size stuff! But this is the only
+				// "control data stage" TRB.
+				trb.normal.td_size = 0;
+				trb.normal.interrupter_target = 0;
+				trb.control = (TRB_DataStage << 10);
+				if (targ.flags & UTF_DirectionIn) {
+					trb.control |= 1 << 16;
+				}
+				enqueue_trb(targ.addr, 1, trb);
+			}
+			// StatusStage
+			trb.parameter = 0;
+			trb.status = 0;
+			trb.control = (TRB_StatusStage << 10) | TRB_IOC;
+			// Unless a data stage with incoming data, status stage is always
+			// incoming.
+			if (!(targ.flags & UTF_DirectionIn)
+					|| !(targ.flags & UTF_SetupHasData)) {
+				trb.control |= TRB_DirectionIn;
+			}
+			enqueue_trb(targ.addr, 1, trb);
+		}
+	}
 }
 
 void start()
@@ -910,7 +1054,7 @@ void start()
 		arg2 = 0;
 		debug("receiving...\n");
 		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
-		debug("received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
+		debug("received %lx from %lx: %lx %lx\n", msg, rcpt, arg, arg2);
 		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
 			handle_irq(rcpt, arg);
 			continue;
@@ -919,6 +1063,10 @@ void start()
 			uintptr_t bus = arg;
 			hmod_rename(rcpt, bus_handle_base + bus);
 			proceed_port(bus);
+			continue;
+		}
+		if (rcpt >= bus_handle_base && rcpt < bus_handle_base + maxport) {
+			port_msg(rcpt - bus_handle_base, msg, arg, arg2);
 			continue;
 		}
 

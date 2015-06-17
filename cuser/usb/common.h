@@ -20,6 +20,9 @@ enum usb_controller_msg
 	/**
 	 * The bus has found a device. The device will be addressable as device
 	 * 0 until it's assigned an address with ADDR_DEVICE.
+	 *
+	 * FIXME This leads to deadlocks when the controller wants to send this.
+	 * Should use a pulse instead.
 	 */
 	MSG_USB_NEW_DEVICE,
 	/**
@@ -55,31 +58,54 @@ enum usb_controller_msg
 	MSG_ADDR_DEVICE,
 };
 
-union usb_transfer_arg
+/*static void usb_read_descriptor(uintptr_t bus, uintptr_t slot, u8 descriptor, void* dest, size_t max_length)
+{
+	sendrcv1(bus, 
+}*/
+
+typedef union usb_transfer_arg
 {
 	struct {
-		u16 addr_ep_flags;
-		u8 /*usb_transfer_type*/ type;
+		u8 addr;
+		u8 ep : 4;
+		u8 flags : 4; /*usb_transfer_flags*/
+		u8 type; /*usb_transfer_type*/
 		u8 pad1;
 		u16 length;
 		u16 pad2;
-	} s;
+	};
 	u64 i;
-};
+} usb_transfer_arg;
 
-// Relative to the arg1 qword for USB_TRANSFER*
 enum usb_transfer_flags
 {
-	UTF_SetupHasData = 1 << 13,
-	UTF_ImmediateData = 1 << 14,
+	UTF_DirectionOut = 0 << 0,
+	UTF_DirectionIn = 1 << 0,
+	UTF_SetupHasData = 1 << 1,
+	UTF_ImmediateData = 1 << 2,
 };
 
-enum usb_transfer_type
+struct usb_control_setup
+{
+	u8 bmRequestType;
+	u8 bRequest;
+	u16 wValue;
+	u16 wIndex;
+	u16 wLength;
+};
+
+typedef enum usb_transfer_type
 {
 	/**
 	 * Data on a normal endpoint.
 	 */
 	UTT_Normal,
+	/**
+	 * Shorthand for a whole control transaction. The outgoing data is the same
+	 * format as UTT_ControlSetup. If there's a data stage, UTF_SetupHasData
+	 * should be set and direction should be 1.
+	 */
+	UTT_ControlTransaction,
 	/**
 	 * The data is in the xHCI format for Setup Stage Control TRBs:
 	 * bits 0..7: bmRequestType
@@ -112,7 +138,7 @@ enum usb_transfer_type
 	 */
 	UTT_Isoch,
 	//UTT_NoOp
-};
+} usb_transfer_type;
 
 // Maybe bad name? For communication between USB class/device drivers and the
 // "main" USB system, which wrangles the host controller(s).

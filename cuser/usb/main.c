@@ -22,12 +22,51 @@ static uintptr_t handle_from_bus(uintptr_t b) {
 	return bus_handle_base + b;
 }
 
-static void handle_bus_msg(uintptr_t bus, uintptr_t msg, uintptr_t arg, uintptr_t arg2) {
+enum BMRequestType {
+	ReqType_HostToDev = 0 << 7,
+	ReqType_DevToHost = 1 << 7,
+	ReqType_Standard = 0 << 5,
+	ReqType_Class = 1 << 5,
+	ReqType_Vendor = 2 << 5,
+	// 3 << 5: Reserved
+	ReqType_Device = 0,
+	ReqType_Interface = 1,
+	ReqType_EndPoint = 2,
+	ReqType_Other = 3,
+	// 4..31: Reserved
+};
+enum BMRequest {
+	Req_GetStatus,
+	Req_ClearFeature,
+	// 2: reserved
+	Req_SetFeature = 3,
+	// 4: reserved
+	Req_SetAddress = 5, // Not used - buses handle this
+	Req_GetDescriptor
+};
+
+static void handle_bus_msg(const uintptr_t bus, uintptr_t msg, uintptr_t arg, uintptr_t arg2) {
 	switch (msg & 0xff)
 	{
 	case MSG_USB_NEW_DEVICE: {
-		debug("New device, bus %u slot %u\n", bus_from_handle(bus), arg);
-		// TODO: Get (8 bytes of) descriptor 0, then address the device
+		u8 slot = arg;
+		debug("New device, bus %u slot %u\n", bus_from_handle(bus), slot);
+		usb_transfer_arg targ;
+		targ.addr = slot;
+		targ.ep = 0;
+		targ.flags = UTF_ImmediateData | UTF_DirectionIn | UTF_SetupHasData;
+		targ.type = UTT_ControlTransaction;
+		targ.length = 8;
+		arg = targ.i;
+		struct usb_control_setup control_setup = {
+			ReqType_DevToHost | ReqType_Standard | ReqType_Device,
+			Req_GetDescriptor,
+			1 << 8, 0, 8 };
+		arg2 = *(u64*)&control_setup;
+		log("Sending: transfer to %ld with %lx,%lx\n", bus_from_handle(bus), arg, arg2);
+		msg = sendrcv2(MSG_USB_TRANSFER, bus, &arg, &arg2);
+		log("Transfer reply: %lx with %lx,%lx\n", msg, arg, arg2);
+		// Done?
 		break;
 	}
 	}
