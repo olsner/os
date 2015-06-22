@@ -289,6 +289,21 @@ typedef struct transfer_ring
 	// data per TRB entry? Used for 'command' at least...
 } transfer_ring;
 
+typedef struct transfer_data
+{
+	dma_buffer_ref buf;
+	u8 port;
+	uintptr_t data;
+} ALIGN(16) transfer_data;
+
+/* Safe as long as transfer_data is larger than 16. */
+#define NUM_TRANSFER_DATAS (4096 / sizeof(transfer_data))
+static transfer_data transfer_datas[NUM_TRANSFER_DATAS];
+// Index of first free transfer data
+static u8 free_transfer_data;
+static transfer_data *alloc_transfer_data(void);
+static void transfer_data_free(transfer_data *trdata);
+
 static transfer_ring slot_rings[256];
 static volatile u64 device_context_addrs[256] PLACEHOLDER_SECTION ALIGN(4096);
 // Bytes per context entry.
@@ -656,9 +671,18 @@ static void handle_event(event_trb* ev)
 		u64 trbptr = ev->parameter;
 		u32 residual = cparam;
 		u8 ep = (ev->control >> 16) & 31;
-		debug("Transfer to %d ep %d completed: %p ccode=%d ED=%d\n",
-			slot, ep, trbptr, ccode, !!(cparam & TRB_ED));
-
+		bool ed = !!(ev->control & TRB_ED);
+		debug("Transfer to %d ep %d completed: %p ccode=%d ED=%d not-transferred=%u\n",
+			slot, ep, trbptr, ccode, ed, residual);
+		if (ed && trbptr) {
+			transfer_data *trdata = (transfer_data*)(trbptr & -16);
+			debug("Transfer done for port %u data %lx\n", trdata->port, trdata->data);
+			if (trdata->buf.virtual) {
+				hexdump(trdata->buf.virtual, 8);
+			}
+			//proceed_transfer(trdata);
+			transfer_data_free(trdata);
+		}
 		break;
 	}
 	default:
@@ -751,6 +775,23 @@ static bool enqueue_trb(u8 slot, u8 ep, union trb trb) {
 	return false;
 }
 
+static transfer_data *alloc_transfer_data(void) {
+	assert(free_transfer_data < NUM_TRANSFER_DATAS);
+	transfer_data *res = transfer_datas + free_transfer_data++;
+	return res;
+}
+
+static void transfer_data_free(transfer_data *trdata) {
+	if (trdata->buf.virtual) {
+		free_dma_buffer(trdata->buf.phys);
+		trdata->buf.phys = 0;
+		trdata->buf.virtual = NULL;
+	}
+	if (trdata - transfer_datas == free_transfer_data - 1) {
+		free_transfer_data--;
+	}
+}
+
 static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
 	union trb trb;
 	usb_transfer_arg targ = { .i = arg1 };
@@ -761,6 +802,9 @@ static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
 				targ.flags, targ.type,
 				usb_transfer_type_name(targ.type), arg2, targ.length);
 		u8 slot = targ.addr;
+		transfer_data *trdata = alloc_transfer_data();
+		trdata->port = port;
+		trdata->data = arg1;
 		switch (targ.type) {
 		case UTT_ControlTransaction:
 			// Fill in some TRBs:
@@ -786,8 +830,8 @@ static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
 				if (targ.flags & UTF_DirectionIn || !(targ.flags & UTF_ImmediateData)) {
 					// Err, should have a buffer index somewhere to shared
 					// memory with the client.
-					dma_buffer_ref buf = allocate_dma_buffer();
-					trb.normal.address = buf.phys;
+					trdata->buf = allocate_dma_buffer();
+					trb.normal.address = trdata->buf.phys;
 					log("Leaking a buffer...");
 				} else {
 					// Inline outgoing data. Would be arg2, but that's the
@@ -810,13 +854,17 @@ static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
 			// StatusStage
 			trb.parameter = 0;
 			trb.status = 0;
-			trb.control = (TRB_StatusStage << 10) | TRB_IOC;
+			trb.control = (TRB_StatusStage << 10) | TRB_Chain;
 			// Unless a data stage with incoming data, status stage is always
 			// incoming.
 			if (!(targ.flags & UTF_DirectionIn)
 					|| !(targ.flags & UTF_SetupHasData)) {
 				trb.control |= TRB_DirectionIn;
 			}
+			enqueue_trb(targ.addr, 1, trb);
+			trb.parameter = (uintptr_t)trdata;
+			trb.status = 0;
+			trb.control = (TRB_EventData << 10) | TRB_IOC;
 			enqueue_trb(targ.addr, 1, trb);
 		}
 	}
