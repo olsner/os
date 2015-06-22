@@ -844,11 +844,6 @@ static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
 			}
 			// IOC will only be set on the last TRB, ControlStatus
 			enqueue_trb(targ.addr, 1, trb);
-			// TODO If flags ask for ImmediateData and DirectionIn, we want to
-			// allow that even though it's not allowed by xhci. We need to have
-			// a buffer and copy it back before responding.
-			// Also need to free this buffer and have some sort of outstanding
-			// requests handling.
 			// if there's data: set up a ControlData stage
 			if (targ.flags & UTF_SetupHasData) {
 				trb.parameter = trb.status = trb.control = 0;
