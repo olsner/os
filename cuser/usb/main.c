@@ -51,6 +51,8 @@ static void handle_bus_msg(const uintptr_t bus, uintptr_t msg, uintptr_t arg, ui
 	case MSG_USB_NEW_DEVICE: {
 		u8 slot = arg;
 		debug("New device, bus %u slot %u\n", bus_from_handle(bus), slot);
+		// Fetch the first 8 bytes of the device descriptor before addressing
+		// the device.
 		usb_transfer_arg targ;
 		targ.addr = slot;
 		targ.ep = 0;
@@ -65,8 +67,14 @@ static void handle_bus_msg(const uintptr_t bus, uintptr_t msg, uintptr_t arg, ui
 		arg2 = *(u64*)&control_setup;
 		log("Sending: transfer to %ld with %lx,%lx\n", bus_from_handle(bus), arg, arg2);
 		msg = sendrcv2(MSG_USB_TRANSFER, bus, &arg, &arg2);
-		log("Transfer reply: %lx with %lx,%lx\n", msg, arg, arg2);
-		// Done?
+		log("Transfer reply: %lx with %lx\n", msg, arg2);
+		// Parse something interesting out of the descriptor? (Or wait until
+		// we have addressed it.)
+		arg = slot;
+		arg2 = 0;
+		msg = sendrcv2(MSG_USB_ADDR_DEVICE, bus, &arg, &arg2);
+		u8 addr = arg;
+		log("Device addressed to %u.%u\n", bus_from_handle(bus), addr);
 		break;
 	}
 	}

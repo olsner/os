@@ -55,7 +55,7 @@ enum usb_controller_msg
 	 * return:
 	 * arg1 = address
 	 */
-	MSG_ADDR_DEVICE,
+	MSG_USB_ADDR_DEVICE,
 };
 
 /*static void usb_read_descriptor(uintptr_t bus, uintptr_t slot, u8 descriptor, void* dest, size_t max_length)

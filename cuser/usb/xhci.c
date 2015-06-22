@@ -552,7 +552,7 @@ static endpoint_context *get_ep_ctx(void *p, unsigned ep) {
 }
 
 static void address_device(u8 port, u8 slot, bool block_set) {
-	debug("address device: port %d -> slot %d\n", port, slot);
+	debug("address device: port %d -> slot %d (block set address=%d)\n", port, slot, block_set);
 	dma_buffer_ref input = allocate_dma_buffer();
 	dma_buffer_ref devctx = allocate_dma_buffer();
 	dma_buffer_ref ring = allocate_dma_buffer();
@@ -617,15 +617,20 @@ static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
 	{
 		u8 port = data;
 		free_dma_buffer(trb.parameter);
-		// Check TRB_BSR
-		if (ccode == CC_Success) {
-			// Device is addressed, now what?
-			debug("AddressDevice completed! slot %d port %d ready to configure\n", slot, port);
-			send1(MSG_USB_NEW_DEVICE, bus_handle_base + port, slot);
-		} else {
+		if (ccode != CC_Success) {
 			debug("AddressDevice failed! freeing slot %d port %d\n", slot, port);
 			command_trb cmd = { 0, 0, 0 };
 			enqueue_command(&cmd, TRB_CMD_DisableSlot, port);
+			break;
+		}
+		if (trb.control & TRB_BSR) {
+			// Device is addressed, now what?
+			debug("AddressDevice(not set addr) completed! slot %d port %d ready to configure\n", slot, port);
+			send1(MSG_USB_NEW_DEVICE, bus_handle_base + port, slot);
+		} else {
+			debug("AddressDevice(set addr) completed! slot %d port %d ready to configure\n", slot, port);
+			// What address did we get???
+			send1(MSG_USB_ADDR_DEVICE, bus_handle_base + port, slot);
 		}
 	}
 	case TRB_CMD_DisableSlot:
@@ -643,6 +648,8 @@ static void command_complete(u8 cmdpos, u8 ccode, u8 slot) {
 		break;
 	}
 }
+
+static void proceed_transfer(transfer_data *trdata);
 
 static void handle_event(event_trb* ev)
 {
@@ -680,7 +687,7 @@ static void handle_event(event_trb* ev)
 			if (trdata->buf.virtual) {
 				hexdump(trdata->buf.virtual, 8);
 			}
-			//proceed_transfer(trdata);
+			proceed_transfer(trdata);
 			transfer_data_free(trdata);
 		}
 		break;
@@ -792,12 +799,30 @@ static void transfer_data_free(transfer_data *trdata) {
 	}
 }
 
+static void proceed_transfer(transfer_data *trdata) {
+	usb_transfer_arg targ = { .i = trdata->data };
+	const uintptr_t rcpt = bus_handle_base + trdata->port;
+	switch (targ.type) {
+	case UTT_ControlTransaction:
+	{
+		u64 data = 0;
+		// If incoming data and immediate, put the data in arg2 and reply
+		if ((targ.flags & UTF_SetupHasData) && (targ.flags & UTF_DirectionIn)
+			&& (targ.flags & UTF_ImmediateData)) {
+			data = *(u64*)trdata->buf.virtual;
+		}
+		send2(MSG_USB_TRANSFER, rcpt, trdata->data, data);
+	}
+	}
+}
+
 static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
 	union trb trb;
 	usb_transfer_arg targ = { .i = arg1 };
 	switch (msg & 0xff) {
 	case MSG_USB_TRANSFER:
 		assert(targ.flags & UTF_ImmediateData);
+		assert(msg_get_kind(msg) == MSG_KIND_CALL);
 		log("transfer to %d:%d: flags %x type %x (%s) data %lx length %u\n", targ.addr, targ.ep,
 				targ.flags, targ.type,
 				usb_transfer_type_name(targ.type), arg2, targ.length);
@@ -867,6 +892,13 @@ static void port_msg(u8 port, uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
 			trb.control = (TRB_EventData << 10) | TRB_IOC;
 			enqueue_trb(targ.addr, 1, trb);
 		}
+		break;
+	case MSG_USB_ADDR_DEVICE:
+	{
+		u8 slot = arg1;
+		address_device(port, slot, false);
+		break;
+	}
 	}
 }
 

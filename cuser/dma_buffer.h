@@ -43,4 +43,3 @@ static void free_dma_buffer(u64 phys) {
 		return;
 	}
 }
-

@@ -546,12 +546,12 @@ static void assert_failed(const char* file, int line, const char* msg) {
 #define assert(X) \
 	do { if (!(X)) assert_failed(__FILE__, __LINE__, #X); } while (0)
 
-static void hexdump(char* data, size_t length) {
+static void hexdump(const void* data, size_t length) {
 	size_t pos = 0;
 	while (pos < length) {
 		printf("\n%04x: ", pos);
 		for (int i = 0; i < 16 && pos < length; i++) {
-			printf("%02x ", (u8)data[pos++]);
+			printf("%02x ", ((const u8*)data)[pos++]);
 		}
 	}
 	printf("\n");
