@@ -16,11 +16,18 @@ extern "C" void start64() __attribute__((noreturn));
 #define STRING_INL_LINKAGE static
 #include "string.c"
 
+#define S_(X) #X
+#define S(X) S_(X)
+#define assert(X) \
+	do { if (!(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X); } } while (0)
+
 namespace {
+
+void assert_failed(const char* file, const char* line, const char* msg) __attribute__((noreturn));
 
 static const intptr_t kernel_base = -(1 << 30);
 
-static void* PhysAddr(uintptr_t phys) {
+static constexpr void* PhysAddr(uintptr_t phys) {
 	return (void*)(phys + kernel_base);
 }
 
@@ -33,50 +40,42 @@ static void memset16(u16* dest, u16 value, size_t n) {
 	}
 }
 
-class Console {
-	u16* buffer;
-	u16 pos;
-	u8 width, height;
-
-public:
-	Console(void* buffer, u8 width = 80, u8 height = 24):
-		buffer((u16*)buffer), width(width), height(height)
-	{}
-	Console();
+namespace Console {
+	static u16* const buffer = (u16*)PhysAddr(0xb80a0);
+	static u16 pos;
+	static const u8 width = 80, height = 24;
 
 	void clear() {
 		pos = 0;
 		memset16(buffer, 0, width * height);
 	}
 
-	void write(char c);
+	void write(char c) {
+		if (c == '\n') {
+			u8 fill = width - (pos % width);
+			while(fill--) write(' ');
+		} else {
+			buffer[pos++] = 0x0700 | c;
+		}
+	}
+
 	void write(const char *s) {
 		while (char c = *s++) write(c);
 	}
 };
 
-void Console::write(char c) {
-	if (c == '\n') {
-		u8 fill = width - (pos % width);
-		while (fill--) {
-			write(' ');
-		}
-	} else {
-		buffer[pos++] = 0x0700 | c;
-	}
-}
-
-static Console gCon;
-
-static void write(const char *s) {
-	gCon.write(s);
+void assert_failed(const char* fileline, const char* msg) {
+	using Console::write;
+	write(fileline); write(": ASSERT FAILED: "); write(msg);
+	for(;;);
 }
 
 } // namespace
 
+using Console::write;
+
 void start64() {
-	new (&gCon) Console(PhysAddr(0xb80a0));
-	gCon.clear();
 	write("Hello world\n");
+	assert(!"Testing the assert");
 	for(;;);
 }

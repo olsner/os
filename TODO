@@ -1,3 +1,9 @@
-string.c and runtime.s are a bit redundant. Might want to actually use string.c
-instead of the assembly.
+* string.c and runtime.s are a bit redundant.
+Might want to actually use string.c instead of the assembly.
 
+* Run static constructors in the start of start64
+It's confusing when something like "static int X = 3;" fails because "3" was
+too complicated to make a constant. OTOH, those things should rather be
+constexpr and .rodata (or compile time) anyway, so maybe it's a "feature" that
+this doesn't work? :D
+(And some way to explicitly detect when there is initialization code?)
