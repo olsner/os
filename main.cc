@@ -13,21 +13,22 @@ typedef unsigned int uint;
 
 extern "C" void start64() __attribute__((noreturn));
 
+namespace {
+
 static const intptr_t kernel_base = -(1 << 30);
 
 static void* PhysAddr(uintptr_t phys) {
 	return (void*)(phys + kernel_base);
 }
 
-class Console
-{
+class Console {
 	u16* buffer;
 	u16 pos;
 	u8 width, height;
 
 public:
 	Console(void* buffer, u8 width = 80, u8 height = 24):
-		buffer((u16*)buffer), pos(0), width(width), height(height)
+		buffer((u16*)buffer), width(width), height(height)
 	{}
 	Console();
 
@@ -61,6 +62,8 @@ static Console gCon;
 static void write(const char *s) {
 	gCon.write(s);
 }
+
+} // namespace
 
 void start64() {
 	new (&gCon) Console(PhysAddr(0xb80a0));
