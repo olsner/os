@@ -13,13 +13,15 @@ typedef unsigned int uint;
 
 extern "C" void start64() __attribute__((noreturn));
 
+#define DEBUGCON 1
+
 #define STRING_INL_LINKAGE static
 #include "string.c"
 
 #define S_(X) #X
 #define S(X) S_(X)
 #define assert(X) \
-	do { if (!(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X); } } while (0)
+	do { if (!(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X "\n"); } } while (0)
 
 namespace {
 
@@ -40,6 +42,12 @@ static void memset16(u16* dest, u16 value, size_t n) {
 	}
 }
 
+static void debugcon_putc(char c) {
+#if DEBUGCON
+	asm("outb %0,%1"::"a"(c),"d"((u16)0xe9));
+#endif
+}
+
 namespace Console {
 	static u16* const buffer = (u16*)PhysAddr(0xb80a0);
 	static u16 pos;
@@ -53,10 +61,11 @@ namespace Console {
 	void write(char c) {
 		if (c == '\n') {
 			u8 fill = width - (pos % width);
-			while(fill--) write(' ');
+			while(fill--) buffer[pos++] = 0;
 		} else {
 			buffer[pos++] = 0x0700 | c;
 		}
+		debugcon_putc(c);
 	}
 
 	void write(const char *s) {
