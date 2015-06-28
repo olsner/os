@@ -18,7 +18,7 @@ CFLAGS += -fvisibility-inlines-hidden -fvisibility=hidden
 CFLAGS += -mcmodel=kernel -mno-red-zone -mno-sse -mno-mmx
 CFLAGS += -ffreestanding $(COPTFLAGS)
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
-CXXFLAGS = $(CFLAGS)
+CXXFLAGS = $(CFLAGS) -std=gnu++11
 LDFLAGS = --check-sections --gc-sections
 PUBLIC_SYMBOLS = start64,syscall,irq_entry
 OPTFLAGS = -Oz -function-sections -data-sections
