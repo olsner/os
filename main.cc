@@ -13,12 +13,24 @@ typedef unsigned int uint;
 
 extern "C" void start64() __attribute__((noreturn));
 
+#define STRING_INL_LINKAGE static
+#include "string.c"
+
 namespace {
 
 static const intptr_t kernel_base = -(1 << 30);
 
 static void* PhysAddr(uintptr_t phys) {
 	return (void*)(phys + kernel_base);
+}
+
+static void memset16(u16* dest, u16 value, size_t n) {
+	if (/* constant(value) && */ (value >> 8) == (value & 0xff)) {
+		memset(dest, value, n * 2);
+	} else {
+		// rep movsw
+		while (n--) *dest++ = value;
+	}
 }
 
 class Console {
@@ -32,12 +44,9 @@ public:
 	{}
 	Console();
 
-	void clear(u16 c = 0) {
+	void clear() {
 		pos = 0;
-		size_t n = width * height;
-		while (n--) {
-			buffer[n] = c;
-		}
+		memset16(buffer, 0, width * height);
 	}
 
 	void write(char c);

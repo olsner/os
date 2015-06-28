@@ -1,0 +1,3 @@
+string.c and runtime.s are a bit redundant. Might want to actually use string.c
+instead of the assembly.
+
