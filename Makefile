@@ -57,6 +57,9 @@ KERNEL_OBJS = $(addprefix $(OUT)/, runtime.o syscall.o main.o)
 
 KERNEL_OBJS += start32.o
 
+KERNEL_DEPS = $(KERNEL_OBJS:.o=.d)
+-include $(KERNEL_DEPS)
+
 $(OUT)/kernel.elf: linker.ld $(KERNEL_OBJS)
 	$(HUSH_LD) $(LD) $(LDFLAGS) --oformat=elf64-x86-64 -o $@ -T $^ -Map $(@:.elf=.map)
 	@echo $@: `grep fill $(@:.elf=.map) | tr -s ' ' | cut -d' ' -f4 | while read REPLY; do echo $$[$$REPLY]; done | paste -sd+ | bc` bytes wasted on alignment
@@ -72,7 +75,7 @@ $(OUT)/%.o: %.s
 
 $(OUT)/%.o: %.cc
 	@mkdir -p $(@D)
-	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
 
 $(OUT)/%.o: %.asm
 	@mkdir -p $(@D)
