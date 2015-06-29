@@ -9,6 +9,7 @@ typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
 typedef uintptr_t size_t;
+typedef intptr_t ssize_t;
 typedef unsigned int uint;
 
 extern "C" void start64() __attribute__((noreturn));
@@ -19,6 +20,14 @@ extern "C" void irq_entry(u8 vec, u64 err) __attribute__((noreturn));
 #define STRING_INL_LINKAGE static
 #include "string.c"
 
+namespace {
+
+void assert_failed(const char* fileline, const char* msg) __attribute__((noreturn));
+void abort() __attribute__((noreturn));
+void unimpl(const char* what) __attribute__((noreturn));
+
+}
+
 #define S_(X) #X
 #define S(X) S_(X)
 #define assert(X) \
@@ -26,9 +35,39 @@ extern "C" void irq_entry(u8 vec, u64 err) __attribute__((noreturn));
 
 namespace {
 
-void assert_failed(const char* file, const char* line, const char* msg) __attribute__((noreturn));
-void abort() __attribute__((noreturn));
-void unimpl(const char* what) __attribute__((noreturn));
+namespace Console {
+	void write(char c);
+}
+
+// Might actually want to specialize xprintf for the kernel...
+struct FILE {};
+static FILE* const stdout = NULL;
+static FILE* const stderr = NULL;
+void flockfile(FILE *) {}
+void funlockfile(FILE *) {}
+void fflush(FILE *) {}
+ssize_t fwrite_unlocked(const void* p, size_t sz, size_t n, FILE *) {
+	size_t c = n * sz;
+	const char *str = (char*)p;
+	while (c--) Console::write(*str++);
+	return n;
+}
+void fputc_unlocked(char c, FILE *) {
+	Console::write(c);
+}
+long int strtol(const char *nptr, char **endptr, int base) {
+	unimpl("strtol");
+}
+bool isdigit(char c) {
+	return c >= '0' && c <= '9';
+}
+
+#define XPRINTF_NOSTDLIB
+#define XPRINTF_NOERRNO
+#define XPRINTF_LINKAGE static
+#include "xprintf.cpp"
+
+#define printf xprintf
 
 static const intptr_t kernel_base = -(1 << 30);
 
@@ -197,7 +236,6 @@ namespace start32 {
 	}
 }
 
-#if 0 // TODO Integrate xprintf...
 void dumpMBInfo(const mboot::Info& info) {
 	printf("Multiboot info at %p\n", &info);
 
@@ -212,7 +250,6 @@ void dumpMBInfo(const mboot::Info& info) {
 		printf("Command line @%p (%x) \"%s\"\n", cmdline, info.cmdline, cmdline);
 	}
 }
-#endif
 
 } // namespace
 
@@ -225,7 +262,7 @@ void irq_entry(u8 vec, u64 err) {
 void start64() {
 	write("Hello world\n");
 
-//	dumpMBInfo(start32::multiboot_info);
+	dumpMBInfo(start32::mboot_info());
 
 	x86::lgdt(start32::gdtr);
 	x86::ltr(x86::seg::tss64);

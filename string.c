@@ -38,3 +38,18 @@ STRING_INL_LINKAGE void strcat(char* dest, const char* src) {
 	memcpy(dest + strlen(dest), src, strlen(src));
 }
 
+STRING_INL_LINKAGE char* strchr_(const char* str, char c) {
+	while (*str && *str != c) str++;
+	return *str ? (char*)str : NULL;
+}
+
+#ifndef __cplusplus
+#define strchr strchr_
+#else
+STRING_INL_LINKAGE const char* strchr(const char* str, char c) {
+	return strchr_(str, c);
+}
+STRING_INL_LINKAGE char* strchr(char* str, char c) {
+	return strchr_(str, c);
+}
+#endif
