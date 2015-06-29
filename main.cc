@@ -216,9 +216,7 @@ namespace idt {
 	}
 }
 
-namespace mboot {
 #include "mboot.h"
-}
 
 // Symbols exported by start32.o
 namespace start32 {

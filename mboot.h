@@ -1,3 +1,4 @@
+namespace mboot {
 
 struct VBE {
     u32 control_info;
@@ -119,3 +120,5 @@ enum MemoryTypes {
     MemoryTypeACPIRCL = 3,
     MemoryTypeACPISomething = 4,
 };
+
+}
