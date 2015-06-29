@@ -32,12 +32,13 @@ void unimpl(const char* what) __attribute__((noreturn));
 
 static const intptr_t kernel_base = -(1 << 30);
 
-static constexpr void* PhysAddr(uintptr_t phys) {
-	return (void*)(phys + kernel_base);
+template <class T>
+static constexpr T* PhysAddr(uintptr_t phys) {
+	return (T*)(phys + kernel_base);
 }
 template <class T>
 static constexpr T* HighAddr(T* lowptr) {
-	return (T*)PhysAddr((uintptr_t)lowptr);
+	return PhysAddr<T>((uintptr_t)lowptr);
 }
 
 static void memset16(u16* dest, u16 value, size_t n) {
@@ -56,7 +57,7 @@ static void debugcon_putc(char c) {
 }
 
 namespace Console {
-	static u16* const buffer = (u16*)PhysAddr(0xb80a0);
+	static u16* const buffer = PhysAddr<u16>(0xb80a0);
 	static u16 pos;
 	static const u8 width = 80, height = 24;
 
@@ -176,6 +177,10 @@ namespace idt {
 	}
 }
 
+namespace mboot {
+#include "mboot.h"
+}
+
 // Symbols exported by start32.o
 namespace start32 {
 	extern "C" u32 memory_start;
@@ -187,9 +192,27 @@ namespace start32 {
 	}
 
 	static const x86::gdtr& gdtr = *HighAddr(&low::gdtr);
-
-	// mboot::Info *mboot_info();
+	static const mboot::Info& mboot_info() {
+		return *PhysAddr<mboot::Info>(low::mbi_pointer);
+	}
 }
+
+#if 0 // TODO Integrate xprintf...
+void dumpMBInfo(const mboot::Info& info) {
+	printf("Multiboot info at %p\n", &info);
+
+	printf("Flags: %x\n", info.flags);
+	if (info.has(mboot::MemorySize)) {
+		printf("%ukB lower memory, %ukB upper memory, %uMB total\n",
+			info.mem_lower, info.mem_upper,
+			(info.mem_lower + info.mem_upper + 1023) / 1024);
+	}
+	if (info.has(mboot::CommandLine)) {
+		const char* cmdline = PhysAddr<char>(info.cmdline);
+		printf("Command line @%p (%x) \"%s\"\n", cmdline, info.cmdline, cmdline);
+	}
+}
+#endif
 
 } // namespace
 
@@ -201,6 +224,8 @@ void irq_entry(u8 vec, u64 err) {
 
 void start64() {
 	write("Hello world\n");
+
+//	dumpMBInfo(start32::multiboot_info);
 
 	x86::lgdt(start32::gdtr);
 	x86::ltr(x86::seg::tss64);
