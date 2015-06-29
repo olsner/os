@@ -112,7 +112,7 @@ struct MemoryMapItem {
     u64 length;
     // See values from MemoryTypes
     u32 item_type;
-};
+} __attribute__((packed));
 
 enum MemoryTypes {
     MemoryTypeMemory = 1,

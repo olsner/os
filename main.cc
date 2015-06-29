@@ -12,19 +12,23 @@ typedef uintptr_t size_t;
 typedef intptr_t ssize_t;
 typedef unsigned int uint;
 
-extern "C" void start64() __attribute__((noreturn));
-extern "C" void irq_entry(u8 vec, u64 err) __attribute__((noreturn));
+#define PACKED __attribute__((packed))
+#define UNUSED __attribute__((unused))
+#define NORETURN __attribute__((noreturn))
+
+extern "C" void start64() NORETURN;
+extern "C" void irq_entry(u8 vec, u64 err) NORETURN;
 
 #define DEBUGCON 1
 
-#define STRING_INL_LINKAGE static
+#define STRING_INL_LINKAGE static UNUSED
 #include "string.c"
 
 namespace {
 
-void assert_failed(const char* fileline, const char* msg) __attribute__((noreturn));
-void abort() __attribute__((noreturn));
-void unimpl(const char* what) __attribute__((noreturn));
+void assert_failed(const char* fileline, const char* msg) NORETURN;
+void abort() NORETURN;
+void unimpl(const char* what) NORETURN;
 
 }
 
@@ -32,6 +36,24 @@ void unimpl(const char* what) __attribute__((noreturn));
 #define S(X) S_(X)
 #define assert(X) \
 	do { if (!(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X "\n"); } } while (0)
+
+namespace { namespace mem { void *malloc(size_t); void free(void *); } }
+
+using mem::malloc;
+using mem::free;
+
+void *operator new(size_t sz) {
+    return malloc(sz);
+}
+void operator delete(void *p) {
+    free(p);
+}
+void *operator new[](size_t sz) {
+    return malloc(sz);
+}
+void operator delete[](void *p) {
+    free(p);
+}
 
 namespace {
 
@@ -55,7 +77,7 @@ ssize_t fwrite_unlocked(const void* p, size_t sz, size_t n, FILE *) {
 void fputc_unlocked(char c, FILE *) {
 	Console::write(c);
 }
-long int strtol(const char *nptr, char **endptr, int base) {
+long int strtol(const char *, char **, int) {
 	unimpl("strtol");
 }
 bool isdigit(char c) {
@@ -64,7 +86,7 @@ bool isdigit(char c) {
 
 #define XPRINTF_NOSTDLIB
 #define XPRINTF_NOERRNO
-#define XPRINTF_LINKAGE static
+#define XPRINTF_LINKAGE static UNUSED
 #include "xprintf.cpp"
 
 #define printf xprintf
@@ -113,6 +135,11 @@ namespace Console {
 			buffer[pos++] = 0x0700 | c;
 		}
 		debugcon_putc(c);
+		if (pos == width * height) {
+			memmove(buffer, buffer + width, sizeof(*buffer) * width * (height - 1));
+			pos -= width;
+			memset16(buffer + pos, 0, width);
+		}
 	}
 
 	void write(const char *s) {
@@ -129,7 +156,8 @@ void unimpl(const char *what) {
 }
 
 void abort() {
-	for(;;);
+	asm("cli;hlt");
+	__builtin_unreachable();
 }
 
 void assert_failed(const char* fileline, const char* msg) {
@@ -249,30 +277,63 @@ void dumpMBInfo(const mboot::Info& info) {
 	}
 }
 
+#include "mem.h"
+#include "proc.h"
+using proc::Process;
+#include "cpu.h"
+using cpu::Cpu;
+
+Process *new_proc_simple(u32 start, u32 end) {
+	(void)start;
+	(void)end;
+	// TODO
+	return NULL;
+}
+
+void init_modules(Cpu *cpu, const mboot::Info& info) {
+	assert(info.has(mboot::Modules));
+	auto mod = PhysAddr<mboot::Module>(info.mods_addr);
+	const size_t count = info.mods_count;
+	printf("%zu modules\n", count);
+	Process **procs = new Process *[count];
+	for (size_t n = 0; n < count; n++) {
+		printf("Module %#x..%#x: %s\n",
+			mod->start, mod->end, PhysAddr<char>(mod->string));
+		procs[n] = new_proc_simple(mod->start, mod->end);
+		mod++;
+	}
+	if (count) {
+		cpu->irq_process = procs[0];
+	}
+	for (size_t i = 0; i < count; i++) {
+		for (size_t j = i + 1; j < count; j++) {
+			//TODO assoc_procs(procs[i], i, procs[j], j);
+		}
+		cpu->queue(procs[i]);
+	}
+	delete[] procs;
+}
+
 } // namespace
 
-using Console::write;
-
 void irq_entry(u8 vec, u64 err) {
+	printf("irq_entry(%u, %lx)\n", vec, err);
 	unimpl("irq_entry");
 }
 
 void start64() {
-	write("Hello world\n");
-
 	dumpMBInfo(start32::mboot_info());
 
 	x86::lgdt(start32::gdtr);
 	x86::ltr(x86::seg::tss64);
 	idt::init();
 
-	unimpl("rest of main");
+	mem::init(start32::mboot_info(), start32::memory_start, -kernel_base);
+//	write("Memory initialized. ");
+//	mem::stat();
 
-	// memory init
-	// per-cpu init, start
-	//
-	// init_modules using multiboot data
-	// run the cpu
-
-	abort();
+	auto cpu = new Cpu();
+	cpu->start();
+	init_modules(cpu, start32::mboot_info());
+	cpu->run();
 }

@@ -1,11 +1,24 @@
 #include <stddef.h>
 
 #ifndef STRING_INL_LINKAGE
-#define STRING_INL_LINKAGE
+#define STRING_INL_LINKAGE UNUSED
 #endif
 
 STRING_INL_LINKAGE void memcpy(void* dest, const void* src, size_t n) {
 	asm("rep movsb": "+D"(dest), "+S"(src), "+c"(n), "=m"(dest) : : "memory");
+}
+
+STRING_INL_LINKAGE void memmove(void* dest, const void* src, size_t n) {
+	if (dest < src) {
+		memcpy(dest, src, n);
+	} else {
+		dest = (char *)dest + n;
+		src = (char *)src + n;
+		asm("std; rep movsb; cld"
+			: "+D"(dest), "+S"(src), "+c"(n), "=m"(dest)
+			:
+			: "memory");
+	}
 }
 
 STRING_INL_LINKAGE void memset(void* dest, int c, size_t n) {
