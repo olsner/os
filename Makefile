@@ -18,7 +18,7 @@ CFLAGS += -fvisibility-inlines-hidden -fvisibility=hidden
 CFLAGS += -mcmodel=kernel -mno-red-zone -mno-sse -mno-mmx
 CFLAGS += -ffreestanding $(COPTFLAGS)
 CFLAGS += -fno-threadsafe-statics
-CFLAGS += -Wall -Wextra -Werror
+CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
 CXXFLAGS = $(CFLAGS) -std=gnu++11
 LDFLAGS = --check-sections --gc-sections

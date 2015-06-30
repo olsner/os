@@ -166,7 +166,11 @@ void assert_failed(const char* fileline, const char* msg) {
 }
 
 namespace x86 {
-	enum class seg : u16 {
+	enum rflags : u64 {
+		IF = 1 << 9,
+		VM = 1 << 17,
+	};
+	enum seg : u16 {
 		code32 = 8,
 		data32 = 16,
 		code = 24,
@@ -260,6 +264,7 @@ namespace start32 {
 	static const mboot::Info& mboot_info() {
 		return *PhysAddr<mboot::Info>(low::mbi_pointer);
 	}
+	static const uintptr_t kernel_pdp_addr = (uintptr_t)&low::kernel_pdp;
 }
 
 void dumpMBInfo(const mboot::Info& info) {
@@ -278,16 +283,32 @@ void dumpMBInfo(const mboot::Info& info) {
 }
 
 #include "mem.h"
+#include "aspace.h"
+using aspace::AddressSpace;
 #include "proc.h"
 using proc::Process;
 #include "cpu.h"
 using cpu::Cpu;
 
-Process *new_proc_simple(u32 start, u32 end) {
-	(void)start;
-	(void)end;
-	// TODO
-	return NULL;
+Process *new_proc_simple(u32 start, u32 end_unaligned) {
+	u32 end = (end_unaligned + 0xfff) & ~0xfff;
+	u32 start_page = start & ~0xfff;
+	auto aspace = new AddressSpace();
+	auto ret = new Process(aspace);
+	ret->regs.rsp = 0x100000;
+	ret->rip = 0x100000 + (start & 0xfff);
+
+	using namespace aspace;
+	aspace->mapcard_set(0x0ff000, 0, 0, MAP_ANON | MAP_RW);
+	aspace->mapcard_set(0x100000, 0, start_page - 0x100000, MAP_PHYS | MAP_RX);
+	aspace->mapcard_set(0x100000 + (end - start_page), 0, 0, 0);
+
+	return ret;
+}
+
+void assoc_procs(Process *p, uintptr_t i, Process *q, uintptr_t j) {
+	/*if (log_assoc_procs)*/ printf("%p:%lu <-> %lu:%p\n", p, i, j, q);
+	p->assoc_handles(j, q, i);
 }
 
 void init_modules(Cpu *cpu, const mboot::Info& info) {
@@ -300,6 +321,8 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
 		printf("Module %#x..%#x: %s\n",
 			mod->start, mod->end, PhysAddr<char>(mod->string));
 		procs[n] = new_proc_simple(mod->start, mod->end);
+		printf("Module %#x..%#x: %p\n",
+			mod->start, mod->end, procs[n]);
 		mod++;
 	}
 	if (count) {
@@ -307,8 +330,10 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
 	}
 	for (size_t i = 0; i < count; i++) {
 		for (size_t j = i + 1; j < count; j++) {
-			//TODO assoc_procs(procs[i], i, procs[j], j);
+			assoc_procs(procs[i], i + 1, procs[j], j + 1);
 		}
+	}
+	for (size_t i = 0; i < count; i++) {
 		cpu->queue(procs[i]);
 	}
 	delete[] procs;
