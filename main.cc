@@ -352,6 +352,7 @@ void dumpMBInfo(const mboot::Info& info) {
     }
 }
 
+#include "dict.h"
 #include "dlist.h"
 #include "mem.h"
 #include "aspace.h"
