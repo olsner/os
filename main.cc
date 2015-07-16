@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <new>
 
+typedef int64_t i64;
+typedef int32_t i32;
+typedef int16_t i16;
+typedef int8_t i8;
 typedef uint64_t u64;
 typedef uint32_t u32;
 typedef uint16_t u16;
@@ -27,6 +31,7 @@ namespace {
 
 void assert_failed(const char* fileline, const char* msg) NORETURN;
 void abort() NORETURN;
+void abort(const char *msg) NORETURN;
 void unimpl(const char* what) NORETURN;
 
 }
@@ -39,6 +44,8 @@ void unimpl(const char* what) NORETURN;
 #define log_idle 1
 #define log_switch 1
 #define log_runqueue 1
+#define log_page_fault 1
+#define log_add_pte 1
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
@@ -107,6 +114,9 @@ template <class T>
 static constexpr T* HighAddr(T* lowptr) {
     return PhysAddr<T>((uintptr_t)lowptr);
 }
+uintptr_t ToPhysAddr(const volatile void *p) {
+    return (uintptr_t)p - kernel_base;
+}
 
 static void memset16(u16* dest, u16 value, size_t n) {
     if (/* constant(value) && */ (value >> 8) == (value & 0xff)) {
@@ -157,6 +167,11 @@ using Console::write;
 
 void unimpl(const char *what) {
     printf("UNIMPL: %s\n", what);
+    abort();
+}
+
+void abort(const char *msg) {
+    write(msg);
     abort();
 }
 
@@ -236,6 +251,18 @@ namespace x86 {
         if (cr3 != get_cr3()) {
             asm volatile("movq %0, %%cr3" :: "r"(cr3));
         }
+    }
+
+    u64 cr2() {
+        u64 cr2;
+        asm("movq %%cr2, %0" : "=r"(cr2));
+        return cr2;
+    }
+
+    u64 get_cpu_specific() {
+        u64 res = 0;
+        asm("gs movq (%0), %0": "=r"(res) : "0"(res));
+        return res;
     }
 }
 
@@ -384,6 +411,32 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
     delete[] procs;
 }
 
+Cpu &getcpu() {
+    return *(Cpu *)x86::get_cpu_specific();
+}
+
+NORETURN void page_fault(Process *p, u64 error) {
+    enum Errors {
+        Present = 1,
+        Write = 2,
+        User = 4,
+        Reserved = 8,
+        Instr = 16,
+    };
+    log(page_fault, "page fault %lx cr2=%p rip=%p in proc=%p\n",
+        error, (void*)x86::cr2(), (void*)p->rip, p);
+
+    assert(error & User);
+    i64 fault_addr = x86::cr2();
+    assert(fault_addr >= 0);
+
+    auto as = p->aspace;
+    auto &back = as->find_add_backing(fault_addr & -0x1000);
+    as->add_pte(back.vaddr(), back.pte());
+
+    getcpu().switch_to(p);
+}
+
 } // namespace
 
 extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
@@ -397,9 +450,8 @@ void irq_entry(u8 vec, u64 err, Cpu *cpu) {
         unimpl("handler_NM");
         break;
     case 14:
-        unimpl("PF");
-        // assert(p);
-        // page_fault(p, err);
+        assert(p);
+        page_fault(p, err);
         break;
     default:
         if (vec >= 32) {

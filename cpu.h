@@ -34,7 +34,10 @@ struct Cpu {
     Process *fpu_process;
 
     // Assume everything else is 0-initialized
-    Cpu(): self(this) {
+    // FIXME There's already a stack allocated by the boot loader, a bit
+    // wasteful to allocate a new one. Non-first CPUs might need this code
+    // though?
+    Cpu(): self(this), stack(new u8[4096]) {
     }
 
     void start() {
