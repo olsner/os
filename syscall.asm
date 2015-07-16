@@ -301,7 +301,9 @@ proc handle_irq_generic, NOSECTION
 	add	rsp, 0xfff
 	and	sp, ~0xfff
 
-	; Now rdi = vector, rsi = error (or 0)
+	zero    edx
+	mov     rdx, [gs:rdx + gseg.self]
+	; Now rdi = vector, rsi = error (or 0), rdx = gseg
 	extern	irq_entry
 	jmp	irq_entry
 

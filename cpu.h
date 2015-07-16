@@ -33,6 +33,10 @@ struct Cpu {
     Process *irq_process;
     Process *fpu_process;
 
+    // Assume everything else is 0-initialized
+    Cpu(): self(this) {
+    }
+
     void start() {
         setup_msrs((u64)this);
     }

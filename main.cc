@@ -17,7 +17,6 @@ typedef unsigned int uint;
 #define NORETURN __attribute__((noreturn))
 
 extern "C" void start64() NORETURN;
-extern "C" void irq_entry(u8 vec, u64 err) NORETURN;
 
 #define DEBUGCON 1
 
@@ -387,9 +386,30 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
 
 } // namespace
 
-void irq_entry(u8 vec, u64 err) {
-    printf("irq_entry(%u, %#lx)\n", vec, err);
-    unimpl("irq_entry");
+extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
+
+void irq_entry(u8 vec, u64 err, Cpu *cpu) {
+    printf("irq_entry(%u, %#lx, cpu=%p)\n", vec, (long)err, cpu);
+    auto p = cpu->process;
+    p->unset(proc::Running);
+    switch (vec) {
+    case 7:
+        unimpl("handler_NM");
+        break;
+    case 14:
+        unimpl("PF");
+        // assert(p);
+        // page_fault(p, err);
+        break;
+    default:
+        if (vec >= 32) {
+            if (p) {
+                cpu->queue(p);
+            }
+            unimpl("generic_irq_handler(vec);");
+        }
+    }
+    cpu->run();
 }
 
 void start64() {
