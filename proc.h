@@ -8,7 +8,7 @@ enum ProcFlags {
 // rcx, r11: rip and rflags, respectively
 // rax: syscall return value
 // Remaining registers will be 0 (?)
-    PROC_FASTRET = 1,
+    FastRet = 1,
 // IN_RECV: Similar to FASTRET, when waiting for a message-send rendezvous
 // When set together with IN_SEND, it's a sendrcv and the SEND needs to finish
 // first.
@@ -38,6 +38,39 @@ struct Regs {
     u64 rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi;
     u64 r8, r9, r10, r11, r12, r13, r14, r15;
 };
+
+struct Process;
+
+struct Handle
+{
+    typedef uintptr_t Key;
+    DictNode<Key, Handle> node;
+    Process *process;
+    Handle *other;
+    u64 pulses;
+
+    Handle(uintptr_t key, Process *process):
+        node(key), process(process), other(NULL), pulses(0) {}
+
+    uintptr_t key() const { return node.key; }
+
+    void dissociate() {
+        if (other) {
+            other->other = NULL;
+            other = NULL;
+        }
+    }
+};
+
+struct PendingPulse
+{
+    typedef uintptr_t Key;
+    DictNode<Key, PendingPulse> node;
+    Handle *handle;
+
+    PendingPulse(Handle *handle): node(handle->key()), handle(handle) {}
+};
+
 struct Process {
     // First: fields shared with asm code...
     Regs regs;
@@ -48,24 +81,56 @@ struct Process {
     u64 flags;
     Process *waiting_for;
 
-    // TODO DList<Process> waiters;
-    // TODO DListNode<Process> waiters_node;
+    DList<Process> waiters;
+    DListNode<Process> node;
 
     AddressSpace *aspace;
-    // TODO Dict<Handle> handles;
-    // TODO Dict<PendingPulse> pending;
+    Dict<Handle> handles;
+    Dict<PendingPulse> pending;
     u64 fault_addr;
     // TODO FXSave
 
     Process(AddressSpace *aspace):
         aspace(aspace)
     {
-        flags = PROC_FASTRET;
+        flags = 1 << FastRet;
         cr3 = aspace->cr3();
         rflags = x86::rflags::IF;
     }
 
     void assoc_handles(uintptr_t j, Process *other, uintptr_t i) {
+//        AddressSpace *otherspace = other->aspace;
+//        auto x = aspace->new_handle(j, other);
+//        auto y = otherspace->new_handle(i, this);
+        auto x = new_handle(j, other);
+        auto y = other->new_handle(i, this);
+        x->other = y;
+        y->other = x;
+    }
+
+    Handle *new_handle(uintptr_t key, Process *other) {
+        if (Handle *old = handles.find(key)) {
+            delete_handle(old);
+        }
+        return handles.insert(new Handle(key, other));
+    }
+
+    void delete_handle(Handle *handle) {
+        handle->dissociate();
+        pending.remove(handle->key());
+        handles.remove(handle->key());
+    }
+
+    bool is(ProcFlags flag) const {
+        return flags & (1 << flag);
+    }
+    bool is_queued() const { return is(Queued); }
+
+    void set(ProcFlags flag) {
+        flags |= (1 << flag);
+    }
+    void unset(ProcFlags flag) {
+        flags &= ~(1 << flag);
     }
 };
 }
