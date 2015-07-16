@@ -46,6 +46,9 @@ void unimpl(const char* what) NORETURN;
 #define log_runqueue 1
 #define log_page_fault 1
 #define log_add_pte 1
+#define log_irq_entry 1
+#define log_portio 1
+#define log_hmod 1
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
@@ -361,6 +364,7 @@ using aspace::AddressSpace;
 using proc::Process;
 #include "cpu.h"
 using cpu::Cpu;
+using cpu::getcpu;
 #include "syscall.h"
 
 Process *new_proc_simple(u32 start, u32 end_unaligned) {
@@ -412,10 +416,6 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
     delete[] procs;
 }
 
-Cpu &getcpu() {
-    return *(Cpu *)x86::get_cpu_specific();
-}
-
 NORETURN void page_fault(Process *p, u64 error) {
     enum Errors {
         Present = 1,
@@ -443,7 +443,7 @@ NORETURN void page_fault(Process *p, u64 error) {
 extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
 
 void irq_entry(u8 vec, u64 err, Cpu *cpu) {
-    printf("irq_entry(%u, %#lx, cpu=%p)\n", vec, (long)err, cpu);
+    log(irq_entry, "irq_entry(%u, %#lx, cpu=%p)\n", vec, (long)err, cpu);
     auto p = cpu->process;
     p->unset(proc::Running);
     switch (vec) {

@@ -115,6 +115,13 @@ struct Process {
         return handles.insert(new Handle(key, other));
     }
 
+    Handle *find_handle(uintptr_t key) const {
+        return handles.find(key);
+    }
+    void rename_handle(Handle *handle, uintptr_t new_key) {
+        handle->node.key = new_key;
+        // Update collections with new key.
+    }
     void delete_handle(Handle *handle) {
         handle->dissociate();
         pending.remove(handle->key());

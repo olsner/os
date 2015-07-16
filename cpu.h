@@ -86,4 +86,8 @@ void idle(Cpu *cpu) {
     }
 }
 
+Cpu &getcpu() {
+    return *(Cpu *)x86::get_cpu_specific();
+}
+
 }
