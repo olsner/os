@@ -157,8 +157,7 @@ namespace Console {
 using Console::write;
 
 void unimpl(const char *what) {
-    write("UNIMPL: ");
-    write(what);
+    printf("UNIMPL: %s\n", what);
     abort();
 }
 
@@ -255,7 +254,7 @@ namespace idt {
             u64 addr = (u64)fn;
             u64 low = (addr & 0xffff) | ((u64)seg::code << 16);
             u64 flags = GatePresent | GateTypeInterrupt;
-            u64 high = ((addr >> 16) & 0xffff) | (flags << 8);
+            u64 high = (addr & 0xffff0000) | (flags << 8);
 
             this->low = low | (high << 32);
             this->high = addr >> 32;
@@ -389,7 +388,7 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
 } // namespace
 
 void irq_entry(u8 vec, u64 err) {
-    printf("irq_entry(%u, %lx)\n", vec, err);
+    printf("irq_entry(%u, %#lx)\n", vec, err);
     unimpl("irq_entry");
 }
 
