@@ -19,6 +19,7 @@ typedef unsigned int uint;
 #define PACKED __attribute__((packed))
 #define UNUSED __attribute__((unused))
 #define NORETURN __attribute__((noreturn))
+#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
 
 extern "C" void start64() NORETURN;
 
@@ -49,6 +50,8 @@ void unimpl(const char* what) NORETURN;
 #define log_irq_entry 1
 #define log_portio 1
 #define log_hmod 1
+#define log_dict_find 0
+#define log_dict_insert 0
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
@@ -416,7 +419,7 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
     delete[] procs;
 }
 
-NORETURN void page_fault(Process *p, u64 error) {
+namespace pf {
     enum Errors {
         Present = 1,
         Write = 2,
@@ -424,10 +427,13 @@ NORETURN void page_fault(Process *p, u64 error) {
         Reserved = 8,
         Instr = 16,
     };
+};
+
+NORETURN void page_fault(Process *p, u64 error) {
     log(page_fault, "page fault %lx cr2=%p rip=%p in proc=%p\n",
         error, (void*)x86::cr2(), (void*)p->rip, p);
 
-    assert(error & User);
+    assert(error & pf::User);
     i64 fault_addr = x86::cr2();
     assert(fault_addr >= 0);
 
@@ -443,7 +449,10 @@ NORETURN void page_fault(Process *p, u64 error) {
 extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
 
 void irq_entry(u8 vec, u64 err, Cpu *cpu) {
-    log(irq_entry, "irq_entry(%u, %#lx, cpu=%p)\n", vec, (long)err, cpu);
+    log(irq_entry, "irq_entry(%u, %#lx, cpu=%p)\n", vec, err, cpu);
+    if (vec == 14) {
+        assert(err & pf::User);
+    }
     auto p = cpu->process;
     p->unset(proc::Running);
     switch (vec) {

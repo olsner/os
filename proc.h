@@ -66,9 +66,8 @@ struct PendingPulse
 {
     typedef uintptr_t Key;
     DictNode<Key, PendingPulse> node;
-    Handle *handle;
 
-    PendingPulse(Handle *handle): node(handle->key()), handle(handle) {}
+    PendingPulse(Handle *handle): node(handle->key()) {}
 };
 
 struct Process {
@@ -109,14 +108,14 @@ struct Process {
     }
 
     Handle *new_handle(uintptr_t key, Process *other) {
-        if (Handle *old = handles.find(key)) {
+        if (Handle *old = handles.find_exact(key)) {
             delete_handle(old);
         }
         return handles.insert(new Handle(key, other));
     }
 
     Handle *find_handle(uintptr_t key) const {
-        return handles.find(key);
+        return handles.find_exact(key);
     }
     void rename_handle(Handle *handle, uintptr_t new_key) {
         handle->node.key = new_key;
@@ -124,8 +123,9 @@ struct Process {
     }
     void delete_handle(Handle *handle) {
         handle->dissociate();
-        pending.remove(handle->key());
-        handles.remove(handle->key());
+        Handle* existing = handles.remove(handle->key());
+        assert(existing == handle);
+        delete handle;
     }
 
     bool is(ProcFlags flag) const {

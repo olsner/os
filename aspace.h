@@ -122,7 +122,7 @@ struct AddressSpace {
     Dict<Backing> backings;
 
     void mapcard_set(uintptr_t vaddr, uintptr_t handle, intptr_t offset, int flags) {
-        if (MapCard *p = mapcards.find(vaddr)) {
+        if (MapCard *p = mapcards.find_exact(vaddr)) {
             p->set(handle, offset | flags);
         } else {
             mapcards.insert(new MapCard(vaddr, handle, offset | flags));
@@ -143,11 +143,13 @@ struct AddressSpace {
     }
 
     Backing& find_add_backing(uintptr_t vaddr) {
-        if (auto back = backings.find(vaddr | 0xfff)) {
+        // TODO Should require an exact match
+        if (auto back = backings.find_le(vaddr | 0xfff)) {
             return *back;
         }
 
-        auto card = mapcards.find(vaddr);
+        auto card = mapcards.find_le(vaddr);
+        assert(card->vaddr() <= vaddr);
         assert(card && "No mapping");
         assert((card->flags() & MAP_RWX) && "No access");
         if (card->handle) {

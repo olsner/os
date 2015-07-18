@@ -5,10 +5,13 @@ DictNode<typename T::Key, T> *node_from_item(T *c) { return &c->node; }
 template <class K, class V> struct DictNode
 {
     K key;
-    DictNode* left;
+    //DictNode* left;
     DictNode* right;
 
-    DictNode(K key): key(key), left(nullptr), right(nullptr) {}
+    DictNode(K key):
+        key(key),
+        //left(nullptr),
+        right(nullptr) {}
 
     static DictNode *node(V *item) {
         return node_from_item(item);
@@ -27,7 +30,23 @@ template <class V, class K = typename V::Key> struct Dict
 
     Dict(): root(nullptr) {}
 
-    V* find(K key) const {
+    // Return the greatest item with key <= key
+    V* find_le(K key) const {
+        Node *max = NULL;
+        Node *node = root;
+        while (node) {
+            log(dict_find,
+                "find(%#lx): node %p (%#lx) right %p max %p (%#lx)\n",
+                key, node, node->key, node->right, max, max ? max->key : 0);
+            if (node->key <= key && (!max || node->key > max->key)) {
+                max = node;
+            }
+            node = node->right;
+        }
+        return max ? max->item() : NULL;
+    }
+
+    V* find_exact(K key) const {
         Node *node = root;
         while (node) {
             if (node->key == key) {
@@ -39,25 +58,31 @@ template <class V, class K = typename V::Key> struct Dict
     }
 
     V *insert(V* item) {
-        Node *node = Node::node(item);
+        Node *node = node_from_item(item);
+        log(dict_insert, "insert(%p): key %#lx root %p (%#lx)\n",
+            item, node->key, root, root ? root->key : 0);
         node->right = root;
         root = node;
         return item;
     }
 
-    void remove(V* item) {
-        remove(Node::node(item)->key);
+    WARN_UNUSED_RESULT V* remove(V* item) {
+        if (Node *n = remove(node_from_item(item)->key)) {
+            return n->item();
+        } else {
+            return NULL;
+        }
     }
-    void remove(K key) {
+    WARN_UNUSED_RESULT V *remove(K key) {
         Node **p = &root;
         while (Node *node = *p) {
             if (node->key == key) {
-                *p = node = node->right;
-                return;
+                *p = node->right;
+                return node->item();
             }
             p = &node->right;
         }
-        assert(!"Removing non-existing item");
+        return NULL;
     }
 };
 
