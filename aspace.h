@@ -143,9 +143,11 @@ struct AddressSpace {
     }
 
     Backing& find_add_backing(uintptr_t vaddr) {
-        // TODO Should require an exact match
         if (auto back = backings.find_le(vaddr | 0xfff)) {
-            return *back;
+            if (back->vaddr() == (vaddr & -0x1000)) {
+                log(page_fault, "Found existing backing for %#lx at %#lx -> %#lx\n", vaddr, back->vaddr(), back->paddr());
+                return *back;
+            }
         }
 
         auto card = mapcards.find_le(vaddr);
@@ -157,8 +159,10 @@ struct AddressSpace {
         }
 
         if ((card->flags() & MAP_DMA) == MAP_ANON) {
+            log(page_fault, "New anonymous backing for %#lx\n", vaddr);
             return add_anon_backing(card, vaddr);
         } else if (card->flags() & MAP_PHYS) {
+            log(page_fault, "New physical backing for %#lx -> %#lx\n", vaddr, card->paddr(vaddr));
             return add_phys_backing(card, vaddr);
         } else {
             abort("not anon or phys for handle==0");
