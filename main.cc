@@ -52,6 +52,8 @@ void unimpl(const char* what) NORETURN;
 #define log_hmod 1
 #define log_dict_find 0
 #define log_dict_insert 0
+#define log_ipc 1
+#define log_transfer_message 1
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)

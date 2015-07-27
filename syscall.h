@@ -64,6 +64,103 @@ namespace {
     }
 };
 
+using proc::Handle;
+
+void transfer_set_handle(Process *target, Process *source) {
+    auto rcpt = target->regs.rdi;
+    auto from = source->regs.rdi;
+
+    auto h = source->find_handle(from);
+    if (!rcpt) {
+        rcpt = h->other->key();
+    } else if (!target->find_handle(rcpt)) {
+        if (auto g = h->other) {
+            rcpt = g->key();
+            assert(g->other == g);
+            log(transfer_message, "transfer_set_handle: g=%p, g.id=%lx\n",
+                g, rcpt);
+        } else {
+            // Associate new handle
+            g = target->new_handle(rcpt, source);
+            g->associate(h);
+            assert(g->key() == rcpt);
+        }
+    } else {
+        assert(rcpt == h->other->key());
+    }
+    log(transfer_message, "transfer_set_handle: rcpt=%lx for %lx from %lx\n",
+            rcpt, target->regs.rdi, from);
+    target->regs.rdi = rcpt;
+}
+
+NORETURN void transfer_message(Process *target, Process *source) {
+    transfer_set_handle(target, source);
+    log(transfer_message, "transfer_message %p <- %p\n", target, source);
+
+    target->regs.rax = source->regs.rax;
+    target->regs.rsi = source->regs.rsi;
+    target->regs.rdx = source->regs.rdx;
+    target->regs.r8 = source->regs.r8;
+    target->regs.r9 = source->regs.r9;
+    target->regs.r10 = source->regs.r10;
+
+    target->unset(proc::InRecv);
+    target->unset(proc::FastRet);
+    source->unset(proc::InSend);
+    source->remove_waiter(target);
+
+    auto c = getcpu();
+    c.queue(target);
+    if (!source->ipc_state()) {
+        target->remove_waiter(source);
+        c.queue(source);
+    }
+    c.run();
+}
+
+void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+    sender->regs.rax = msg;
+    sender->regs.rdi = h->key();
+    sender->regs.rsi = arg1;
+    sender->regs.rdx = arg2;
+    sender->regs.r10 = arg3;
+    sender->regs.r8 = arg4;
+    sender->regs.r9 = arg5;
+
+    u64 other_id = 0;
+    if (auto other = h->other) other_id = other->key();
+
+    auto p = h->process;
+    if (p->ipc_state() == proc::mask(proc::InRecv)) {
+        auto rcpt = p->regs.rdi;
+        if (rcpt == other_id || !p->find_handle(rcpt)) {
+            transfer_message(p, sender);
+        }
+    }
+
+    log(ipc, "send_or_block: %p waits for %p\n", sender, p);
+    p->add_waiter(sender);
+}
+
+void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+    auto handle = p->find_handle(rcpt);
+    assert(handle);
+    log(ipc, "%p ipc_send to %lx ==> %p\n", p, rcpt, handle->process);
+    p->set(proc::InSend);
+    send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
+}
+
+void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+    auto handle = p->find_handle(rcpt);
+    assert(handle);
+    log(ipc, "%p ipc_call to %lx ==> process %p\n", p, rcpt, handle->process);
+    p->set(proc::InSend);
+    p->set(proc::InRecv);
+    p->regs.rdi = rcpt;
+    send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
+    log(ipc, "ipc_call: blocked\n");
+}
+
 void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr) {
     printf("syscall %#x: %lx %lx %lx %lx %lx %lx\n", (unsigned)nr, arg0, arg1, arg2, arg3, arg4, arg5);
     auto p = getcpu().process;
@@ -86,7 +183,13 @@ void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr)
         break;
     default:
         if (nr >= MSG_USER) {
-            unimpl("ipc");
+            if ((nr & MSG_KIND_MASK) == MSG_KIND_SEND) {
+                ipc_send(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
+            } else if ((nr & MSG_KIND_MASK) == MSG_KIND_CALL) {
+                ipc_call(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
+            } else {
+                abort("unknown IPC kind");
+            }
         } else {
             abort("unhandled syscall");
         }
