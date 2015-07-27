@@ -225,20 +225,20 @@ start32:
 	mov	ecx, 0x03ff
 	rep stosd
 
-	; Write PT at 0xd000, will have a few PTE's first that are not present
-	; to catch null pointers. Then at 0x8000 to 0x10000 we'll map pages to
-	; the same physical address.
+	; Write PT at 0xd000, kernel will be mapped at 0x100000 and up.
 	xor	eax,eax
 	mov	ecx,0x0400
 	rep stosd
 	sub	edi,0x1000-(pages.kernel / 0x1000) * 8
-	; Map page 0x8000 and 0x9000 to the same physical address
-	; 0x5 means user-accessible (4) plus present (1)
-	mov	eax, pages.kernel | 5
+	; Map page 0x100000 and up, for bootstrapping. The booted kernel will
+	; unmap these and keep only the higher-half stuff when it's ready.
+	mov	ax, pages.kernel | 1
+	mov	cl, kernel_pages
+.map_kernel_pages:
 	stosd
-	add	edi, 4
-	mov	eax, (pages.kernel + 0x1000) | 5
-	stosd
+	add	di, 4
+	add	ax, 0x1000
+	loop	.map_kernel_pages
 
 	; Page mapping for kernel space (top 4TB part)
 	mov	edi, pages.kernel_pdp
