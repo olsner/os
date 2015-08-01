@@ -460,11 +460,16 @@ static void MsgFindPci(uintptr_t rcpt, uintptr_t arg)
 	u16 vendor = arg >> 16;
 	u16 device = arg;
 	uintptr_t addr = -1;
-	printf("acpica: find pci %#x:%#x.\n", vendor, device);
-	ACPI_STATUS status = FindPCIDevByVendor(vendor, device, &temp);
+	ACPI_STATUS status;
+	if (vendor && device) {
+		status = FindPCIDevByVendor(vendor, device, &temp);
+	} else {
+		status = FindPCIDevByClass(arg >> 32, &temp);
+	}
 	if (ACPI_SUCCESS(status)) {
 		addr = temp.Bus << 16 | temp.Device << 3 | temp.Function;
 	}
+
 	send1(MSG_ACPI_FIND_PCI, rcpt, addr);
 }
 

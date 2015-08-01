@@ -71,13 +71,13 @@ enum msg_irq {
 enum msg_acpi {
 	/* Find (unclaimed) PCI device.
 	 *
-	 * arg1: pci vendor/device
-	 * arg2: index (0..)
+	 * arg1: pci vendor/device or class code
+	 *  class code = (arg1 >> 32) & 0xffffff (24-bit class code)
+	 *  vendor = (arg >> 16) & 0xffff
+	 *  device = arg & 0xffff
+	 *  The class code is used for search if both vendor and device are 0.
 	 * Returns:
 	 * arg1: pci bus/device/function, or -1 if not found
-	 *
-	 * Iterate index upwards to find multiple matching PCI devices until -1 is
-	 * returned.
 	 */
 	MSG_ACPI_FIND_PCI = MSG_USER,
 	/* Wrappers around PCI IRQ routing (to PIC or I/O APIC) */
@@ -546,12 +546,12 @@ static void assert_failed(const char* file, int line, const char* msg) {
 #define assert(X) \
 	do { if (!(X)) assert_failed(__FILE__, __LINE__, #X); } while (0)
 
-static void hexdump(char* data, size_t length) {
+static void hexdump(const void* data, size_t length) {
 	size_t pos = 0;
 	while (pos < length) {
 		printf("\n%04x: ", pos);
 		for (int i = 0; i < 16 && pos < length; i++) {
-			printf("%02x ", (u8)data[pos++]);
+			printf("%02x ", ((const u8*)data)[pos++]);
 		}
 	}
 	printf("\n");
@@ -584,6 +584,10 @@ enum pci_command_bits
 	PCI_COMMAND_IOSPACE = 1,
 	PCI_COMMAND_MEMSPACE = 2,
 	PCI_COMMAND_MASTER = 4,
+};
+enum pci_status_bits
+{
+	PCI_STATUS_INTERRUPT = 8,
 };
 
 /**
