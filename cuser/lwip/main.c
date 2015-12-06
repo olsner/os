@@ -65,7 +65,7 @@ u32 lwip_random() {
 	return (u32)timer_data.tick_counter;
 }
 
-void check_timers() {
+static void check_timers(void) {
 	u64 timeout_ms = sys_check_timeouts();
 	if (timeout_ms == (u32)-1) timeout_ms = 500;
 	if (timeout_ms != (u32)-1) {

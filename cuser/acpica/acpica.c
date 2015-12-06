@@ -508,7 +508,7 @@ failed:
 
 static size_t debugger_buffer_pos = 0;
 
-static void debugger_pre_cmd() {
+static void debugger_pre_cmd(void) {
 	debugger_buffer_pos = 0;
 	AcpiGbl_MethodExecuting = FALSE;
 	AcpiGbl_StepToNextCall = FALSE;

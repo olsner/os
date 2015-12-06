@@ -408,7 +408,7 @@ static void proto_ack_send(protocol* proto, buffer* buf);
 
 // Some transmission finished, iterate from tdhead up looking for EOP+RS+DD
 // packets.
-static void tx_done() {
+static void tx_done(void) {
 	uint new_head = tdhead;
 	for (;;) {
 		u8 status = get_tdesc_status(new_head);

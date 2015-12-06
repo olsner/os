@@ -9,7 +9,7 @@
 
 static const uintptr_t acpi_handle = 4;
 
-static void prompt() {
+static void prompt(void) {
 	puts("Enter debugger command: (Esc cancels)\n");
 	for (;;) {
 		uintptr_t c = getchar();

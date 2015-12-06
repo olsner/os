@@ -140,7 +140,7 @@ static u64 ticks_to_nanos(u64 ticks) {
 	return 500 * ticks / (apic_ticks / 2000000);
 }
 
-u64 get_tick_counter() {
+u64 get_tick_counter(void) {
 	// Since this is a count*down* timer, the elapsed count is the initial count
 	// minus the current count.
 	u32 tcc = apic[APICTCC];
@@ -161,7 +161,7 @@ void setTIC(u64 ticks) {
 	printf("apic: setTIC %u\n", ticks);
 }
 
-timer* timer_alloc() {
+timer* timer_alloc(void) {
 	if (free_timers) {
 		return timer_pop(&free_timers);
 	} else {

@@ -66,7 +66,7 @@ static err_t http_accept_cb(void *arg, tcp_pcb *newpcb, err_t err) {
 	return err;
 }
 
-err_t http_start() {
+err_t http_start(void) {
 	server_pcb = tcp_new();
 	err_t res = tcp_bind(server_pcb, IP_ADDR_ANY, 80);
 	if (res != ERR_OK) {

@@ -20,7 +20,7 @@ typedef unsigned int uint;
 // FIXME This causes 'start' to follow various silly calling conventions - such
 // as saving callee-save registers. Find some way to get rid of that...
 // Or wait for http://gcc.gnu.org/bugzilla/show_bug.cgi?id=38534 to be fixed.
-void start() __attribute__((noreturn,section(".start")));
+void start(void) __attribute__((noreturn,section(".start")));
 
 // Symbols exposed by the linker script
 extern char __bss_start[1];
@@ -590,7 +590,7 @@ enum pci_command_bits
  * A simple (compiler) barrier. Memory writes to volatile variables before the
  * barrier must not be moved to after the barrier, regardless of optimizations.
  */
-static void __barrier() {
+static void __barrier(void) {
 	__asm__ __volatile__ ("":::"memory");
 }
 
