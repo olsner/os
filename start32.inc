@@ -230,9 +230,9 @@ start32:
 	mov	ecx,0x0400
 	rep stosd
 	sub	edi,0x1000-(pages.kernel / 0x1000) * 8
-	; Map page 0x100000 and up, for bootstrapping. The booted kernel will
+	; Map page 0x100000 and up, for bootstrapping. The booted kernel should
 	; unmap these and keep only the higher-half stuff when it's ready.
-	mov	ax, pages.kernel | 1
+	mov	eax, pages.kernel | 1
 	mov	cl, kernel_pages
 .map_kernel_pages:
 	stosd
