@@ -182,11 +182,13 @@ $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
 	bash $< $(MOD_ASMFILES:%.asm=%) $(MOD_CFILES:%.c=%) > $@
 
+GRUBLIBDIR := /usr/lib/grub/i386-pc/
+
 # TODO We should change this so that out/grub/ is removed and regenerated each
 # build, and put all other output products outside out/grub/
 $(OUTDIR)/grub.iso: $(GRUB_CFG) $(GRUBDIR)/kstart.b $(MODFILES)
 	@echo Creating grub boot image $@ from $^
-	grub-mkrescue $(GRUB_MODULES) -o $@ $(GRUBDIR) >/dev/null
+	grub-mkrescue $(GRUB_MODULES) -d $(GRUBLIBDIR) -o $@ $(GRUBDIR) >/dev/null
 	@echo '$@: \\' > $@.d
 	@find $(GRUBDIR) | sed 's/$$/ \\/' >> $@.d
 	@echo >> $@.d
