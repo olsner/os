@@ -19,6 +19,7 @@ YASMDEP := $(shell which $(YASM))
 else
 YASMDEP := $(YASM)
 endif
+YASMFLAGS = -Werror
 
 ifeq ($(VERBOSE),YES)
 CP=cp -v
@@ -88,7 +89,7 @@ $(OUTDIR)/%.d: %.asm $(YASMDEP)
 
 $(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d $(YASMDEP)
 	@mkdir -p $(@D)
-	$(HUSH_ASM) $(YASM) -i . -f bin $< -o $@ -L nasm -l $(OUTDIR)/$*.lst --mapfile=$(OUTDIR)/$*.map
+	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -i . -f bin $< -o $@ -L nasm -l $(OUTDIR)/$*.lst --mapfile=$(OUTDIR)/$*.map
 	$(SIZE_ASM)
 
 -include $(OUTDIR)/start32.d
@@ -96,7 +97,7 @@ $(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d $(YASMDEP)
 $(OUTDIR)/start32.o: start32.asm $(YASMDEP)
 	@mkdir -p $(@D)
 	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.o=.d)
-	$(HUSH_ASM) $(YASM) -i . -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUTDIR)/start32.lst
+	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -i . -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUTDIR)/start32.lst
 	$(SIZE_ASM)
 
 all: $(OUTDIR)/start32.o
