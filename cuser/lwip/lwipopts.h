@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #define NO_SYS 1
 
 // options, options, options!
@@ -14,6 +16,9 @@
 #define LWIP_NETCONN 0
 #define LWIP_TCP 1
 #define TCP_LISTEN_BACKLOG 1
+
+uint32_t lwip_random(void);
+#define LWIP_RAND lwip_random
 
 #ifdef NDEBUG
 #define LWIP_DBG_NDEBUG 0

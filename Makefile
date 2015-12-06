@@ -290,9 +290,9 @@ LWIP_CORE = $(LWIP)/src/core
 LWIP4_CORE = $(LWIP_CORE)/ipv4
 LWIP_API = $(LWIP)/src/api
 
-LWIP_CORE_SRCS = def.c dhcp.c dns.c inet_chksum.c init.c mem.c memp.c netif.c \
+LWIP_CORE_SRCS = def.c dns.c inet_chksum.c init.c mem.c memp.c netif.c \
 	pbuf.c raw.c stats.c sys.c tcp.c tcp_in.c tcp_out.c timers.c udp.c
-LWIP4_CORE_SRCS = autoip.c icmp.c igmp.c ip4_addr.c ip4.c ip_frag.c
+LWIP4_CORE_SRCS = autoip.c dhcp.c icmp.c igmp.c ip4_addr.c ip4.c ip_frag.c
 
 LWIP_SRCS := \
 	$(LWIP)/src/netif/etharp.c \
@@ -313,8 +313,6 @@ LWIP_CFLAGS += -Wno-parentheses -Wstrict-aliasing -fno-strict-aliasing
 ifneq ($(LWIP_DEBUG),YES)
 LWIP_CFLAGS += -DNDEBUG
 endif
-# ip_addr_isany on constant-not-NULL gives a warning...
-LWIP_CFLAGS += -Wno-error=address
 
 $(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
 

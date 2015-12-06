@@ -60,6 +60,11 @@ u32 sys_now() {
 }
 #endif
 
+// TODO Actually implement a random number generator and an API
+u32 lwip_random() {
+	return (u32)timer_data.tick_counter;
+}
+
 void check_timers() {
 	u64 timeout_ms = sys_check_timeouts();
 	if (timeout_ms == (u32)-1) timeout_ms = 500;
