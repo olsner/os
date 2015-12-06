@@ -177,7 +177,7 @@ $(WANT_STRING:%=$(OUTDIR)/cuser/%.elf): \
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm $(YASMDEP)
 	@mkdir -p $(@D)
-	$(YASM) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
+	$(YASM) $(YASMFLAGS) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
 
 $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)

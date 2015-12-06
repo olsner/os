@@ -50,7 +50,6 @@ printf:
 	pop	r14
 	pop	r13
 	pop	r12
-	clear_clobbered
 	add	rsp,48
 	jmp	[rsp-48]
 
@@ -159,7 +158,6 @@ puts:
 	jmp	.loop
 
 .ret:
-	clear_clobbered
 	ret
 
 pushsection .rodata

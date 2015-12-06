@@ -11,22 +11,6 @@
 	zero	r9
 	zero	r10
 %endmacro
-%macro clear_clobbered 0
-	clear_clobbered_syscall
-	zero	ecx
-	zero	r11
-%endmacro
-; Most internal functions use a special convention where rdi points to the
-; cpu-specific data segment. (Maybe we should change this to use e.g. rbp.)
-%macro clear_clobbered_keeprdi 0
-	zero	ecx
-	zero	edx ; If we start returning more than one 64-bit value
-	zero	esi
-	zero	r8
-	zero	r9
-	zero	r10
-	zero	r11
-%endmacro
 
 %macro pushsection 1
 [section %1]

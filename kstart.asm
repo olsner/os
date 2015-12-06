@@ -2653,7 +2653,6 @@ lodstr	rsi, 27, '[0m'
 	mov	[rbp + gseg.vga_pos], rdi
 %endif
 .ret:
-	clear_clobbered
 	ret
 
 %if kernel_vga_console
