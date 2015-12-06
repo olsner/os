@@ -51,7 +51,7 @@ MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm user/shell.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
 ASMFILES     := kstart.asm $(MOD_ASMFILES)
-MOD_CFILES   := cuser/helloworld.c cuser/physmem.c cuser/zeropage.c
+MOD_CFILES   := cuser/helloworld.c cuser/zeropage.c
 MOD_CFILES   += cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
 MOD_CFILES   += cuser/bochsvga.c cuser/fbtest.c cuser/acpi_debugger.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
