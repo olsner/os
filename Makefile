@@ -122,6 +122,7 @@ GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 USER_CFLAGS := -ffreestanding -g -Os -W -Wall -Wextra -march=native -mno-avx -std=gnu99
 USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
 USER_CFLAGS += -ffunction-sections -fdata-sections
+USER_CFLAGS += -Werror
 
 LDFLAGS := --check-sections
 LDFLAGS += --gc-sections
@@ -177,7 +178,7 @@ $(WANT_STRING:%=$(OUTDIR)/cuser/%.elf): \
 # TODO This is here because printf.c still depends on AcpiUtStrtoul
 $(OUTDIR)/cuser/printf.o: cuser/printf.asm $(YASMDEP)
 	@mkdir -p $(@D)
-	$(YASM) $(YASMFLAGS) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
+	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
 
 $(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
@@ -274,6 +275,9 @@ ifeq ($(filter clang,$(CC)), clang)
 # Triggers a lot on the ACPI_MODULE_NAME construct, when the name is not used.
 ACPI_CFLAGS += -Wno-unused-const-variable
 endif
+# ACPICA doesn't claim to support strict aliasing at all. It has worked fine,
+# but it does produce some annoying -Wstrict-aliasing warnings.
+ACPI_CFLAGS += -fno-strict-aliasing
 
 $(ACPI_OBJS): USER_CFLAGS += $(ACPI_CFLAGS)
 
@@ -309,6 +313,8 @@ LWIP_CFLAGS += -Wno-parentheses -Wstrict-aliasing -fno-strict-aliasing
 ifneq ($(LWIP_DEBUG),YES)
 LWIP_CFLAGS += -DNDEBUG
 endif
+# ip_addr_isany on constant-not-NULL gives a warning...
+LWIP_CFLAGS += -Wno-error=address
 
 $(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
 
