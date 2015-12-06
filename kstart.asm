@@ -10,6 +10,7 @@
 %define log_runqueue_panic 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
 %define log_page_fault 0
+%define log_invalid_match 1
 %define log_find_mapping 0
 %define log_find_backing 0
 %define log_find_handle 0
@@ -2330,10 +2331,17 @@ lodstr	rdi,	'Page-fault: cr2=%x error=%x proc=%p rip=%x', 10
 	test	rax, rax
 	jnz	.found_mapcard
 
-lodstr	r12,	'No mapping found!', 10
+%macro invalid_match_str 1
+%if log_invalid_match
+lodstr	r12,	%1, 10
+%endif
+%endmacro
+
+	invalid_match_str 'No mapping found! cr2=%p'
 .invalid_match:
-%if log_page_fault
+%if log_invalid_match
 	mov	rdi, r12
+	mov	rsi, cr2
 	call	printf
 %endif
 	PANIC
@@ -2421,9 +2429,7 @@ lodstr	rdi,	'Backing found:', 10, 'cr2=%p map=%p vaddr=%p', 10
 .found_mapcard:
 	mov	rdi, rax
 	mov	eax, [rax + mapcard.flags]
-%if log_page_fault
-lodstr	r12,	'Mapcard has no access', 10
-%endif
+invalid_match_str 'Mapcard has no access'
 	test	eax, MAPFLAG_RWX
 	jz	.invalid_match
 
@@ -2441,9 +2447,7 @@ lodstr	r12,	'Mapcard has no access', 10
 	PANIC
 
 .no_handle:
-%if log_page_fault
-lodstr	r12,	'null handle.', 10
-%endif
+invalid_match_str 'null handle.'
 	test	eax, MAPFLAG_ANON | MAPFLAG_PHYS
 	jz	.invalid_match
 
