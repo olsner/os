@@ -1,11 +1,4 @@
-/cpuid
-/rflags
-/retbench
-
-*.lst
-*.map
-*.dep
-
 .*.swp
-.DS_Store
 /out/
+/utils/rflags
+/utils/cpuid

@@ -65,9 +65,11 @@ ASMOUTS      := \
 	$(ASMFILES:%.asm=$(OUTDIR)/%.b) \
 	$(ASMFILES:.asm=.map) $(ASMFILES:.asm=.lst) \
 	$(DEPFILES)
+UTIL_BINS    := utils/cpuid utils/rflags
 
-all: cpuid rflags $(OUTDIR)/grub.iso
+all: $(OUTDIR)/grub.iso
 all: $(MOD_ELFS)
+all: $(UTIL_BINS)
 
 .SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_OFILES)
 
