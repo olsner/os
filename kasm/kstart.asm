@@ -3950,7 +3950,7 @@ lodstr	rdi, 'Pulsing %x of %x', 10
 .ret	ret
 
 %if kernel_vga_console
-%include "printf.asm"
+%include "printf.inc"
 %else
 printf:	ret
 %endif

@@ -103,5 +103,5 @@ log_message:
 	pop	r8
 	ret
 
-%include "printf.asm"
+%include "printf.inc"
 %include "putchar.asm"

@@ -27,5 +27,5 @@ lodstr	esi,	'Hello World',0
 
 	jmp	.start
 
-%include "printf.asm"
+%include "printf.inc"
 %include "putchar.asm"

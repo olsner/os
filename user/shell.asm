@@ -56,4 +56,4 @@ getchar:
 	mov	eax, esi
 	ret
 
-%include "printf.asm"
+%include "printf.inc"

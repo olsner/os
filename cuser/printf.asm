@@ -2,12 +2,12 @@ bits 64
 section .text
 global printf
 
-%include "../macros.inc"
-%include "../syscalls.inc"
-%include "../messages.inc"
+%include "macros.inc"
+%include "syscalls.inc"
+%include "messages.inc"
 
 %include "../user/putchar.asm"
-%include "../printf.asm"
+%include "printf.inc"
 
 ; Inputs:
 ; rdi = format

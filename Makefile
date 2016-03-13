@@ -19,7 +19,7 @@ YASMDEP := $(shell which $(YASM))
 else
 YASMDEP := $(YASM)
 endif
-YASMFLAGS = -Werror
+YASMFLAGS = -Werror -i $(ASMDIR) -i include
 
 ifeq ($(VERBOSE),YES)
 CP=cp -v
@@ -47,10 +47,11 @@ ACPICA       := acpica
 LWIP_OUT     := $(OUTDIR)/cuser/lwip
 LWIP         := lwip
 GRUBDIR      := $(OUTDIR)/grub
+ASMDIR       := kasm
 MOD_ASMFILES := user/newproc.asm user/gettime.asm user/loop.asm user/shell.asm
 MOD_ASMFILES += user/test_puts.asm user/test_xmm.asm
 MOD_ASMFILES += kern/console.asm kern/pic.asm kern/irq.asm
-ASMFILES     := kstart.asm $(MOD_ASMFILES)
+ASMFILES     := $(ASMDIR)/kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c cuser/zeropage.c
 MOD_CFILES   += cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
 MOD_CFILES   += cuser/bochsvga.c cuser/fbtest.c cuser/acpi_debugger.c
@@ -87,19 +88,19 @@ clean:
 
 $(OUTDIR)/%.d: %.asm $(YASMDEP)
 	@mkdir -p $(@D)
-	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $(@:.d=.b) > $(@)
+	$(HUSH_ASM_DEP) $(YASM) $(YASMFLAGS) -e -M $< -o $(@:.d=.b) > $(@)
 
 $(OUTDIR)/%.b: %.asm $(OUTDIR)/%.d $(YASMDEP)
 	@mkdir -p $(@D)
-	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -i . -f bin $< -o $@ -L nasm -l $(OUTDIR)/$*.lst --mapfile=$(OUTDIR)/$*.map
+	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -f bin $< -o $@ -L nasm -l $(OUTDIR)/$*.lst --mapfile=$(OUTDIR)/$*.map
 	$(SIZE_ASM)
 
 -include $(OUTDIR)/start32.d
 
-$(OUTDIR)/start32.o: start32.asm $(YASMDEP)
+$(OUTDIR)/start32.o: kasm/start32.asm $(YASMDEP)
 	@mkdir -p $(@D)
-	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.o=.d)
-	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -i . -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUTDIR)/start32.lst
+	$(HUSH_ASM_DEP) $(YASM) $(YASMFLAGS) -e -M $< -o $@ > $(@:.o=.d)
+	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUTDIR)/start32.lst
 	$(SIZE_ASM)
 
 all: $(OUTDIR)/start32.o
@@ -109,7 +110,7 @@ $(OUTDIR)/kstart.b: $(INLINE_MODULES)
 %.asm.pp: %.asm $(YASMDEP)
 	$(YASM) -i . -f bin -o $@ -e -L nasm $<
 
-$(GRUBDIR)/%.b: $(OUTDIR)/%.b
+$(GRUBDIR)/%.b: $(OUTDIR)/kasm/%.b
 	@mkdir -p $(@D)
 	@$(CP) $< $@
 
