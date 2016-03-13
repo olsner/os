@@ -284,8 +284,8 @@ pic_mask:
 	mov	esi, eax
 	jmp	outb
 
-%include "portio.asm"
+%include "portio.inc"
 %if log
-%include "printf.asm"
-%include "putchar.asm"
+%include "printf.inc"
+%include "putchar.inc"
 %endif

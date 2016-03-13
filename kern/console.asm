@@ -309,9 +309,9 @@ map_key:
 	or	byte [rbp + 4], IS_SHIFTED
 	jmp	.ignore_this
 
-%include "portio.asm"
+%include "portio.inc"
 %if log
-%include "printf.asm"
-%include "putchar.asm"
+%include "printf.inc"
+%include "putchar.inc"
 %endif
-%include "keymap.asm"
+%include "keymap.inc"

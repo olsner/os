@@ -15,4 +15,4 @@
 
 	jmp	.loop
 
-%include "putchar.asm"
+%include "putchar.inc"

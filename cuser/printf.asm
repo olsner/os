@@ -6,7 +6,7 @@ global printf
 %include "syscalls.inc"
 %include "messages.inc"
 
-%include "../user/putchar.asm"
+%include "../user/putchar.inc"
 %include "printf.inc"
 
 ; Inputs:

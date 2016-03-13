@@ -130,6 +130,6 @@ lodstr	edi, 'rawIRQ: %x registered', 10
 	jmp	rcv_loop
 
 %if log
-%include "printf.asm"
-%include "putchar.asm"
+%include "printf.inc"
+%include "putchar.inc"
 %endif

@@ -104,4 +104,4 @@ log_message:
 	ret
 
 %include "printf.inc"
-%include "putchar.asm"
+%include "putchar.inc"
