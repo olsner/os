@@ -9,7 +9,7 @@ OUT ?= out
 GRUBDIR ?= $(OUT)/grub
 
 AS = $(CLANG) -c
-YASM ?= yasm
+YASM ?= ../yasm/yasm
 
 CXX = g++
 

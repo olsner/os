@@ -1,4 +1,5 @@
 .*.swp
 /out/
+/kcpp/out/
 /utils/rflags
 /utils/cpuid
