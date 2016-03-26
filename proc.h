@@ -136,6 +136,7 @@ struct Process {
     }
 
     void add_waiter(Process *other) {
+        assert(!other->is_queued());
         waiters.append(other);
     }
     void remove_waiter(Process *other) {
@@ -157,5 +158,9 @@ struct Process {
     u64 ipc_state() const {
         return flags & (mask(InSend) | mask(InRecv) | mask(PFault));
     }
+    bool is_runnable() const {
+        return ipc_state() == 0;
+    }
+    bool is_blocked() const { return !is_runnable(); }
 };
 }

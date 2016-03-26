@@ -144,8 +144,8 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
 
 void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
+    log(ipc, "%p ipc_send to %lx ==> %p (%p)\n", p, rcpt, handle, handle ? handle->process : NULL);
     assert(handle);
-    log(ipc, "%p ipc_send to %lx ==> %p\n", p, rcpt, handle->process);
     p->set(proc::InSend);
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
 }
@@ -161,16 +161,78 @@ void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 a
     log(ipc, "ipc_call: blocked\n");
 }
 
+void recv(Process *p, Handle *handle) {
+    auto other_id = handle->other->key();
+    auto rcpt = handle->process;
+    if (rcpt->is(proc::InSend) && other_id == rcpt->regs.rdi) {
+        transfer_message(p, rcpt);
+    } else {
+        rcpt->add_waiter(p);
+    }
+}
+
+template <typename T>
+T latch(T& var, T value = T()) {
+    T res = var;
+    var = value;
+    return res;
+}
+
+void recv_from_any(Process *p, u64 id) {
+    for (auto waiter: p->waiters) {
+        log(recv, "%p recv: found waiter %p flags %lx\n", p, waiter, waiter->flags);
+        if (waiter->is(proc::InSend)) {
+            log(recv, "%p recv: found sender %p\n", p, waiter);
+            p->remove_waiter(waiter);
+            transfer_message(p, waiter);
+        }
+    }
+
+#if 0
+    if (auto h = p->pop_pending_handle()) {
+    }
+#endif
+
+    auto c = getcpu();
+#if 0
+    if (c->irq_process == p && c->irq_delayed) {
+        auto irqs = latch(c->irq_delayed);
+        deliver_pulse(p, 0, irqs);
+    }
+#endif
+
+    log(recv, "%p recv: nothing to receive\n", p);
+    c.run();
+}
+
+void ipc_recv(Process *p, u64 from) {
+    auto handle = from ? p->find_handle(from) : nullptr;
+    log(recv, "%p recv from %lx\n", p, from);
+    p->set(proc::InRecv);
+    p->regs.rdi = from;
+    if (handle) {
+        log(recv, "==> process %p\n", handle->process);
+        recv(p, handle);
+    } else {
+        log(recv, "==> fresh\n");
+        recv_from_any(p, from);
+    }
+}
+
+NORETURN void syscall_return(Process *p, u64 res) {
+    getcpu().syscall_return(p, res);
+}
+
 void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr) {
     printf("syscall %#x: %lx %lx %lx %lx %lx %lx\n", (unsigned)nr, arg0, arg1, arg2, arg3, arg4, arg5);
     auto p = getcpu().process;
-    p->unset(proc::Running);
+    getcpu().leave(p);
     p->set(proc::FastRet);
 
     p->regs.rax = 0;
     switch (nr) {
     case SYS_RECV:
-        //unimpl("recv");
+        ipc_recv(p, arg0);
         break;
     case SYS_MAP:
         unimpl("map");
@@ -179,7 +241,7 @@ void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr)
         hmod(p, arg0, arg1, arg2);
         break;
     case SYS_IO:
-        p->regs.rax = portio(arg0, arg1, arg2);
+        syscall_return(p, portio(arg0, arg1, arg2));
         break;
     default:
         if (nr >= MSG_USER) {
@@ -195,8 +257,8 @@ void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr)
         }
     }
 
-    // Should the return path go back to p or to the next process by default?
-    getcpu().queue(p);
+    // Should have been returned directly above.
+    assert(!p->is_runnable());
     getcpu().run();
 }
 

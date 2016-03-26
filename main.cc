@@ -54,6 +54,8 @@ void unimpl(const char* what) NORETURN;
 #define log_dict_insert 0
 #define log_ipc 1
 #define log_transfer_message 1
+#define log_assoc_procs 0
+#define log_recv 1
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
@@ -389,7 +391,7 @@ Process *new_proc_simple(u32 start, u32 end_unaligned) {
 }
 
 void assoc_procs(Process *p, uintptr_t i, Process *q, uintptr_t j) {
-    /*if (log_assoc_procs)*/ printf("%p:%lu <-> %lu:%p\n", p, i, j, q);
+    log(assoc_procs, "%p:%lu <-> %lu:%p\n", p, i, j, q);
     p->assoc_handles(j, q, i);
 }
 
@@ -397,7 +399,7 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
     assert(info.has(mboot::Modules));
     auto mod = PhysAddr<mboot::Module>(info.mods_addr);
     const size_t count = info.mods_count;
-    printf("%zu modules\n", count);
+    printf("%zu module(s)\n", count);
     Process **procs = new Process *[count];
     for (size_t n = 0; n < count; n++) {
         printf("Module %#x..%#x: %s\n",
@@ -451,12 +453,12 @@ NORETURN void page_fault(Process *p, u64 error) {
 extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
 
 void irq_entry(u8 vec, u64 err, Cpu *cpu) {
-    log(irq_entry, "irq_entry(%u, %#lx, cpu=%p)\n", vec, err, cpu);
+    log(irq_entry, "irq_entry(%u, %#lx, cpu=%p, cr2=%#lx)\n", vec, err, cpu, x86::cr2());
     if (vec == 14) {
         assert(err & pf::User);
     }
     auto p = cpu->process;
-    p->unset(proc::Running);
+    cpu->leave(p);
     switch (vec) {
     case 7:
         unimpl("handler_NM");
