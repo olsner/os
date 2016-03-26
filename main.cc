@@ -45,8 +45,8 @@ void unimpl(const char* what) NORETURN;
 #define log_idle 1
 #define log_switch 1
 #define log_runqueue 1
-#define log_page_fault 1
-#define log_add_pte 1
+#define log_page_fault 0
+#define log_add_pte 0
 #define log_irq_entry 1
 #define log_portio 1
 #define log_hmod 1
