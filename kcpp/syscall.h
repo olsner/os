@@ -80,7 +80,7 @@ void transfer_set_handle(Process *target, Process *source) {
         } else {
             // Associate new handle
             g = target->new_handle(rcpt, source);
-            g->associate(h);
+            g->associate(target, h);
             assert(g->key() == rcpt);
         }
     } else {
@@ -180,7 +180,7 @@ T latch(T& var, T value = T()) {
     return res;
 }
 
-void recv_from_any(Process *p, u64 id) {
+void recv_from_any(Process *p) {
     for (auto waiter: p->waiters) {
         log(recv, "%p recv: found waiter %p flags %lx\n", p, waiter, waiter->flags);
         if (waiter->is(proc::InSend)) {
@@ -214,7 +214,7 @@ NORETURN void ipc_recv(Process *p, u64 from) {
         recv(p, handle);
     } else {
         log(recv, "==> fresh\n");
-        recv_from_any(p, from);
+        recv_from_any(p);
     }
     log(recv, "%p recv: nothing to receive\n", p);
     getcpu().run();

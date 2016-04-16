@@ -64,8 +64,18 @@ struct Handle
         }
     }
 
-    void associate(Handle *g) {
-        unimpl("associate");
+    void associate(Process *p, Handle *g) {
+        g->process = p;
+        g->other = this;
+        other = g;
+    }
+
+    static void associate(Process *p, Process *q, Handle *h, Handle *g) {
+        h->process = q;
+        h->other = g;
+
+        g->process = p;
+        g->other = h;
     }
 };
 
