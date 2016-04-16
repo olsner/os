@@ -40,8 +40,9 @@ void unimpl(const char* what) NORETURN;
 #define S_(X) #X
 #define S(X) S_(X)
 #define assert(X) \
-    do { if (!(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X "\n"); } } while (0)
+    do { if (enable_assert && !(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X "\n"); } } while (0)
 
+#define enable_assert 1
 #define log_idle 1
 #define log_switch 1
 #define log_runqueue 1
