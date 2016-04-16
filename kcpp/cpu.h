@@ -56,15 +56,25 @@ struct Cpu {
 
     void queue(Process *p) {
         log(runqueue, "queue %p. queued=%d flags=%lu\n", p, p->is_queued(), p->flags);
+        assert(p->is_runnable());
         if (!p->is_queued()) {
             p->set(proc::Queued);
             runqueue.append(p);
         }
     }
 
+    void leave(Process *p) {
+        assert(p == process);
+        p->unset(proc::Running);
+        process = NULL;
+    }
+
     NORETURN void switch_to(Process *p) {
         log(switch, "switch_to %p rip=%#lx fastret=%d queued=%d\n",
                 p, p->rip, p->is(proc::FastRet), p->is(proc::Queued));
+        assert(!process);
+        assert(!p->is(proc::Running));
+        assert(p->is_runnable());
         p->set(proc::Running);
         process = p;
         // TODO Check fpu_process, etc.
@@ -75,6 +85,11 @@ struct Cpu {
         } else {
             slowret(p);
         }
+    }
+
+    NORETURN void syscall_return(Process *p, u64 rax) {
+        p->regs.rax = rax;
+        switch_to(p);
     }
 };
 

@@ -34,6 +34,9 @@ enum ProcFlags {
     PFault = 5
 
 };
+u64 mask(ProcFlags flag) {
+    return 1 << flag;
+}
 struct Regs {
     u64 rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi;
     u64 r8, r9, r10, r11, r12, r13, r14, r15;
@@ -59,6 +62,10 @@ struct Handle
             other->other = NULL;
             other = NULL;
         }
+    }
+
+    void associate(Handle *g) {
+        unimpl("associate");
     }
 };
 
@@ -128,6 +135,14 @@ struct Process {
         delete handle;
     }
 
+    void add_waiter(Process *other) {
+        assert(!other->is_queued());
+        waiters.append(other);
+    }
+    void remove_waiter(Process *other) {
+        waiters.remove(other);
+    }
+
     bool is(ProcFlags flag) const {
         return flags & (1 << flag);
     }
@@ -139,5 +154,13 @@ struct Process {
     void unset(ProcFlags flag) {
         flags &= ~(1 << flag);
     }
+
+    u64 ipc_state() const {
+        return flags & (mask(InSend) | mask(InRecv) | mask(PFault));
+    }
+    bool is_runnable() const {
+        return ipc_state() == 0;
+    }
+    bool is_blocked() const { return !is_runnable(); }
 };
 }

@@ -1,0 +1,2 @@
+# For this to work, git config diff.readelf.textconv "readelf -a"
+*.o diff=readelf

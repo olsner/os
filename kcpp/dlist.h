@@ -4,6 +4,7 @@ DListNode<T> *dlistnode_from_item(T *c) { return &c->node; }
 
 template <class T> struct DListNode
 {
+    // TODO Use node so that all lists can share iterator code. (maybe)
     T* prev;
     T* next;
 
@@ -19,6 +20,41 @@ template <class T> struct DListNode
         return (T*)((u8*)this - node_offset());
     }
 };
+template <class T> class DListIterator
+{
+    typedef DListNode<T> Node;
+    Node *node;
+
+public:
+    DListIterator(Node *node): node(node) {
+    }
+    DListIterator(T *item): node(Node::node(item)) {
+    }
+
+    static DListIterator end() {
+        return DListIterator((Node*)nullptr);
+    }
+
+    DListIterator operator ++(int) {
+        DListIterator res = *this;
+        ++*this;
+        return res;
+    }
+    DListIterator& operator ++() {
+        assert(node);
+        node = Node::node(node->next);
+        return *this;
+    }
+    bool operator==(const DListIterator &other) const {
+        return node == other.node;
+    }
+    bool operator!=(const DListIterator &other) const {
+        return node != other.node;
+    }
+    T *operator *() const {
+        return node->item();
+    }
+};
 template <class T> struct DList
 {
     typedef DListNode<T> Node;
@@ -30,6 +66,16 @@ template <class T> struct DList
     // using Node::node?
     static Node *node(T *item) {
         return Node::node(item);
+    }
+    static Node *node(Node *n) {
+        return n;
+    }
+
+    DListIterator<T> begin() {
+        return head ? DListIterator<T>(head) : end();
+    }
+    DListIterator<T> end() {
+        return DListIterator<T>::end();
     }
 
     T *pop() {
