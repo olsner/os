@@ -1,6 +1,6 @@
 namespace syscall {
 
-extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
+namespace {
 
 enum syscalls_builtins {
     MSG_NONE = 0,
@@ -31,38 +31,36 @@ enum msg_kind {
     MSG_KIND_CALL = 0x100,
 };
 
-namespace {
-    u64 portio(u16 port, u8 op, u32 data) {
-        log(portio, "portio: port=%x op=%x data=%x\n", port, op, data);
-        u32 res = 0;
-        switch (op) {
-        case 0x01: asm("inb %%dx, %%al" : "=a"(res) : "d"(port)); break;
-        case 0x02: asm("inw %%dx, %%ax" : "=a"(res) : "d"(port)); break;
-        case 0x04: asm("inl %%dx, %%eax" : "=a"(res) : "d"(port)); break;
-        case 0x11: asm("outb %%al, %%dx" :: "a"(data), "d"(port)); break;
-        case 0x12: asm("outw %%ax, %%dx" :: "a"(data), "d"(port)); break;
-        case 0x14: asm("outl %%eax, %%dx" :: "a"(data), "d"(port)); break;
-        }
-        if ((op & 0x10) == 0) {
-            log(portio, "portio: res=%x\n", res);
-        }
-        return res;
+u64 portio(u16 port, u8 op, u32 data) {
+    log(portio, "portio: port=%x op=%x data=%x\n", port, op, data);
+    u32 res = 0;
+    switch (op) {
+    case 0x01: asm("inb %%dx, %%al" : "=a"(res) : "d"(port)); break;
+    case 0x02: asm("inw %%dx, %%ax" : "=a"(res) : "d"(port)); break;
+    case 0x04: asm("inl %%dx, %%eax" : "=a"(res) : "d"(port)); break;
+    case 0x11: asm("outb %%al, %%dx" :: "a"(data), "d"(port)); break;
+    case 0x12: asm("outw %%ax, %%dx" :: "a"(data), "d"(port)); break;
+    case 0x14: asm("outl %%eax, %%dx" :: "a"(data), "d"(port)); break;
     }
+    if ((op & 0x10) == 0) {
+        log(portio, "portio: res=%x\n", res);
+    }
+    return res;
+}
 
-    void hmod(Process *p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
-        log(hmod, "%p hmod: id=%lx rename=%lx copy=%lx\n", p, id, rename, copy);
-        if (auto handle = p->find_handle(id)) {
-            if (copy) {
-                p->new_handle(copy, handle->process);
-            }
-            if (rename) {
-                p->rename_handle(handle, rename);
-            } else {
-                p->delete_handle(handle);
-            }
+void hmod(Process *p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
+    log(hmod, "%p hmod: id=%lx rename=%lx copy=%lx\n", p, id, rename, copy);
+    if (auto handle = p->find_handle(id)) {
+        if (copy) {
+            p->new_handle(copy, handle->process);
+        }
+        if (rename) {
+            p->rename_handle(handle, rename);
+        } else {
+            p->delete_handle(handle);
         }
     }
-};
+}
 
 using proc::Handle;
 
@@ -142,15 +140,17 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     p->add_waiter(sender);
 }
 
-void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
     log(ipc, "%p ipc_send to %lx ==> %p (%p)\n", p, rcpt, handle, handle ? handle->process : NULL);
     assert(handle);
     p->set(proc::InSend);
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
+    log(ipc, "ipc_send: blocked\n");
+    getcpu().run();
 }
 
-void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
     assert(handle);
     log(ipc, "%p ipc_call to %lx ==> process %p\n", p, rcpt, handle->process);
@@ -159,6 +159,7 @@ void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 a
     p->regs.rdi = rcpt;
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
     log(ipc, "ipc_call: blocked\n");
+    getcpu().run();
 }
 
 void recv(Process *p, Handle *handle) {
@@ -166,6 +167,7 @@ void recv(Process *p, Handle *handle) {
     auto rcpt = handle->process;
     if (rcpt->is(proc::InSend) && other_id == rcpt->regs.rdi) {
         transfer_message(p, rcpt);
+        // doesn't return
     } else {
         rcpt->add_waiter(p);
     }
@@ -193,19 +195,16 @@ void recv_from_any(Process *p, u64 id) {
     }
 #endif
 
-    auto c = getcpu();
 #if 0
+    auto c = getcpu();
     if (c->irq_process == p && c->irq_delayed) {
         auto irqs = latch(c->irq_delayed);
         deliver_pulse(p, 0, irqs);
     }
 #endif
-
-    log(recv, "%p recv: nothing to receive\n", p);
-    c.run();
 }
 
-void ipc_recv(Process *p, u64 from) {
+NORETURN void ipc_recv(Process *p, u64 from) {
     auto handle = from ? p->find_handle(from) : nullptr;
     log(recv, "%p recv from %lx\n", p, from);
     p->set(proc::InRecv);
@@ -217,19 +216,24 @@ void ipc_recv(Process *p, u64 from) {
         log(recv, "==> fresh\n");
         recv_from_any(p, from);
     }
+    log(recv, "%p recv: nothing to receive\n", p);
+    getcpu().run();
 }
 
 NORETURN void syscall_return(Process *p, u64 res) {
     getcpu().syscall_return(p, res);
 }
 
-void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr) {
+} // namespace
+
+extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
+
+NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr) {
     printf("syscall %#x: %lx %lx %lx %lx %lx %lx\n", (unsigned)nr, arg0, arg1, arg2, arg3, arg4, arg5);
     auto p = getcpu().process;
     getcpu().leave(p);
     p->set(proc::FastRet);
 
-    p->regs.rax = 0;
     switch (nr) {
     case SYS_RECV:
         ipc_recv(p, arg0);
@@ -239,6 +243,7 @@ void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr)
         break;
     case SYS_HMOD:
         hmod(p, arg0, arg1, arg2);
+        syscall_return(p, 0);
         break;
     case SYS_IO:
         syscall_return(p, portio(arg0, arg1, arg2));
@@ -256,10 +261,6 @@ void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr)
             abort("unhandled syscall");
         }
     }
-
-    // Should have been returned directly above.
-    assert(!p->is_runnable());
-    getcpu().run();
 }
 
-}
+} // system

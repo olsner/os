@@ -1,9 +1,11 @@
 namespace cpu {
 
+namespace {
 extern "C" void fastret(Process *p, u64 rax) NORETURN;
 extern "C" void slowret(Process *p) NORETURN;
 extern "C" void syscall_entry_stub();
 extern "C" void syscall_entry_compat();
+}
 
 struct Cpu;
 void idle(Cpu *) NORETURN;
@@ -76,9 +78,12 @@ struct Cpu {
         assert(!p->is(proc::Running));
         assert(p->is_runnable());
         p->set(proc::Running);
-        process = p;
-        // TODO Check fpu_process, etc.
-        x86::set_cr3(p->cr3);
+        if (process != p) {
+            process = p;
+            // TODO check fpu_process too (clear the task switch flag so it
+            // won't fault again)
+            x86::set_cr3(p->cr3);
+        }
         if (p->is(proc::FastRet)) {
             p->unset(proc::FastRet);
             fastret(p, p->regs.rax);
