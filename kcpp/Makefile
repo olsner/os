@@ -6,7 +6,7 @@ SHELL = /bin/bash
 .PHONY: all clean
 
 OUT ?= out
-GRUBDIR ?= $(OUT)/grub
+GRUBDIR ?= ../out/grub
 
 AS = $(CLANG) -c
 YASM ?= ../yasm/yasm
@@ -27,8 +27,6 @@ OPTFLAGS = -Oz -function-sections -data-sections
 OPTFLAGS += -std-link-opts
 OPTFLAGS += -internalize-public-api-list=$(PUBLIC_SYMBOLS) -internalize
 OPTFLAGS += -argpromotion -mergefunc -deadargelim
-RUSTCFLAGS = -g -O --target $(TARGET) --out-dir $(OUT)
-RUSTLIBS = -L.
 
 CP = @cp
 ifeq ($(VERBOSE),YES)
@@ -49,7 +47,7 @@ hush = @echo -e       ' [$1]\t'$@;
 HUSH_DIS=@echo -e     ' [DIS]\t'$@;
 endif
 
-all: $(OUT)/kernel $(OUT)/kernel.elf $(OUT)/grub.iso
+all: $(GRUBDIR)/kcpp
 
 clean:
 	rm -fr out
@@ -83,21 +81,6 @@ $(OUT)/%.o: %.asm
 	$(HUSH_ASM_DEP) $(YASM) -i . -e -M $< -o $@ > $(@:.o=.d)
 	$(HUSH_ASM) $(YASM) -i . -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUT)/$*.lst
 
-GRUB_MODULES = --modules="boot multiboot"
-
-GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
-
-$(GRUB_CFG): mkgrubcfg.sh
-	@mkdir -p $(@D)
-	bash $< > $@
-
-$(GRUBDIR)/test.mod: test.asm
-	$(HUSH_ASM) $(YASM) -f bin -L nasm -o $@ $<
-
-$(GRUBDIR)/kernel: $(OUT)/kernel
+$(GRUBDIR)/kcpp: $(OUT)/kernel
 	@$(CP) $< $@
-
-$(OUT)/grub.iso: $(GRUB_CFG) $(GRUBDIR)/kernel $(GRUBDIR)/test.mod
-	@echo Creating grub boot image $@ from $^
-	grub-mkrescue $(GRUB_MODULES) -o $@ $(GRUBDIR) >/dev/null
 

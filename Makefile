@@ -74,7 +74,7 @@ all: $(UTIL_BINS)
 
 .SECONDARY: $(ASMFILES:%.asm=$(OUTDIR)/%.b) $(MOD_OFILES)
 
-clean:
+clean::
 	rm -fr $(OUTDIR)
 	rm -f cpuid rflags
 
@@ -335,3 +335,11 @@ yasm/Makefile: yasm/configure
 
 yasm/configure:
 	cd yasm && ./autogen.sh
+
+all: $(GRUBDIR)/kcpp
+
+$(GRUBDIR)/kcpp: out/start32.o
+	$(MAKE) -C kcpp
+
+clean::
+	$(MAKE) -C kcpp clean

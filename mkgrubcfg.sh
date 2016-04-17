@@ -2,11 +2,12 @@
 
 mkgrubcfg() {
     local kernel="$1"
-    local namesuffix="$2"
+    local menuname="$2"
     shift
     shift
-    mkgrubcfg1 "$kernel" "$@" |
-    sed 's/^\(menuentry.*\)\(" {\)/\1'"$namesuffix"'\2/'
+    echo "submenu \"$menuname\" {"
+        mkgrubcfg1 "$kernel" "$@"
+    echo "}"
 }
 
 mkgrubcfg1() {
@@ -94,6 +95,7 @@ EOF
 }
 
 if [ -f out/grub/kernel ]; then
-    mkgrubcfg kernel " (rust)" "$@"
+    mkgrubcfg kernel "Rust kernel" "$@"
 fi
-mkgrubcfg kstart.b "" "$@"
+mkgrubcfg kcpp "C++ kernel" "$@"
+mkgrubcfg kstart.b "Assembly kernel" "$@"
