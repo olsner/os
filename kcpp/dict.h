@@ -66,6 +66,12 @@ template <class V, class K = typename V::Key> struct Dict
         return item;
     }
 
+    void rekey(V* item, K key) {
+        // This dictionary is still very stupid, so no need to update a sort
+        // tree or anything.
+        node_from_item(item)->key = key;
+    }
+
     WARN_UNUSED_RESULT V* remove(V* item) {
         if (Node *n = remove(node_from_item(item)->key)) {
             return n->item();

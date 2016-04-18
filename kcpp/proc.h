@@ -135,8 +135,7 @@ struct Process {
         return handles.find_exact(key);
     }
     void rename_handle(Handle *handle, uintptr_t new_key) {
-        handle->node.key = new_key;
-        // Update collections with new key.
+        handles.rekey(handle, new_key);
     }
     void delete_handle(Handle *handle) {
         handle->dissociate();
