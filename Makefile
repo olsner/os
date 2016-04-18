@@ -341,7 +341,8 @@ yasm/configure:
 
 all: $(GRUBDIR)/kcpp
 
-$(GRUBDIR)/kcpp: out/start32.o
+.PHONY: force_kcpp
+$(GRUBDIR)/kcpp: out/start32.o force_kcpp
 	$(MAKE) -C kcpp
 
 clean::
