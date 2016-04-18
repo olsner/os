@@ -183,7 +183,7 @@ $(OUTDIR)/cuser/printf.o: cuser/printf.asm $(YASMDEP)
 	@mkdir -p $(@D)
 	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
 
-$(GRUB_CFG): mkgrubcfg.sh Makefile $(MODFILES)
+$(GRUB_CFG): build/mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
 	bash $< $(MOD_ASMFILES:%.asm=%) $(MOD_CFILES:%.c=%) > $@
 
@@ -319,7 +319,10 @@ endif
 
 $(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
 
-LWIP_DEP_OBJS := $(LWIP_OBJS) $(OUTDIR)/cuser/acpica/printf.o $(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+LWIP_DEP_OBJS := \
+	$(LWIP_OBJS) \
+	$(OUTDIR)/cuser/acpica/printf.o \
+	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
 $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
