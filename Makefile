@@ -103,8 +103,6 @@ $(OUTDIR)/start32.o: kasm/start32.asm $(YASMDEP)
 	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUTDIR)/start32.lst
 	$(SIZE_ASM)
 
-all: $(OUTDIR)/start32.o
-
 $(OUTDIR)/kstart.b: $(INLINE_MODULES)
 
 %.asm.pp: %.asm $(YASMDEP)
@@ -188,10 +186,11 @@ $(GRUB_CFG): build/mkgrubcfg.sh Makefile $(MODFILES)
 	bash $< $(MOD_ASMFILES:%.asm=%) $(MOD_CFILES:%.c=%) > $@
 
 GRUBLIBDIR := /usr/lib/grub/i386-pc/
+KERNELS = $(GRUBDIR)/kstart.b $(GRUBDIR)/kcpp
 
 # TODO We should change this so that out/grub/ is removed and regenerated each
 # build, and put all other output products outside out/grub/
-$(OUTDIR)/grub.iso: $(GRUB_CFG) $(GRUBDIR)/kstart.b $(MODFILES)
+$(OUTDIR)/grub.iso: $(GRUB_CFG) $(KERNELS) $(MODFILES)
 	@echo Creating grub boot image $@ from $^
 	grub-mkrescue $(GRUB_MODULES) -d $(GRUBLIBDIR) -o $@ $(GRUBDIR) >/dev/null
 	@echo '$@: \\' > $@.d
@@ -327,8 +326,6 @@ LWIP_DEP_OBJS := \
 $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
-
-all: $(GRUBDIR)/cuser/lwip.mod
 
 yasm/yasm: yasm/Makefile
 	$(MAKE) -C yasm
