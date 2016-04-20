@@ -3,3 +3,4 @@
 /kcpp/out/
 /utils/rflags
 /utils/cpuid
+build.ninja
