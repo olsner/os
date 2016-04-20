@@ -336,8 +336,6 @@ yasm/Makefile: yasm/configure
 yasm/configure:
 	cd yasm && ./autogen.sh
 
-all: $(GRUBDIR)/kcpp
-
 .PHONY: force_kcpp
 $(GRUBDIR)/kcpp: out/start32.o force_kcpp
 	$(MAKE) -C kcpp
