@@ -58,7 +58,7 @@ static ACPI_STATUS InitializeFullAcpi (void)
 
     /* Initialize the ACPICA Table Manager and get all ACPI tables */
 
-    Status = AcpiInitializeTables (NULL, 16, FALSE);
+    Status = AcpiInitializeTables (NULL, 0, FALSE);
     if (ACPI_FAILURE (Status))
     {
         ACPI_EXCEPTION ((AE_INFO, Status, "While initializing Table Manager"));
@@ -105,8 +105,7 @@ static ACPI_STATUS InitializeFullAcpi (void)
 }
 
 
-static ACPI_STATUS
-ExecuteOSI (void)
+static ACPI_STATUS ExecuteOSI(int pic_mode)
 {
     ACPI_STATUS             Status;
     ACPI_OBJECT_LIST        ArgList;
@@ -120,7 +119,7 @@ ExecuteOSI (void)
     ArgList.Pointer = Arg;
 
     Arg[0].Type = ACPI_TYPE_INTEGER;
-    Arg[0].Integer.Value = 0; // 1 = APIC mode. We're still in PIC dark ages :)
+    Arg[0].Integer.Value = pic_mode;
 
     ACPI_INFO ((AE_INFO, "Executing _PIC(%d)", Arg[0].Integer.Value));
 
@@ -164,8 +163,57 @@ typedef union acpi_apic_struct
 } ACPI_APIC_STRUCT;
 #pragma pack()
 
+static ACPI_STATUS FindIOAPICs(int *pic_mode) {
+	ACPI_TABLE_MADT* table = NULL;
+	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
+	CHECK_STATUS("AcpiGetTable");
+
+	char* endOfTable = (char*)table + table->Header.Length;
+	char* p = (char*)(table + 1);
+	int n = 0;
+	while (p < endOfTable) {
+		ACPI_APIC_STRUCT* apic = (ACPI_APIC_STRUCT*)p;
+		p += apic->Length;
+		n++;
+		switch (apic->Type)
+		{
+		case ACPI_MADT_TYPE_IO_APIC:
+			printf("Found I/O APIC. ID %#x Addr %#x GSI base %#x.\n",
+				(int)apic->IOApic.Id,
+				apic->IOApic.Address,
+				apic->IOApic.GlobalIrqBase);
+			AddIOAPIC(&apic->IOApic);
+			*pic_mode = 1;
+			break;
+		}
+	}
+	if (*pic_mode)
+	{
+		printf("I/O APICs found, setting APIC mode\n");
+	}
+	else
+	{
+		printf("I/O APICs NOT found, setting PIC mode\n");
+		AddPIC();
+	}
+failed:
+	return AE_OK;
+}
 
 static ACPI_STATUS PrintAPICTable(void) {
+	static const char *polarities[] = {
+		"Bus-Conformant",
+		"Active-High",
+		"Reserved",
+		"Active-Low"
+	};
+	static const char *triggerings[] = {
+		"Bus-Conformant",
+		"Edge-Triggered",
+		"Reserved",
+		"Level-Triggered"
+	};
+
 	ACPI_TABLE_MADT* table = NULL;
 	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
 	CHECK_STATUS("AcpiGetTable");
@@ -198,18 +246,18 @@ static ACPI_STATUS PrintAPICTable(void) {
 		case ACPI_MADT_TYPE_INTERRUPT_OVERRIDE:
 		{
 			UINT32 flags = apic->InterruptOverride.IntiFlags;
-			printf("%d: Interrupt Override. Source %#x GSI %#x Pol=%d Trigger=%d\n", n,
+			printf("%d: Interrupt Override. Source %#x GSI %#x Pol=%s Trigger=%s\n", n,
 				apic->InterruptOverride.SourceIrq,
 				apic->InterruptOverride.GlobalIrq,
-				flags & 3, (flags >> 2) & 3);
+				polarities[flags & 3], triggerings[(flags >> 2) & 3]);
 			break;
 		}
 		case ACPI_MADT_TYPE_LOCAL_APIC_NMI:
 		{
 			UINT32 flags = apic->InterruptOverride.IntiFlags;
-			printf("%d: Local APIC NMI. Processor ID %#x Pol=%d Trigger=%d LINT# %#x\n", n,
+			printf("%d: Local APIC NMI. Processor ID %#x Pol=%s Trigger=%s LINT# %#x\n", n,
 				apic->LocalApicNMI.ProcessorId,
-				flags & 3, (flags >> 2) & 3,
+				polarities[flags & 3], triggerings[(flags >> 2) & 3],
 				apic->LocalApicNMI.Lint);
 			break;
 		}
@@ -219,21 +267,16 @@ static ACPI_STATUS PrintAPICTable(void) {
 		}
 	}
 
-	return status;
 failed:
-	printf("APIC table error %x\n", status);
 	return status;
 }
 
 ACPI_STATUS PrintAcpiDevice(ACPI_HANDLE Device)
 {
-	printf("Found device %p\n", Device);
-	ACPI_STATUS status = AE_OK;
-
 	ACPI_DEVICE_INFO* info = NULL;
-	status = AcpiGetObjectInfo(Device, &info);
+	ACPI_STATUS status = AcpiGetObjectInfo(Device, &info);
 	if (ACPI_SUCCESS(status)) {
-		printf("Device flags %#x address %#x\n", info->Type, info->Flags, info->Address);
+		printf("Device %p type %#x\n", Device, info->Type);
 	}
 
 	ACPI_FREE(info);
@@ -266,10 +309,11 @@ typedef struct IRQRouteData
 {
 	ACPI_PCI_ID pci;
 	unsigned pin;
-	// Need more data than this: is this on the PIC or an I/O APIC, link to the
-	// relevant APIC information from the other table, etc.
-	// For now: gsi is an IRQ number on the PIC
-	int gsi;
+	int8_t gsi;
+	// triggering: 1 = edge triggered, 0 = level
+	int8_t triggering;
+	// polarity: 1 = active-low, 0 = active-high
+	int8_t polarity;
 	BOOLEAN found;
 } IRQRouteData;
 
@@ -295,19 +339,24 @@ static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE
 	ACPI_RESOURCE* resource = (ACPI_RESOURCE*)buffer.Pointer;
 	switch (resource->Type) {
 	case ACPI_RESOURCE_TYPE_EXTENDED_IRQ:
-		// There are more attributes here, e.g. triggering, polarity and
-		// shareability. Since we're still in PIC mode, we already require
-		// that all this is defaulty.
-		printf("Extended IRQ: %d interrupts, first one %#x.\n",
+		// The interrupt count must be 1 when returned from _CRS, supposedly.
+		// I think the "possible resource setting" may list several.
+		printf("Extended IRQ: %d interrupts, first one %#x. %s triggered, Active-%s.\n",
 			resource->Data.ExtendedIrq.InterruptCount,
-			resource->Data.ExtendedIrq.Interrupts[0]);
+			resource->Data.ExtendedIrq.Interrupts[0],
+			resource->Data.ExtendedIrq.Triggering ? "Edge" : "Level",
+			resource->Data.ExtendedIrq.Polarity ? "Low" : "High");
 		data->gsi = resource->Data.ExtendedIrq.Interrupts[0];
+		data->triggering = resource->Data.ExtendedIrq.Triggering;
+		data->polarity = resource->Data.ExtendedIrq.Polarity;
 		break;
 	case ACPI_RESOURCE_TYPE_IRQ:
 		printf("IRQ: %d interrupts, first one %#x.\n",
 			resource->Data.Irq.InterruptCount,
 			resource->Data.Irq.Interrupts[0]);
 		data->gsi = resource->Data.Irq.Interrupts[0];
+		// PIC interrupts can't be set up for specific polarity and triggering,
+		// I think.
 		break;
 	default:
 		printf("RouteIRQLinkDevice: unknown resource type %d\n", resource->Type);
@@ -432,7 +481,7 @@ failed:
 }
 
 static ACPI_STATUS RouteIRQ(ACPI_PCI_ID* device, int pin, int* irq) {
-	IRQRouteData data = { *device, pin, 0, FALSE };
+	IRQRouteData data = { *device, pin, 0, 0, 0, FALSE };
 	ACPI_STATUS status = AE_OK;
 
 	status = AcpiGetDevices("PNP0A03", RouteIRQCallback, &data, NULL);
@@ -440,7 +489,9 @@ static ACPI_STATUS RouteIRQ(ACPI_PCI_ID* device, int pin, int* irq) {
 	{
 		if (data.found)
 		{
-			*irq = data.gsi;
+			*irq = data.gsi
+				| (data.triggering ? 0x100 : 0)
+				| (data.polarity ? 0x200 : 0);
 		}
 		else
 		{
@@ -496,7 +547,7 @@ static void MsgClaimPci(uintptr_t rcpt, uintptr_t addr, uintptr_t pins)
 		}
 	}
 
-	pins = irqs[3] << 24 | irqs[2] << 16 | irqs[1] << 8 | irqs[0];
+	pins = (u64)irqs[3] << 48 | (u64)irqs[2] << 32 | irqs[1] << 16 | irqs[0];
 
 	send2(MSG_ACPI_CLAIM_PCI, rcpt, addr, pins);
 	hmod(rcpt, (uintptr_t)pci_device_handles + addr, 0);
@@ -551,7 +602,10 @@ void start() {
     AcpiDbgLayer = ACPI_EXAMPLE; //ACPI_ALL_COMPONENTS;
     AcpiDbgLevel = ACPI_LV_ALL_EXCEPTIONS | ACPI_LV_INTERRUPTS;
 
-    status = ExecuteOSI ();
+	int pic_mode = 0; // Default is PIC mode if something fails
+	status = FindIOAPICs(&pic_mode);
+	CHECK_STATUS("Find IOAPIC");
+	status = ExecuteOSI(pic_mode);
 	CHECK_STATUS("ExecuteOSI");
 	// Tables we get in Bochs:
 	// * DSDT: All the AML code
@@ -566,6 +620,7 @@ void start() {
 //	PrintFACSTable();
 //	PrintFACPTable();
 	PrintAPICTable();
+	CHECK_STATUS("PrintAPICTable");
 	// TODO Do something like PrintDevices to disable all pci interrupt link
 	// devices (call _DIS). Then we'll enable them as we go along.
 	PrintDevices();
@@ -585,8 +640,6 @@ void start() {
 		//printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
 		if (msg == MSG_PULSE) {
 			if (AcpiOsCheckInterrupt(rcpt, arg)) {
-				printf("acpica: Handled interrupt.\n", msg, rcpt, arg);
-				// It was an IRQ, handled by ACPICA
 				continue;
 			} else {
 				printf("acpica: Unhandled pulse: %#x from %#lx\n", arg, rcpt);
@@ -626,6 +679,12 @@ void start() {
 			debugger_pre_cmd();
 			send0(MSG_ACPI_DEBUGGER_CLR_BUFFER, rcpt);
 			break;
+		case MSG_REG_IRQ:
+			RegIRQ(rcpt, arg);
+			continue;
+		case MSG_IRQ_ACK:
+			AckIRQ(rcpt);
+			continue;
 		}
 		// TODO Handle other stuff.
 		if (rcpt == 0x100)

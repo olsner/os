@@ -6,6 +6,12 @@
 ; the XT codes are easier to deal with though :)
 %define use_set2 0
 
+; TODO: Extract the keyboard driver stuff from this into a separate driver.
+; - Allows ACPICA to use the console again. The problem is that our keyboard
+;   driver needs acpica to route interrupts, so we have deadlocks.
+; - Allows e.g. USB and future keyboard drivers
+; - More similar to what a terminal emulator interface might look like.
+;
 ; Interface summary:
 ; * MSG_CON_WRITE: write to screen
 ;   (use send - console does not respond)
@@ -20,7 +26,7 @@
 ;   (after 15 characters, start dropping stuff)
 
 the_reader equ 1
-pic_driver equ 2
+pic_driver equ 6
 
 IRQ_KEYBOARD	equ 1
 KEY_DATA	equ 0x60
@@ -65,6 +71,7 @@ CONFIG_BYTE	equ	1 | 4
 	mov	si, 2 ; scan code set 2
 	call	outb
 %endif
+	; Clear the 8042 input buffer twice for good measure?
 	call	clear_buffer
 	call	clear_buffer
 

@@ -19,8 +19,8 @@
 
 err_t http_start(void);
 
-static const uintptr_t eth_handle = 5;
-static const uintptr_t apic_handle = 6;
+static const uintptr_t eth_handle = 7;
+static const uintptr_t apic_handle = 4;
 static const uintptr_t proto_handle = 0x100;
 static const uintptr_t timer_handle = 0x101;
 static const uintptr_t fresh_handle = 0x200;

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "msg_acpi.h"
 
 #define log printf
 #if 0
@@ -7,7 +8,7 @@
 #define debug(...) (void)0
 #endif
 
-static const uintptr_t acpi_handle = 4;
+static const uintptr_t acpi_handle = 6;
 
 static void prompt(void) {
 	puts("Enter debugger command: (Esc cancels)\n");

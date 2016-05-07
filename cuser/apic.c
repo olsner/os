@@ -215,9 +215,8 @@ void start() {
 
 	// Perhaps we should use ACPI information to tell us if/that there's an
 	// APIC and where we can find it.
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE,
+	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		(void*)apic, apic_pbase, sizeof(apic));
-	// FIXME Should map uncacheable!
 
 	apic[TIMER_DIV] = TIMER_DIV_128;
 	apic[APICTIC] = 0;

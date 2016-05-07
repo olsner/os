@@ -55,6 +55,7 @@ ASMFILES     := $(ASMDIR)/kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c cuser/zeropage.c
 MOD_CFILES   += cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
 MOD_CFILES   += cuser/bochsvga.c cuser/fbtest.c cuser/acpi_debugger.c
+MOD_CFILES   += cuser/ioapic.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
 MOD_ELFS     += $(OUTDIR)/cuser/acpica.elf $(OUTDIR)/cuser/lwip.elf
@@ -164,7 +165,7 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 
 WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
-WANT_REAL_PRINTF = e1000 apic bochsvga fbtest
+WANT_REAL_PRINTF = e1000 apic bochsvga fbtest ioapic
 
 WANT_STRING = acpica
 
@@ -266,13 +267,14 @@ ACPI_SRCS := \
 
 ACPI_OBJS := $(ACPI_SRCS:$(ACPICA)/%.c=$(ACPICA_OUT)/%.o)
 ACPI_OBJS += $(addprefix $(OUTDIR)/cuser/acpica/, \
-	acpica.o osl.o malloc.o pci.o printf.o)
+	acpica.o interrupts.o osl.o malloc.o pci.o printf.o)
 
 -include $(ACPI_OBJS:.o=.d)
 
 ACPI_CFLAGS := -Icuser -Icuser/acpica -I$(ACPICA_INCLUDE)
 ACPI_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
 ACPI_CFLAGS += -DACPI_FULL_DEBUG
+ACPI_CFLAGS += -DRAW_STDIO
 ifeq ($(filter clang,$(CC)), clang)
 # Triggers a lot on the ACPI_MODULE_NAME construct, when the name is not used.
 ACPI_CFLAGS += -Wno-unused-const-variable

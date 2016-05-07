@@ -10,6 +10,7 @@
 %define log_runqueue_panic 0
 %define log_fpu_switch 0 ; Note: may clobber user registers if activated :)
 %define log_page_fault 0
+%define log_kernel_pf 1
 %define log_invalid_match 1
 %define log_find_mapping 0
 %define log_find_backing 0
@@ -570,8 +571,9 @@ handle_irq_ %+ %1:
 	jmp	handle_irq_generic
 %endmacro
 
+%define irq_count (256-32)
 %assign irq 32
-%rep 17
+%rep irq_count
 handle_irqN_generic irq
 %assign irq irq + 1
 %endrep
@@ -2254,9 +2256,13 @@ aspace_add_shared_backing:
 	tcall	dict_insert
 
 not_hosed_yet:
-	PANIC
+%if log_kernel_pf
+
+	call printf
+	jmp hosed
+%endif
 kernel_fault:
-%if log_page_fault
+%if log_kernel_pf
 lodstr	rdi,	'Kernel PF: cr2=%x error=%x rip=%x', 10
 	mov	rsi, cr2
 	; Fault
@@ -3991,7 +3997,7 @@ idt_data:
 	; 32..47: PIC interrupts
 	; 48: APIC timer interrupt
 %assign idt_nvec 32
-%rep 17
+%rep irq_count
 	reg_vec idt_nvec, handle_irq_ %+ idt_nvec
 %endrep
 .vectors_end:
@@ -4007,8 +4013,7 @@ globals:
 ; required.
 .initial_fpstate	resq 1
 
-; Provide room for all possible interrupts, although we'll only use up to
-; 48 or so
+; Provide room for all interrupts we added to the reg_vec above
 idt	resq 2 * idt_nvec
 idt_end:
 

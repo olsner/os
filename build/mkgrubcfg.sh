@@ -29,9 +29,10 @@ menuentry "lwIP" {
     module /kern/irq.mod irq
     module /kern/pic.mod pic
     module /kern/console.mod console
+    module /cuser/apic.mod apic
+    module /cuser/ioapic.mod ioapic
     module /cuser/acpica.mod acpica
     module /cuser/e1000.mod e1000
-    module /cuser/apic.mod apic
     module /cuser/lwip.mod lwip
     boot
 }
@@ -41,9 +42,10 @@ menuentry "fbtest" {
     module /kern/irq.mod
     module /kern/pic.mod
     module /kern/console.mod
+    module /cuser/apic.mod
+    module /cuser/ioapic.mod
     module /cuser/acpica.mod acpica
     module /cuser/bochsvga.mod bochs
-    module /cuser/apic.mod
     module /cuser/fbtest.mod fbtest
     boot
 }
@@ -63,6 +65,8 @@ menuentry "ACPICA debugger" {
     module /kern/irq.mod
     module /kern/pic.mod
     module /kern/console.mod
+    module /cuser/apic.mod
+    module /cuser/ioapic.mod
     module /cuser/acpica.mod
     module /cuser/acpi_debugger.mod
     boot

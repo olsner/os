@@ -1,4 +1,5 @@
 #include "common.h"
+#include "msg_acpi.h"
 
 #define log printf
 #if 0
@@ -7,8 +8,8 @@
 #define debug(...) (void)0
 #endif
 
-static const uintptr_t acpi_handle = 4;
-static const uintptr_t pic_handle = 2;
+static const uintptr_t acpi_handle = 6;
+static const uintptr_t pic_handle = 6;
 static const uintptr_t pin0_irq_handle = 0x100;
 static const uintptr_t fresh = 0x101;
 
@@ -639,9 +640,12 @@ void start() {
 		log("e1000: failed :(\n");
 		goto fail;
 	}
-	const u8 irq = arg2 &= 0xff;
-	log("e1000: claimed! irq %x\n", irq);
-	hmod(pic_handle, pic_handle, pin0_irq_handle);
+	arg2 &= 0xffff;
+	const u8 irq = arg2 & 0xff;
+	const u8 triggering = !!(arg2 & 0x100);
+	const u8 polarity = !!(arg2 & 0x200);
+	log("e1000: claimed! irq %x triggering %d polarity %d\n", irq, triggering, polarity);
+	hmod_copy(pic_handle, pin0_irq_handle);
 	sendrcv1(MSG_REG_IRQ, pin0_irq_handle, &arg2);
 
 	u32 cmd = readpci16(pci_id, PCI_COMMAND);

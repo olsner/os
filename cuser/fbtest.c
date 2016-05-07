@@ -14,8 +14,8 @@
 #define H 480UL
 #define BPP 8
 
-static const uintptr_t fbhandle = 5;
-static const uintptr_t apic_handle = 6;
+static const uintptr_t fbhandle = 6;
+static const uintptr_t apic_handle = 4;
 
 static u16 usqrt(u32 x) {
 	u32 res = x;

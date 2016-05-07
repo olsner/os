@@ -1,4 +1,5 @@
 #include "common.h"
+#include "msg_acpi.h"
 
 #define log printf
 #if 0
@@ -49,7 +50,7 @@ enum Index {
 #define VBE_DISPI_LFB_ENABLED            0x40
 #define VBE_DISPI_NOCLEARMEM             0x80
 
-static const uintptr_t acpi_handle = 4;
+static const uintptr_t acpi_handle = 6;
 static const uintptr_t the_client = 0xff;
 static const uintptr_t fresh = 0x100;
 

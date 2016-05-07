@@ -64,66 +64,18 @@ enum msg_con {
 };
 
 enum msg_irq {
+	/**
+	 * Takes one argument, the IRQ number (GSI in the case of I/O APICs).
+	 * (Or does it take a number local to the interrupt controller?)
+	 */
 	MSG_REG_IRQ = MSG_USER,
+	/**
+	 * Acknowledge receipt of the interrupt.
+	 *
+	 * arg1: IRQ number to acknowledge
+	 */
 	MSG_IRQ_ACK,
 };
-
-enum msg_acpi {
-	/* Find (unclaimed) PCI device.
-	 *
-	 * arg1: pci vendor/device
-	 * arg2: index (0..)
-	 * Returns:
-	 * arg1: pci bus/device/function, or -1 if not found
-	 *
-	 * Iterate index upwards to find multiple matching PCI devices until -1 is
-	 * returned.
-	 */
-	MSG_ACPI_FIND_PCI = MSG_USER,
-	/* Wrappers around PCI IRQ routing (to PIC or I/O APIC) */
-	MSG_ACPI_IRQ_ACK = MSG_IRQ_ACK,
-	/* Claim a PCI device for the caller.
-	 *
-	 * arg1: pci bus/device/function
-	 * arg2: flags (etc)
-	 *   low 4 bits: mask of pins to route IRQs for
-	 *   bit 5: set to enable bus master if possible
-	 */
-	MSG_ACPI_CLAIM_PCI,
-	/**
-	 * Read a 32-bit word from PCI config space.
-	 *
-	 * arg1: upper 24 bits: pci bus/device/function
-	 *       lower 8 bits: config-space address, must be 32-bit aligned.
-	 * returns 32-bit value in arg1
-	 */
-	MSG_ACPI_READ_PCI,
-
-	/**
-	 * Wait for ACPI init and initialize debugger.
-	 */
-	MSG_ACPI_DEBUGGER_INIT,
-	/**
-	 * Add a character to the debugger command buffer.
-	 *
-	 * arg1: number of characters to add. Currently only 1 is supported, but
-	 * more characters could be encoded in fun ways.
-	 * arg2: character to add
-	 */
-	MSG_ACPI_DEBUGGER_BUFFER,
-	/**
-	 * Interpret the command currently in the command buffer, and clear the
-	 * buffer.
-	 */
-	MSG_ACPI_DEBUGGER_CMD,
-	/**
-	 * Clear the command buffer without running the command in it.
-	 */
-	MSG_ACPI_DEBUGGER_CLR_BUFFER,
-};
-// Return from MSG_ACPI_FIND_PCI when no device is found.
-static const uintptr_t ACPI_PCI_NOT_FOUND = -1;
-static const uintptr_t ACPI_PCI_CLAIM_MASTER = 16;
 
 enum msg_ethernet {
 	/**
@@ -270,6 +222,9 @@ static enum msg_kind msg_get_kind(uintptr_t msg) {
 // received message number. source param is updated to the sender value.
 // sendN: ipcN for sends - params are not by reference, only error code is
 // returned.
+// sendrcvN: ipcN for calls - only arguments are by reference since the reply
+// must come from the same process we sent to. Returns the reply message like
+// recv.
 
 
 static inline uintptr_t syscall1(uintptr_t msg, uintptr_t dest) {
@@ -356,9 +311,29 @@ static inline uintptr_t ipc2(uintptr_t msg, uintptr_t* src, uintptr_t* arg1, uin
 	return msg;
 }
 
+static inline uintptr_t sendrcv3(uintptr_t msg, uintptr_t dst, uintptr_t* arg1, uintptr_t* arg2, uintptr_t* arg3)
+{
+	return ipc3(msg_call(msg), &dst, arg1, arg2, arg3);
+}
+
 static inline uintptr_t sendrcv2(uintptr_t msg, uintptr_t dst, uintptr_t* arg1, uintptr_t* arg2)
 {
 	return ipc2(msg_call(msg), &dst, arg1, arg2);
+}
+
+static inline uintptr_t recv3(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2, uintptr_t* arg3)
+{
+	register long r8 __asm__("r8");
+	uintptr_t msg;
+	__asm__ __volatile__ ("syscall"
+		:	/* return value(s) */
+			"=a" (msg),
+			/* in/outputs */
+			"=D" (*src), "=S" (*arg1), "=d" (*arg2), "=r" (r8)
+		: "a" (0), "D" (*src)
+		: "r9", "r10", "r11", "%rcx", "memory");
+	*arg3 = r8;
+	return msg;
 }
 
 static inline uintptr_t recv2(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)
@@ -404,6 +379,11 @@ static inline uintptr_t recv0(uintptr_t src)
 	return syscall1(0, src);
 }
 
+static inline uintptr_t send3(uintptr_t msg, uintptr_t dst, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3)
+{
+	return ipc3(msg_send(msg), &dst, &arg1, &arg2, &arg3);
+}
+
 static inline uintptr_t send2(uintptr_t msg, uintptr_t dst, uintptr_t arg1, uintptr_t arg2)
 {
 	return ipc2(msg_send(msg), &dst, &arg1, &arg2);
@@ -427,6 +407,7 @@ static inline uintptr_t sendrcv0(uintptr_t msg, uintptr_t dst)
 	return syscall1(msg_call(msg), dst);
 }
 
+#ifndef RAW_STDIO
 static const u64 CONSOLE_HANDLE = 3; /* Hardcode galore */
 
 static void putchar(char c) {
@@ -438,6 +419,11 @@ static char getchar(void) {
 	sendrcv1(MSG_CON_READ, CONSOLE_HANDLE, &c);
 	return c;
 }
+#else
+static void putchar(char c) {
+	syscall1(SYSCALL_WRITE, c);
+}
+#endif
 
 static void puts(const char* str) {
 	while (*str) putchar(*str++);

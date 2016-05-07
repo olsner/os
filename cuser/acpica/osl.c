@@ -1,4 +1,3 @@
-#include <stdarg.h>
 #include "common.h"
 #include "acpi.h"
 #include "acpica.h"
@@ -190,14 +189,19 @@ AcpiOsSleep (
 	printf("AcpiOsSleep: %lu ms\n", milliseconds);
 }
 
+#ifdef RAW_STDIO
+ACPI_STATUS AcpiOsGetLine(char *Buffer, UINT32 BufferLength, UINT32 *BytesRead)
+{
+	abort();
+}
+#else
 ACPI_STATUS
 AcpiOsGetLine (
     char                    *Buffer,
     UINT32                  BufferLength,
     UINT32                  *BytesRead)
 {
-    int                     Temp;
-    UINT32                  i;
+    UINT32                  i = 0;
 
     for (i = 0; ; i++)
     {
@@ -206,7 +210,7 @@ AcpiOsGetLine (
             return (AE_BUFFER_OVERFLOW);
         }
 
-        Temp = getchar ();
+        int Temp = getchar ();
 		putchar(Temp);
         if (!Temp || Temp == '\n')
         {
@@ -228,6 +232,7 @@ AcpiOsGetLine (
     }
     return (AE_OK);
 }
+#endif
 
 /******************************************************************************
  *
@@ -403,69 +408,6 @@ AcpiOsWritePciConfiguration (
 	AcpiOsWritePort(0xcf8, AddrFromPciId(PciId, Register), 32);
 	AcpiOsWritePort(0xcfc + (Register & 3), Value, Width);
     return (AE_OK);
-}
-
-static const uintptr_t pic_handle = 2;
-
-typedef struct irq_reg
-{
-	UINT32 InterruptNumber;
-	ACPI_OSD_HANDLER ServiceRoutine;
-	void* Context;
-	struct irq_reg* Next;
-} irq_reg;
-
-static irq_reg* irq_regs;
-
-UINT32
-AcpiOsInstallInterruptHandler (
-    UINT32                  InterruptNumber,
-    ACPI_OSD_HANDLER        ServiceRoutine,
-    void                    *Context)
-{
-	printf("AcpiOsInstallInterruptHandler %#x\n", InterruptNumber);
-	irq_reg* reg = malloc(sizeof(irq_reg));
-	reg->InterruptNumber = InterruptNumber;
-	reg->ServiceRoutine = ServiceRoutine;
-	reg->Context = Context;
-	reg->Next = irq_regs;
-	irq_regs = reg;
-
-	hmod(pic_handle, pic_handle, (uintptr_t)reg);
-	uintptr_t irq = InterruptNumber;
-	sendrcv1(MSG_REG_IRQ, (uintptr_t)reg, &irq);
-	printf("Registered IRQ %#x to %p/%p\n", InterruptNumber, ServiceRoutine, Context);
-	return (AE_OK);
-}
-
-ACPI_STATUS
-AcpiOsRemoveInterruptHandler (
-    UINT32                  InterruptNumber,
-    ACPI_OSD_HANDLER        ServiceRoutine)
-{
-	printf("AcpiOsRemoveInterruptHandler %#x\n", InterruptNumber);
-    return (AE_OK);
-}
-
-static void HandleIrq(irq_reg* irq, uintptr_t num) {
-	printf("acpica: IRQ %#lx: Calling %p/%p (registered for %#x)\n", num,
-			irq->ServiceRoutine, irq->Context, irq->InterruptNumber);
-	irq->ServiceRoutine(irq->Context);
-}
-
-int AcpiOsCheckInterrupt(uintptr_t rcpt, uintptr_t arg)
-{
-	irq_reg* irq = irq_regs;
-	while (irq) {
-		if ((uintptr_t)irq == rcpt) {
-			HandleIrq(irq, arg);
-			send1(MSG_IRQ_ACK, rcpt, arg);
-			return 1;
-		}
-		irq = irq->Next;
-	}
-	printf("IRQ %#lx/%#x: Not found!\n", rcpt, arg);
-	return 0;
 }
 
 ACPI_STATUS
