@@ -2,11 +2,10 @@
 #include "acpica.h"
 
 static char heap[1048576];
-static char* heap_end;
+static char* heap_end = heap;
 
 void init_heap(void) {
 	printf("init_heap: %x..%x\n", heap, heap + sizeof(heap));
-	heap_end = heap;
 }
 
 #if 0
