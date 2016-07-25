@@ -3,6 +3,8 @@
 #define ACPI_USE_LOCAL_CACHE
 #define ACPI_INLINE inline
 #define ACPI_USE_NATIVE_DIVIDE
+#define ACPI_UNUSED_VAR __attribute__ ((unused))
+#define ACPI_PRINTF_LIKE(c) __attribute__ ((__format__ (__printf__, c, c+1)))
 
 #define DEBUGGER_THREADING DEBUGGER_SINGLE_THREADED
 
