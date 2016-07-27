@@ -8,10 +8,7 @@ SHELL = /bin/bash
 OUT ?= out
 GRUBDIR ?= ../out/grub
 
-AS = $(CLANG) -c
 YASM ?= ../yasm/yasm
-
-CXX = g++
 
 CFLAGS = -g -Os -ffunction-sections -fdata-sections
 CFLAGS += -fvisibility-inlines-hidden -fvisibility=hidden
@@ -70,7 +67,7 @@ $(OUT)/kernel: $(OUT)/kernel.elf
 
 $(OUT)/%.o: %.s
 	@mkdir -p $(@D)
-	$(HUSH_AS) as -g -o $@ $<
+	$(HUSH_AS) $(AS) -g -o $@ $<
 
 $(OUT)/%.o: %.cc
 	@mkdir -p $(@D)

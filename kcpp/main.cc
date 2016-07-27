@@ -2,7 +2,6 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <new>
 
 typedef int64_t i64;
 typedef int32_t i32;
@@ -149,7 +148,7 @@ namespace Console {
     static u16 pos;
     static const u8 width = 80, height = 24;
 
-    void clear() {
+    UNUSED void clear() {
         pos = 0;
         memset16(buffer, 0, width * height);
     }

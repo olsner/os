@@ -122,7 +122,7 @@ template <class T> struct DList
 };
 
 #define DLIST_NODE(Class, member) \
-    DListNode<Class> *dlistnode_from_item(Class *c) \
+    UNUSED DListNode<Class> *dlistnode_from_item(Class *c) \
     { return &c->member; }
 
 

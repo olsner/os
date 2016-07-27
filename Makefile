@@ -4,12 +4,21 @@
 
 CP=cp
 
-# gold generates broken modules (and/or the linker script is broken)
-LD := ld.bfd
 CCACHE ?= ccache
-CC := $(CCACHE) gcc
-CXX := $(CCACHE) g++
-export CC CXX
+ifneq ($(USE_CROSS),NO)
+CROSS := x86_64-elf-
+export PATH := $(PATH):$(CURDIR)/toolchain/cross/bin
+else
+CROSS :=
+endif
+CC := $(CROSS)gcc
+CXX := $(CROSS)g++
+
+export LD := $(CROSS)ld
+export OBJCOPY := $(CROSS)objcopy
+export AS := $(CROSS)as
+export CC := $(CCACHE) $(CC)
+export CXX := $(CCACHE) $(CXX)
 
 SYSTEM := $(shell uname -s)
 
@@ -156,7 +165,7 @@ $(OUTDIR)/cuser/%.o: %.c
 
 $(GRUBDIR)/%.mod: $(OUTDIR)/%.elf
 	@mkdir -p $(@D)
-	$(HUSH_OBJCOPY) objcopy -O binary $< $@
+	$(HUSH_OBJCOPY) $(OBJCOPY) -O binary $< $@
 	$(SIZE_OBJCOPY)
 
 $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
