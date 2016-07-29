@@ -27,6 +27,9 @@ SECTIONS {
     .data64 (. + high_org) : {
         *(.rodata*);
         *(.data*);
+        __CTOR_LIST__ = .;
+        KEEP(*(.ctors));
+        __CTOR_END__ = .;
         PROVIDE(section.data.end = . - 0xffffffffc0000000);
     } >high AT>ram
 

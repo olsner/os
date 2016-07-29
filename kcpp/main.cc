@@ -478,7 +478,18 @@ void irq_entry(u8 vec, u64 err, Cpu *cpu) {
     cpu->run();
 }
 
+namespace {
+typedef void (*Ctor)();
+extern "C" Ctor __CTOR_LIST__[];
+extern "C" Ctor __CTOR_END__[];
+
+void run_constructors(Ctor *p, Ctor *end) {
+    while (p != end) (*p++)();
+}
+}
+
 void start64() {
+    run_constructors(__CTOR_LIST__, __CTOR_END__);
     dumpMBInfo(start32::mboot_info());
 
     x86::lgdt(start32::gdtr);
