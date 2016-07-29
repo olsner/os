@@ -1,6 +1,3 @@
-# TODO Cleaning up of clang/rust/verdigris stuff is probably not done yet.
-# It would also be nice to actually port the LTO things to this.
-
 SHELL = /bin/bash
 
 .PHONY: all clean
@@ -19,11 +16,6 @@ CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
 CXXFLAGS = $(CFLAGS) -std=gnu++11
 LDFLAGS = --check-sections --gc-sections
-PUBLIC_SYMBOLS = start64,syscall,irq_entry
-OPTFLAGS = -Oz -function-sections -data-sections
-OPTFLAGS += -std-link-opts
-OPTFLAGS += -internalize-public-api-list=$(PUBLIC_SYMBOLS) -internalize
-OPTFLAGS += -argpromotion -mergefunc -deadargelim
 
 CP = @cp
 ifeq ($(VERBOSE),YES)
@@ -37,11 +29,7 @@ HUSH_ASM_DEP = @
 HUSH_CC = @echo -e     ' [CC]\t'$@;
 HUSH_CXX = @echo -e     ' [CXX]\t'$@;
 HUSH_LD  = @echo -e     ' [LD]\t'$@;
-HUSH_RUST = @echo -e    ' [RUST]\t'$@;
-HUSH_OPT = @echo -e     ' [OPT]\t'$@;
-HUSH_LLC = @echo -e    ' [LLC]\t'$@;
 hush = @echo -e       ' [$1]\t'$@;
-HUSH_DIS=@echo -e     ' [DIS]\t'$@;
 endif
 
 all: $(GRUBDIR)/kcpp
