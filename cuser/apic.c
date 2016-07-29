@@ -16,6 +16,8 @@ static const u8 apic_timer_irq = 48;
 
 //REG(TPR, 0x80);
 REG(EOI, 0xb0);
+REG(LDR, 0xd0);
+REG(DFR, 0xe0);
 REG(SPURIOUS, 0xf0);
 enum SpuriousReg {
 	APIC_SOFTWARE_ENABLE = 0x100,
@@ -235,6 +237,12 @@ void start() {
 	sendrcv1(MSG_REG_IRQ, irq_driver, &arg);
 
 	printf("apic: irq registered, enabling APIC and EOI:ing\n");
+
+	// Set the mask to listen on. Should depend on CPU number.
+	apic[DFR] = 1 << 24;
+	// 0xf = flat model rather than cluster model
+	// rest of the bits should be all 1s
+	apic[LDR] = 0xffffffff;
 
 	// enable and set spurious interrupt vector to 0xff
 	apic[SPURIOUS] |= APIC_SOFTWARE_ENABLE | 0xff;
