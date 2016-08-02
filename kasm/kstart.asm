@@ -86,11 +86,6 @@ struc	gseg
 	.self	resq	1
 	; Kernel stack pointer for syscalls and interrupts
 	.rsp	resq	1
-%if kernel_vga_console
-	.vga_base	resq 1
-	.vga_pos	resq 1
-	.vga_end	resq 1
-%endif
 
 	.process	resq 1
 	.runqueue	restruc dlist
@@ -244,6 +239,18 @@ cleanup_pages:
 	mov	[pages.kernel_pdp + 0xff0], dword pages.low_pd | 3
 	mov	[pages.low_pd + 0xff8], dword pages.low_pt | 3
 
+kernel_console_setup:
+	; kernel vga console is actually global, not per-cpu
+%if kernel_vga_console
+	lea	rdi,[globals.vga_base]
+	mov	rax,phys_vaddr(0xb8000)
+	stosq ; .vga_base
+	lea	rax,[rax+160] ; Start on line 2, line 1 has some boot-time debug printouts
+	stosq ; .vga_pos
+	lea	rax,[rax+80*25*2-160]
+	stosq ; .vga_end
+%endif
+
 ; This has nothing to do with the APIC
 apic_setup:
 	mov	ecx, MSR_STAR
@@ -285,8 +292,6 @@ apic_setup:
 	mov	ecx, MSR_GSBASE
 	wrmsr
 
-	; after this, ebx should be address to video memory and rdi points to
-	; the gs-segment data block. So does rbp.
 	mov	rdi, rsi
 	mov	rbp, rdi
 	zero	eax
@@ -298,15 +303,6 @@ apic_setup:
 	stosq ; gs:0 - selfpointer
 	mov	rax, rsp
 	stosq
-%if kernel_vga_console
-	mov	rax,phys_vaddr(0xb8000)
-	;mov	eax,0xb8000
-	stosq ; gs:8 - VGA buffer base
-	lea	rax,[rax+160] ; Start on line 2, line 1 has some boot-time debug printouts
-	stosq ; gs:16 - VGA writing position
-	lea	rax,[rax+80*25*2-160]
-	stosq ; gs:24 - VGA buffer end
-%endif
 
 E820_MEM	equ 1
 E820_RESERVED	equ 2
@@ -2639,7 +2635,7 @@ lodstr	rsi, 27, '[44m'
 %endif
 .user:
 	mov	eax, edi
-	mov	rdi, [rbp + gseg.vga_pos]
+	mov	rdi, [globals.vga_pos]
 	; escape sequences:
 	; blue background: ESC[44m
 	; reset: ESC[0m
@@ -2658,21 +2654,21 @@ lodstr	rsi, 27, '[0m'
 	stosw
 
 .finish_write:
-	cmp	rdi, [rbp + gseg.vga_end]
+	cmp	rdi, [globals.vga_end]
 	jge	.scroll_line
-	mov	[rbp + gseg.vga_pos], rdi
-%endif
+	mov	[globals.vga_pos], rdi
 .ret:
+%endif
 	ret
 
 %if kernel_vga_console
 .scroll_line:
-	mov	rsi, [rbp + gseg.vga_base]
+	mov	rsi, [globals.vga_base]
 	mov	rdi, rsi
 	add	rsi, 160
 	mov	ecx, 80*24*2/4
 	rep	movsd
-	mov	[rbp + gseg.vga_pos], rdi
+	mov	[globals.vga_pos], rdi
 	zero	eax
 	mov	ecx, 160 / 4
 	rep	movsd
@@ -2688,7 +2684,7 @@ lodstr	rsi, 27, '[0m', 10
 
 	mov	esi, eax
 	mov	rax, rdi
-	sub	rax, [rbp + gseg.vga_base] ; Result fits in 16 bits.
+	sub	rax, [globals.vga_base] ; Result fits in 16 bits.
 	cwd ; ax -> dx:ax
 	mov	ecx,160
 	div	cx
@@ -4013,6 +4009,11 @@ globals:
 ; required.
 .initial_fpstate	resq 1
 
+%if kernel_vga_console
+.vga_base	resq 1
+.vga_pos	resq 1
+.vga_end	resq 1
+%endif
 ; Provide room for all interrupts we added to the reg_vec above
 idt	resq 2 * idt_nvec
 idt_end:
