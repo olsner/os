@@ -77,6 +77,18 @@ menuentry "ACPICA debugger" {
     boot
 }
 
+menuentry "MP test" {
+    multiboot /$kernel
+    module /kern/irq.mod
+    module /kern/pic.mod
+    module /kern/console.mod
+    module /cuser/apic.mod
+    module /cuser/ioapic.mod
+    module /cuser/acpica.mod
+    module /cuser/start_cpu.mod
+    boot
+}
+
 menuentry "puts+xmm" {
     multiboot /$kernel
     module /user/test_puts.mod

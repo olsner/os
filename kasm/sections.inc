@@ -21,3 +21,6 @@ text_vstart_dummy:
 ; assembler we're based at 0x8000 while we're actually at kernel_base+0x8000),
 ; but this can be used for constant data or wherever we need the full address.
 %define phys_vaddr(phys) kernel_base + phys
+
+; Get the .text-relative vaddr of another section's LMA
+%define section_vaddr(sect) (text_vstart_dummy + (section. %+ sect %+ .start - section..text.start))

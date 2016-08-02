@@ -1,6 +1,6 @@
 #include "common.h"
 
-#define printf(...) (void)0
+//#define printf(...) (void)0
 
 static const uintptr_t irq_driver = 1;
 static const uintptr_t fresh_handle = 100;
@@ -21,6 +21,18 @@ REG(DFR, 0xe0);
 REG(SPURIOUS, 0xf0);
 enum SpuriousReg {
 	APIC_SOFTWARE_ENABLE = 0x100,
+};
+REG(ICR_LOW, 0x300);
+REG(ICR_HIGH, 0x310);
+enum ICRReg {
+	ICR_DELIVERY_STATUS_PENDING = 1 << 12,
+};
+enum ICRDeliveryMode {
+	// fixed, lowest-priority, SMI, Reserved, NMI
+	ICR_DELIVERY_FIXED = 0,
+	ICR_DELIVERY_INIT = 5,
+	ICR_DELIVERY_SIPI = 6,
+	// 7 = Reserved
 };
 REG(TIMER_LVT, 0x320);
 enum {
@@ -190,6 +202,62 @@ timer* reg_timer(u64 ns, u8 pulse) {
 	return t;
 }
 
+static void wait_for_ipi_delivery(bool wanted_status) {
+	uint64_t n = 0;
+	const u32 mask = ICR_DELIVERY_STATUS_PENDING;
+	u32 wanted = wanted_status ? mask : 0;
+	while ((apic[ICR_LOW] & mask) != wanted) {
+		n++;
+	}
+	if (n) {
+		printf("Waited %lu times for previous IPI.", n);
+	}
+}
+
+void send_ipi(u8 dest_apic, u8 ipi_type, u8 vector) {
+	printf("apic: sending %d IPI to %#x (vector %#x)\n", ipi_type, dest_apic, vector);
+	printf("apic: current ICR_LOW: %#x\n", apic[ICR_LOW]);
+
+	if (apic[ICR_LOW] & ICR_DELIVERY_STATUS_PENDING) {
+		printf("Previous IPI is pending, waiting...\n");
+		wait_for_ipi_delivery(false);
+	}
+
+	// Some of these might be "dangerous" (actually probably all of them are
+	// - exception handlers probably don't work right when delivered as an IPI).
+	// Note that INIT de-assert is not supported. This should only affect old
+	// CPUs we don't support anyway.
+	assert(ipi_type == ICR_DELIVERY_FIXED
+			|| ipi_type == ICR_DELIVERY_INIT
+			|| ipi_type == ICR_DELIVERY_SIPI);
+
+	const u32 high = dest_apic << 24;
+	const u32 low =
+		vector
+		| (ipi_type << 8)
+		// bit 11: destination_mode = 0
+		// bit 12: delivery status = 0
+		// bit 13: reserved
+		// bit 14: level = 1 (asserted)
+		| (1 << 14)
+		// bit 15: trigger = 0 (edge)
+		// bit 16/17: reserved
+		// bit 18..19: destination_shorthand = 0
+		;
+
+	printf("Sending IPI %#08x%08x\n", high, low);
+
+	apic[ICR_HIGH] = high;
+	apic[ICR_LOW] = low;
+
+	printf("Sent IPI %#08x%08x\n", apic[ICR_HIGH], apic[ICR_LOW]);
+
+	if (apic[ICR_LOW] & ICR_DELIVERY_STATUS_PENDING) {
+		printf("IPI delivery is pending, waiting...\n");
+		wait_for_ipi_delivery(false);
+	}
+}
+
 static void __more_stack(size_t more) {
 	static const uintptr_t TOP = 0x100000;
 	static const size_t START = 0x1000;
@@ -281,8 +349,6 @@ void start() {
 		printf("apic: receiving\n");
 		const uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
 
-		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
-
 		// Note that since we use the raw IRQ driver, we don't need to ACK the
 		// IRQ's we get - it's not listening for that anyway.
 		if (rcpt == irq_driver) {
@@ -313,6 +379,9 @@ void start() {
 		case MSG_PFAULT:
 			*(volatile u64*)&static_data;
 			grant(rcpt, &static_data, PROT_READ);
+			break;
+		case MSG_APIC_SEND_IPI:
+			send_ipi(arg1, arg1 >> 8, arg1 >> 16);
 			break;
 		}
 	}

@@ -55,6 +55,7 @@ enum syscalls_builtins {
 	SYSCALL_IO = 7, // Backdoor!
 	MSG_GRANT = 8,
 	MSG_PULSE = 9,
+	SYSCALL_ADDCPU = 10,
 	MSG_USER = 16,
 };
 
@@ -144,6 +145,22 @@ enum msg_timer
 	 * arg2: ticks
 	 */
 	MSG_TIMER_GETTIME,
+
+
+	MSG_TIMER_LASTMSG
+};
+
+enum msg_apic
+{
+	/**
+	 * Send an IPI to another APIC.
+	 *
+	 * arg1:
+	 *   bit 0..7: destination APIC ID
+	 *   bit 8..15: IPI type (delivery mode)
+	 *   bit 16..23: vector
+	 */
+	MSG_APIC_SEND_IPI = MSG_TIMER_LASTMSG,
 };
 
 enum msg_fb
@@ -532,7 +549,7 @@ static void assert_failed(const char* file, int line, const char* msg) {
 #define assert(X) \
 	do { if (!(X)) assert_failed(__FILE__, __LINE__, #X); } while (0)
 
-static void hexdump(char* data, size_t length) {
+static void hexdump(const char* data, size_t length) {
 	size_t pos = 0;
 	while (pos < length) {
 		printf("\n%04x: ", pos);

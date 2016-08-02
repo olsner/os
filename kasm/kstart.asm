@@ -102,10 +102,17 @@ struc	gseg
 	.temp_xmm0	resq 2
 endstruc
 
+org pages.kernel
 section .text vstart=pages.kernel
 section .rodata vfollows=.text follows=.text align=4
-section .bss nobits align=8 vfollows=.rodata
+section smp_trampoline vstart=0x1000 follows=.rodata
+section .init_data_end follows=smp_trampoline
+; This marks the end of initialized data for the multiboot header
+section.data.end:
+section .bss nobits align=8 vfollows=.init_data_end
+%if probes
 section .stats nobits align=4 vstart=pages.stats
+%endif
 
 %include "sections.inc"
 
@@ -126,18 +133,13 @@ default rel
 %define putchar kputchar
 %endif
 
-start64 equ phys_vaddr(start64_low)
+start64 equ phys_vaddr(start64_bsp)
 
 ;;
 ; The main 64-bit entry point. At this point, we have set up a page table that
 ; identity-maps 0x8000 and 0x9000 and maps all physical memory at kernel_base.
 ;;
-start64_low:
-	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
-	; will get unmapped as soon as we leave the boot code.
-	lgdt	[gdtr]
-
-init_idt:
+start64_bsp:
 	lea	rbp, [rel idt]
 	lea	rsi, [rel idt_data.vectors]
 	mov	ecx, (idt_data.vectors_end - idt_data) / 3
@@ -159,12 +161,6 @@ init_idt:
 	stosd
 	dec	dword [rdi]
 	loop	.loop
-
-load_idt:
-	lidt	[idtr]
-
-	mov	ax,tss64_seg
-	ltr	ax
 
 init_frames:
 	; pointer to last page linked, will be stored later on in garbage-frame list
@@ -226,6 +222,10 @@ init_frames:
 .done:
 	mov	[globals.garbage_frame], rcx
 
+fpu_initstate:
+	call	allocate_frame
+	o64 fxsave [rax]
+	mov	[rel globals.initial_fpstate], rax
 
 kernel_console_setup:
 	; kernel vga console is actually global, not per-cpu
@@ -239,8 +239,18 @@ kernel_console_setup:
 	stosq ; .vga_end
 %endif
 
-; This has nothing to do with the APIC
-apic_setup:
+start64_ap:
+load_idt:
+	lidt	[idtr]
+
+	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
+	; will get unmapped as soon as we leave the boot code.
+	lgdt	[gdtr]
+
+	mov	ax,tss64_seg
+	ltr	ax
+
+syscall_setup:
 	mov	ecx, MSR_STAR
 	; cs for syscall (high word) and sysret (low word).
 	; cs is loaded from selector or selector+16 depending on whether we're returning to compat (+16) or long mode (+0)
@@ -271,7 +281,10 @@ apic_setup:
 	bts	eax, 11 ; Set NXE
 	wrmsr
 
+bsp_gs_setup:
 	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
+	; TODO Make this so it can allocate memory - extract the allocate_frame
+	; from global free-list thing.
 	mov	rax, phys_vaddr(pages.gseg_cpu0)
 	mov	rdx,rax
 	mov	rsi, rax
@@ -297,16 +310,14 @@ E820_RESERVED	equ 2
 E820_ACPI_RCL	equ 3
 ; There is also 4, which is some ACPI thingy that we shouldn't touch
 
-fpu_initstate:
-	call	allocate_frame
-	o64 fxsave [rax]
-	mov	[rel globals.initial_fpstate], rax
-
+fpu_initialize:
 	; Make the first use of fpu/multimedia instructions cause an exception
+	; TODO Deimplement lazy FPU state - it's a mess in SMP
 	mov	rax,cr0
 	bts	rax,CR0_TS_BIT
 	mov	cr0,rax
 
+; TODO Only run this on BSP, not on AP
 %if log_mbi
 show_mbi_info:
 	mov	esi, dword [mbi_pointer]
@@ -442,6 +453,7 @@ initial_handles:
 
 .done:
 	; Set up the pointer to the dedicated IRQ process
+	; (There needs to be one of these per CPU)
 	mov	[rbp + gseg.irq_process], rdi
 	mov	rsi, rdi
 lodstr	rdi,	'done. first process is %p', 10
@@ -1255,7 +1267,7 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	ret
 
 .steal_global_frames:
-	; TODO acquire global-page-structures spinlock
+	SPIN_LOCK [globals.alloc_lock]
 	mov	rax, [globals.free_frame]
 	test	rax,rax
 	jz	.clear_garbage_frame
@@ -1269,7 +1281,7 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	mov	rcx, rsi
 .skip_steal2:
 	mov	[globals.free_frame], rcx
-	; TODO release global-page-structures spinlock
+	SPIN_UNLOCK [globals.alloc_lock]
 	ret
 
 .clear_garbage_frame:
@@ -1309,6 +1321,7 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	lea	rax, [rdi - 4096]
 %endif
 
+	SPIN_UNLOCK [globals.alloc_lock]
 .ret_oom:
 	; TODO release global-page-structures spinlock
 	ret
@@ -1327,12 +1340,12 @@ lodstr	rdi,	'free_frame %p', 10
 	pop	rdi
 %endif
 
-	; TODO acquire global-page-structures spinlock
+	SPIN_LOCK [globals.alloc_lock]
 	lea	rax, [rel globals.garbage_frame]
 	mov	rcx, [rax]
 	mov	[rdi], rcx
 	mov	[rax], rdi
-	; TODO release global-page-structures spinlock
+	SPIN_UNLOCK [globals.alloc_lock]
 .ret	ret
 
 struc dlist
@@ -2596,6 +2609,7 @@ lodstr	rdi, 'Invalid syscall %x! proc=%p', 10
 	sc portio
 	sc grant
 	sc pulse
+	sc addcpu
 .end_table:
 N_SYSCALLS	equ (.end_table - .table) / 4
 
@@ -2621,6 +2635,8 @@ lodstr	rsi, 27, '[44m'
 	rep outsb
 %endif
 .user:
+	SPIN_LOCK [globals.vga_lock]
+
 	mov	eax, edi
 	mov	rdi, [globals.vga_pos]
 	; escape sequences:
@@ -2645,6 +2661,7 @@ lodstr	rsi, 27, '[0m'
 	jge	.scroll_line
 	mov	[globals.vga_pos], rdi
 .ret:
+	SPIN_UNLOCK [globals.vga_lock]
 %endif
 	ret
 
@@ -3938,6 +3955,39 @@ lodstr	rdi, 'Pulsing %x of %x', 10
 .ret0	zero	eax
 .ret	ret
 
+syscall_addcpu:
+lodstr	rdi, 'ADDCPU trampoline dest=%p src=%p sz=%x', 10
+	lea	rsi, [0x1000]
+	lea	rdx, [section_vaddr(smp_trampoline)]
+	mov	ecx, section.smp_trampoline.length
+	call	printf
+
+	lea	rdi, [0x1000]
+	push	rdi
+	lea	rsi, [section_vaddr(smp_trampoline)]
+	mov	ecx, section.smp_trampoline.length
+	rep	movsb
+	pop	rdi
+	lea	rdi, [rdi + 2]
+	xor	eax, eax
+	stosq
+	push	rdi
+	; kernel stack
+	call	allocate_frame
+	pop	rdi
+	stosq
+	mov	r9, rdi
+
+lodstr	rdi, 'ADDCPU trampoline dst[0]=%x dst[18]=%p src[0]=%x src[18]=%p rdi=%p', 10
+	movzx	esi, word [0x1000]
+	mov	rdx, [0x1000 + 18]
+	movzx	ecx, word [section_vaddr(smp_trampoline)]
+	mov	r8, [section_vaddr(smp_trampoline) + 18]
+	call	printf
+
+	mov	eax, 0x1000
+	ret
+
 %if kernel_vga_console
 %include "printf.inc"
 %else
@@ -3995,8 +4045,10 @@ globals:
 ; media/fpu instructions. Points to a whole page but only 512 bytes is actually
 ; required.
 .initial_fpstate	resq 1
+.alloc_lock	resb 1
 
 %if kernel_vga_console
+.vga_lock	resb 1
 .vga_base	resq 1
 .vga_pos	resq 1
 .vga_end	resq 1
@@ -4007,6 +4059,5 @@ idt_end:
 
 section.bss.end:
 
-section .rodata
-section.data.end:
-
+section smp_trampoline
+%include "trampoline.asm"
