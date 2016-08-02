@@ -19,8 +19,7 @@ bits 16
 	jmp .after_data
 ; Used to report status
 .sema		dq 0
-; Space for the real stack once we're in long mode (this might be a 64-bit
-; address...)
+; Space for the real stack once we're in long mode
 .kernel_stack	dq 0
 ; Make a copy of the common GDT for the new CPU
 .after_data:
@@ -31,10 +30,10 @@ bits 16
 	lock inc byte [.sema]
 	mov	sp, 0x1000
 	dbg '1'
-	push	word 0 ; GDT offset (high)
-	push	word 0 ; GDT offset (low)
-	push	word 0 ; Segment for GDT
-	lgdt [ss:0x1000 - 6]
+	push	dword text_vpaddr(gdt_start) ; GDT offset (low)
+	push	word gdt_end-gdt_start-1 ; GDT limit
+	mov	si, sp
+	lgdt	[si]
 	dbg '2'
 
 	; Enable protected mode without paging (our paging structures are
@@ -45,6 +44,7 @@ bits 16
 
 	dbg '3'
 
+	; Requires a GDT...
 	jmp far code_seg:.start32
 
 bits 32
@@ -52,20 +52,27 @@ bits 32
 	dbg 'P'
 	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
 	mov	cr4, eax
+	dbg '4'
 
 	mov	edx, pages.pml4 ; address of PML4
 	mov	cr3, edx
 
+	dbg '5'
 	mov	ecx, MSR_EFER
 	rdmsr
 	or	eax, 0x100 ; Set LME
 	wrmsr
 
+	dbg '6'
 	mov	eax,cr0
 	or	eax, CR0_PG | CR0_MP ; Enable paging, monitor-coprocessor
 	and	al, ~CR0_EM ; Disable Emulate Coprocessor
 	mov	cr0,eax
 
+	dbg '7'
+	lgdt	[abs text_paddr(gdtr)]
+
+	dbg '8'
 	jmp	code64_seg:.trampoline
 
 bits 64
