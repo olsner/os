@@ -1,6 +1,6 @@
 #include "common.h"
 
-//#define printf(...) (void)0
+#define printf(...) (void)0
 
 static const uintptr_t irq_driver = 1;
 static const uintptr_t fresh_handle = 100;
