@@ -73,7 +73,6 @@ bits 32
 	mov	cr0,eax
 
 	dbg '7'
-	lgdt	[abs text_paddr(gdtr)]
 	jmp	code64_seg:.trampoline
 
 bits 64
