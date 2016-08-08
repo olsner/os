@@ -4,8 +4,11 @@
 	resb (4096*%1)
 %endmacro
 
+; Includes the .bss section (really, the pages. stuff should actually be in the
+; .bss section I think). Though it is required by the 32-bit bootstrap as well,
+; so it needs well-defined addresses.
 %ifndef kernel_pages
-%define kernel_pages 3
+%define kernel_pages 4
 %endif
 
 struc pages, 0x100000
