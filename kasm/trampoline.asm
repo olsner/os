@@ -80,6 +80,7 @@ bits 64
 	dbg 'L'
 
 	mov	rsp, [rel .kernel_stack]
+	push	byte 1
 	; Start by jumping into the kernel memory area at -1GB. Since that's a
 	; 64-bit address, we must do it in long mode...
 	jmp	text_vpaddr(start64_ap)

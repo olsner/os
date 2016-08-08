@@ -242,16 +242,36 @@ kernel_console_setup:
 	stosq ; .vga_end
 %endif
 
+	push	byte 0 ; BSP
 start64_ap:
+lodstr	rdi, 'start64_ap reached! (rip=%p, rsp=%p)', 10
+	lea	rsi, [start64_ap]
+	mov	rdx, rsp
+	call printf
+
 load_idt:
 	lidt	[idtr]
 
 	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
 	; will get unmapped as soon as we leave the boot code.
+	; TODO Need to create a CPU-specific GDT since the tss64_seg will
+	; be "busy" otherwise.
+	; I think we need a CPU-specific TSS too, they can't share stack...
 	lgdt	[gdtr]
+
+lodstr	rdi, 'gdtr reloaded', 10
+	call printf
+
+.testl:	cmp	byte [rsp], 1
+	je	.testl
 
 	mov	ax,tss64_seg
 	ltr	ax
+
+lodstr	rdi, 'task register set', 10
+	call printf
+
+	pop	rax
 
 syscall_setup:
 	mov	ecx, MSR_STAR
