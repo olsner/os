@@ -3958,12 +3958,6 @@ lodstr	rdi, 'Pulsing %x of %x', 10
 .ret	ret
 
 syscall_addcpu:
-lodstr	rdi, 'ADDCPU trampoline dest=%p src=%p sz=%x', 10
-	lea	rsi, [0x1000]
-	lea	rdx, [section_vaddr(smp_trampoline)]
-	mov	ecx, section.smp_trampoline.length
-	call	printf
-
 	lea	rdi, [0x1000]
 	push	rdi
 	lea	rsi, [section_vaddr(smp_trampoline)]
@@ -3979,13 +3973,6 @@ lodstr	rdi, 'ADDCPU trampoline dest=%p src=%p sz=%x', 10
 	pop	rdi
 	stosq
 	mov	r9, rdi
-
-lodstr	rdi, 'ADDCPU trampoline dst[0]=%x dst[18]=%p src[0]=%x src[18]=%p rdi=%p', 10
-	movzx	esi, word [0x1000]
-	mov	rdx, [0x1000 + 18]
-	movzx	ecx, word [section_vaddr(smp_trampoline)]
-	mov	r8, [section_vaddr(smp_trampoline) + 18]
-	call	printf
 
 	mov	eax, 0x1000
 	ret

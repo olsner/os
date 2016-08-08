@@ -8,8 +8,12 @@
 smp_trampoline:
 
 %macro dbg 1
+%if 0
 	mov	al, %1
 	out	0xe9, al
+	mov	al, 10
+	out	0xe9, al
+%endif
 %endmacro
 
 %define cs_base 0x100
@@ -32,8 +36,7 @@ bits 16
 	dbg '1'
 	push	dword text_vpaddr(gdt_start) ; GDT offset (low)
 	push	word gdt_end-gdt_start-1 ; GDT limit
-	mov	si, sp
-	lgdt	[si]
+	lgdt	[0x1000 - 6]
 	dbg '2'
 
 	; Enable protected mode without paging (our paging structures are
@@ -71,13 +74,12 @@ bits 32
 
 	dbg '7'
 	lgdt	[abs text_paddr(gdtr)]
-
-	dbg '8'
 	jmp	code64_seg:.trampoline
 
 bits 64
 .trampoline:
 	dbg 'L'
+
 	mov	rsp, [rel .kernel_stack]
 	; Start by jumping into the kernel memory area at -1GB. Since that's a
 	; 64-bit address, we must do it in long mode...
