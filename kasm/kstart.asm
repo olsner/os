@@ -226,18 +226,6 @@ init_frames:
 .done:
 	mov	[globals.garbage_frame], rcx
 
-cleanup_pages:
-	; Clear out the page tables we're going to reuse
-	zero	eax
-	lea	rdi, [pages.low_pd]
-	mov	ecx, 512
-	rep	stosd
-
-	; Clear old link that points to low_pdp (where these mappings will
-	; otherwise be duplicated)
-	mov	[pages.pml4], eax
-	mov	[pages.kernel_pdp + 0xff0], dword pages.low_pd | 3
-	mov	[pages.low_pd + 0xff8], dword pages.low_pt | 3
 
 kernel_console_setup:
 	; kernel vga console is actually global, not per-cpu
@@ -663,8 +651,7 @@ new_proc_simple:
 	; Since this currently is at most one 4TB range, this is easy: only a
 	; single PML4 entry maps everything by sharing the kernel's lower
 	; page tables between all processes.
-	mov	esi, [pages.pml4 + 0xff8]
-	mov	[rax + 0xff8], esi
+	mov	dword [rax + 0xff8], KERNEL_PML4E
 	mov	rsi, [rbx + proc.aspace]
 	mov	[rsi + aspace.pml4], rax
 	sub	rax, phys_vaddr(0)

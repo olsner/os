@@ -171,89 +171,78 @@ start32:
 	mov	word [ebx],0x0f00+'P'
 
 	; Static page allocations:
-	; This code (plus data) is at 0x8000-0x9fff (two pages)
-	; page tables are written in 0xa000-0xdfff
-	; APIC MMIO mapped at 0xe000-0xefff
-	; Kernel stack at 0xf000-0xffff (i.e. 0x10000 and growing downwards)
-	; User-mode stack at 0x10000-0x10fff
-	; Another page-table at 0x11000-0x11fff (for the top-of-vm kernel pages)
-	; Kernel GS-page at 0x12000-0x12fff
-	; (Oh, and all these are wrong since the move to >1MB)
+	; The first 2MB are identity mapped, for now we assume that's enough to
+	; get started and up into the higher half. The low 2MB mapping is also
+	; used for the AP trampoline.
+	; It helps that the smallest granularity is 2MB here, we don't have to
+	; allocate any PT (last-level, 4kB mapping) tables.
+	; We need 5 page tables:
+	; pages.pml4: PML4 put in CR3
+	; - 0: low_pdp
+	;   - 0: low_pd
+	;     - 0: 2MB page at 0
+	; - 511: kernel_pdp
+	;   - 511: (1GB pages): one 1GB page at 0
+	;   - 511: kernel_pd
+	;     - 0..511: 2MB page at matching physical addresses
 
-	; magic flag time:
-	; All entries have the same lower 4 bits (all set to 1 here):
-	; - present (bit 0)
-	; - Read-only/Writable (bit 1), 1 = Writable
-	; - User/Supervisor bit (bit 2), 1 = Accessible from user mode
-	; - Page-level writethrough (bit 3)
-	; And more flags
-	; - Page-level cache disable (bit 4) used for APIC
-	; For the final one, we set a couple more flags:
-	; - Global (bit 8), along with PGE, the page will remain in TLB after
-	; changing the page tables, we promise that the page has the same
-	; mapping in all tables.
-	; - Page Size (bit 7), this is the final page entry rather than a link
-	; to another table. In our case, this makes this a 2MB page since the
-	; bit is set already in the third level.
-	
+PT_PRESENT equ 1
+PT_WRITE equ 2
+PT_USER equ 4
+PT_PS equ 0x80
+PT_GLOBAL equ 0x100
+
+; "Default" flags for our mappings: kernel-only, writable, present
+; Could add global too, but I think it's not a universal CPU feature. Using
+; global page mappings requires that we do a more explicit TLB flush when we
+; remove the low-memory mappings too. (Or that we use it only for the upper
+; memory mappings.)
+PT_FLAGS equ PT_WRITE | PT_PRESENT
 
 	; Write PML4 (one entry, pointing to one PDP)
 	mov	edi, pages.pml4
-	mov	eax, pages.low_pdp | 7 ; 0xb000 is where the PDP starts
+	mov	eax, pages.low_pdp | PT_FLAGS
 	stosd
 
 	zero	eax
-	mov	ecx, 0x03ff ; number of zero double-words in PML4
+	mov	ecx, 0x03ff
 	rep stosd
 
-	; In 0x11000 we have another PDP. It's global and *not* user-accessible.
-	mov	dword [edi-8], pages.kernel_pdp | 3
+KERNEL_PML4E	equ	pages.kernel_pdp | PT_FLAGS
+	; Upper memory mappings at 511
+	mov	dword [edi-8], KERNEL_PML4E
 
-	; edi fallthrough, now == 0xb000
+	; edi = low_pdp.
 	; Write PDP (one entry, pointing to one PD)
-	mov	eax, pages.low_pd | 7 ; 0xc000 is the start of the PD
+	mov	eax, pages.low_pd | PT_FLAGS
 	stosd
 
 	xor	eax,eax
-	mov	ecx, 0x03ff ; number of zero double-words in PDP
+	mov	ecx, 0x03ff
 	rep stosd
 
-	; Write PD (one entry, pointing to one PT)
-	mov	eax, pages.low_pt | 7
+	; Write PD (one entry, pointing to a 2MB page at addr 0)
+	; edi = low_pd
+	mov	eax, 0 | PT_PS | PT_FLAGS
 	stosd
 	xor	eax,eax
 	mov	ecx, 0x03ff
 	rep stosd
 
-	; Write PT at 0xd000, kernel will be mapped at 0x100000 and up.
-	xor	eax,eax
-	mov	ecx,0x0400
-	rep stosd
-	sub	edi,0x1000-(pages.kernel / 0x1000) * 8
-	; Map page 0x100000 and up, for bootstrapping. The booted kernel should
-	; unmap these and keep only the higher-half stuff when it's ready.
-	mov	eax, pages.kernel | 1
-	mov	cl, kernel_pages
-.map_kernel_pages:
-	stosd
-	add	di, 4
-	add	ax, 0x1000
-	loop	.map_kernel_pages
-
 	; Page mapping for kernel space (top 4TB part)
-	mov	edi, pages.kernel_pdp
-	xor	eax,eax
-	mov	ecx,0x0400
+	; edi = kernel_pdp
+	xor	eax, eax
+	mov	ecx, 0x0400
 	rep	stosd
 %if use_1gb_pages
 	; Write a single 1GB page mapping at physical address 0
-	mov	word [edi - 8],0x83
+	mov	word [edi - 8], 0 | PT_PS | PT_FLAGS ; | PT_GLOBAL
 %else
 	; Pointer to PD for upper 1GB of memory
-	mov	dword [edi - 8], pages.kernel_pd | 3
+	mov	dword [edi - 8], pages.kernel_pd | PT_FLAGS
+	; edi = kernel_pd
 .fill_pd:
-	mov	edi, pages.kernel_pd
-	mov	eax, 0x83
+	mov	eax, 0 | PT_PS | PT_FLAGS
 	; Fill in with 512 x 2MB blocks
 	mov	ecx, 512
 .loop:

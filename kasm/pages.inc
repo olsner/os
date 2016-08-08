@@ -18,16 +18,15 @@ struc pages, 0x100000
 .pml4		respage
 .low_pdp	respage
 .low_pd		respage
-.low_pt		respage
+.kernel_pdp	respage
+%if use_1gb_pages == 0
+.kernel_pd	respage
+%endif
 .page_tables_end:
 
 .kernel_stack	respage
 .kernel_stack_end:
 
-.kernel_pdp	respage
-%if use_1gb_pages == 0
-.kernel_pd	respage
-%endif
 .gseg_cpu0	respage
 .stats		respage
 endstruc
