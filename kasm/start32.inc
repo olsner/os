@@ -259,9 +259,14 @@ KERNEL_PML4E	equ	pages.kernel_pdp | PT_FLAGS
 	mov	edx, pages.pml4 ; address of PML4
 	mov	cr3, edx
 
+EFER_SCE	equ 1
+EFER_LME	equ 0x100
+; LMA 0x400
+EFER_NXE	equ 0x800
+
 	mov	ecx, MSR_EFER
-	rdmsr
-	or	eax, 0x100 ; Set LME
+	mov	eax, EFER_NXE | EFER_LME | EFER_SCE
+	cdq ; clear edx
 	wrmsr
 
 	mov	eax,cr0

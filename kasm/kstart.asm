@@ -265,12 +265,6 @@ apic_setup:
 	cdq
 	wrmsr
 
-	mov	ecx, MSR_EFER
-	rdmsr
-	bts	eax, 0 ; Set SCE
-	bts	eax, 11 ; Set NXE
-	wrmsr
-
 	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
 	mov	rax, phys_vaddr(pages.gseg_cpu0)
 	mov	rdx,rax
