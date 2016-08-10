@@ -62,8 +62,8 @@ bits 32
 
 	dbg '5'
 	mov	ecx, MSR_EFER
-	rdmsr
-	or	eax, 0x100 ; Set LME
+	mov	eax, EFER_NXE | EFER_LME | EFER_SCE
+	cdq ; clear edx
 	wrmsr
 
 	dbg '6'

@@ -298,12 +298,6 @@ syscall_setup:
 	cdq
 	wrmsr
 
-	mov	ecx, MSR_EFER
-	rdmsr
-	bts	eax, 0 ; Set SCE
-	bts	eax, 11 ; Set NXE
-	wrmsr
-
 bsp_gs_setup:
 	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
 	; TODO Make this so it can allocate memory - extract the allocate_frame
