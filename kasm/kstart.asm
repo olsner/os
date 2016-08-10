@@ -100,6 +100,9 @@ struc	gseg
 
 	.free_frame	resq 1
 	.temp_xmm0	resq 2
+
+	; The BSP just uses the GDT inherited from start32, but APs need this.
+	.gdt		resq 11
 endstruc
 
 org pages.kernel
@@ -1323,7 +1326,6 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 
 	SPIN_UNLOCK [globals.alloc_lock]
 .ret_oom:
-	; TODO release global-page-structures spinlock
 	ret
 
 ; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storage?
