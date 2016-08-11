@@ -43,7 +43,7 @@
 %define debug_tcalls 0
 
 ; Use an unrolled loop of movntdq (MMX?) instructions to clear pages
-%define unroll_memset_0 0
+%define unroll_zero_page 0
 
 %define PANIC PANIC_ __LINE__
 %macro PANIC_ 1
@@ -1275,7 +1275,7 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	mov	rax, [rbp + gseg.free_frame]
 	test	rax, rax
 	; If local stack is out of frames, steal from global stack
-	jz	.steal_global_frames
+	jz	allocate_global_frame
 
 	mov	rsi, [rax]
 	mov	[rbp + gseg.free_frame], rsi
@@ -1283,21 +1283,16 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	mov	[rax], rsi
 	ret
 
-.steal_global_frames:
+allocate_global_frame:
 	SPIN_LOCK [globals.alloc_lock]
+
 	mov	rax, [globals.free_frame]
 	test	rax,rax
 	jz	.clear_garbage_frame
 
 	mov	rcx, [rax]
-	test	ecx, ecx
-	jz	.skip_steal2
-	; If we can, steal two pages :)
-	mov	rsi, [rcx]
-	mov	[rbp + gseg.free_frame], rcx
-	mov	rcx, rsi
-.skip_steal2:
 	mov	[globals.free_frame], rcx
+
 	SPIN_UNLOCK [globals.alloc_lock]
 	ret
 
@@ -1309,8 +1304,20 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	mov	rcx, [rax]
 	mov	[globals.garbage_frame], rcx
 
+	SPIN_UNLOCK [globals.alloc_lock]
+
 	mov	rdi, rax
-%if unroll_memset_0
+	jmp	zero_page
+
+.ret_oom:
+	SPIN_UNLOCK [globals.alloc_lock]
+	ret
+
+zero_page:
+%if unroll_zero_page
+	; return value
+	push	rdi
+
 	add	rdi, 128
 	mov	ecx, 16
 	; Clear the task-switched flag while we reuse some registers
@@ -1331,15 +1338,13 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	movdqu	xmm0, [rbp + gseg.temp_xmm0]
 	; Reset TS to whatever it was before
 	mov	cr0, rdx
+	pop	rax
 %else
-	mov	ecx, 4096/8
+	mov	ecx, 4096/4
 	zero	eax
-	rep stosq
+	rep stosd
 	lea	rax, [rdi - 4096]
 %endif
-
-	SPIN_UNLOCK [globals.alloc_lock]
-.ret_oom:
 	ret
 
 ; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storage?
