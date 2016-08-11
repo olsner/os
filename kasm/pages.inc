@@ -24,10 +24,13 @@ struc pages, 0x100000
 %endif
 .page_tables_end:
 
+; Annoying: BSP needs a stack quite early in the bootstrap, so it needs to be
+; static, but APs will always use a heap-allocated stack. It would be nice to
+; unify it and always heap-allocate the stack.
+; (Can't *call* allocate_frame without a stack...)
 .kernel_stack	respage
 .kernel_stack_end:
 
-.gseg_cpu0	respage
 .stats		respage
 endstruc
 

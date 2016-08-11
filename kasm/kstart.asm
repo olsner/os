@@ -266,23 +266,17 @@ apic_setup:
 	cdq
 	wrmsr
 
-	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
-	mov	rax, phys_vaddr(pages.gseg_cpu0)
-	mov	rdx,rax
-	mov	rsi, rax
+	; Allocate and initialize the gseg for the BSP CPU
+	call	allocate_global_frame
+	mov	rdx, rax
+	mov	rdi, rax
 	mov	eax,eax
 	shr	rdx,32
 	mov	ecx, MSR_GSBASE
 	wrmsr
 
-	mov	rdi, rsi
 	mov	rbp, rdi
-	zero	eax
-	mov	ecx, 4096/4
-	rep	stosd
-
-	mov	rax, rsi
-	mov	rdi, rsi
+	mov	rax, rdi
 	stosq ; gs:0 - selfpointer
 	mov	rax, rsp
 	stosq
