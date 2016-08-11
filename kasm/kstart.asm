@@ -84,8 +84,13 @@ RFLAGS_VM	equ	(1 << 17)
 struc	gseg
 	; Pointer to self
 	.self	resq	1
-	; Kernel stack pointer for syscalls and interrupts
+	; Kernel stack pointer for syscalls and interrupts.
+	; Primarily useful for syscall_entry which doesn't have the user rsp
+	; already saved to the kernel stack.
 	.rsp	resq	1
+
+	.cpu_num	resb 1
+	align 8
 
 	.process	resq 1
 	.runqueue	restruc dlist
@@ -101,8 +106,11 @@ struc	gseg
 	.free_frame	resq 1
 	.temp_xmm0	resq 2
 
-	; The BSP just uses the GDT inherited from start32, but APs need this.
+	; The BSP (currently) just uses the GDT inherited from start32, but APs
+	; need a separate GDT and TSS.
 	.gdt		resq 11
+	; TSS per CPU
+	.tss		resb 0x68
 endstruc
 
 org pages.kernel
@@ -252,6 +260,7 @@ lodstr	rdi, 'start64_ap reached! (rip=%p, rsp=%p)', 10
 load_idt:
 	lidt	[idtr]
 
+create_cpu_gdt:
 	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
 	; will get unmapped as soon as we leave the boot code.
 	; TODO Need to create a CPU-specific GDT since the tss64_seg will
@@ -303,9 +312,9 @@ bsp_gs_setup:
 	; TODO Make this so it can allocate memory - extract the allocate_frame
 	; from global free-list thing.
 	mov	rax, phys_vaddr(pages.gseg_cpu0)
-	mov	rdx,rax
+	mov	rdx, rax
 	mov	rsi, rax
-	mov	eax,eax
+	mov	eax, eax
 	shr	rdx,32
 	mov	ecx, MSR_GSBASE
 	wrmsr
