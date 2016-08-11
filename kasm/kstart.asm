@@ -307,11 +307,10 @@ syscall_setup:
 	cdq
 	wrmsr
 
+; TODO This doesn't look BSP-specific, move down to where it can be shared w/
+; AP bootup.
 bsp_gs_setup:
-	; This is the kernel GS (it is in fact global, but it should be the per-cpu thingy)
-	; TODO Make this so it can allocate memory - extract the allocate_frame
-	; from global free-list thing.
-	mov	rax, phys_vaddr(pages.gseg_cpu0)
+	call	allocate_global_frame
 	mov	rdx, rax
 	mov	rsi, rax
 	mov	eax, eax
