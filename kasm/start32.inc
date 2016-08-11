@@ -300,7 +300,8 @@ gdt_start:
 	define_segment 0,0,RX_ACCESS | SEG_64BIT
 	define_segment 0,0,RW_ACCESS
 	; 64-bit TSS
-	define_tss64 0x68, text_vpaddr(tss)
+tss64_seg	equ	$ - gdt_start
+	define_tss64 0x68, 0
 	; USER segments
 	; 32-bit code/data. Used for running ancient code in compatibility mode. (i.e. nothing)
 	define_segment 0xfffff,0,RX_ACCESS | GRANULARITY | SEG_32BIT | SEG_DPL3
@@ -325,5 +326,4 @@ section .rodata
 align	4
 gdtr:
 	dw	gdt_end-gdt_start-1 ; Limit
-	dq	text_vpaddr(gdt_start)  ; Offset
-
+	dd	text_vpaddr(gdt_start)  ; Offset

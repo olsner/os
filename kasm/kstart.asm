@@ -80,6 +80,11 @@ RFLAGS_IF_BIT	equ	9
 RFLAGS_IF	equ	(1 << RFLAGS_IF_BIT)
 RFLAGS_VM	equ	(1 << 17)
 
+E820_MEM	equ 1
+E820_RESERVED	equ 2
+E820_ACPI_RCL	equ 3
+; There is also 4, which is some ACPI thingy that we shouldn't touch
+
 ; Per-CPU data (theoretically)
 struc	gseg
 	; Pointer to self
@@ -260,28 +265,6 @@ lodstr	rdi, 'start64_ap reached! (rip=%p, rsp=%p)', 10
 load_idt:
 	lidt	[idtr]
 
-create_cpu_gdt:
-	; Need to reload gdtr since it has a 32-bit address (vaddr==paddr) that
-	; will get unmapped as soon as we leave the boot code.
-	; TODO Need to create a CPU-specific GDT since the tss64_seg will
-	; be "busy" otherwise.
-	; I think we need a CPU-specific TSS too, they can't share stack...
-	lgdt	[gdtr]
-
-lodstr	rdi, 'gdtr reloaded', 10
-	call printf
-
-.testl:	cmp	byte [rsp], 1
-	je	.testl
-
-	mov	ax,tss64_seg
-	ltr	ax
-
-lodstr	rdi, 'task register set', 10
-	call printf
-
-	pop	rax
-
 syscall_setup:
 	mov	ecx, MSR_STAR
 	; cs for syscall (high word) and sysret (low word).
@@ -307,42 +290,82 @@ syscall_setup:
 	cdq
 	wrmsr
 
-; TODO This doesn't look BSP-specific, move down to where it can be shared w/
-; AP bootup.
-bsp_gs_setup:
+gseg_setup:
 	call	allocate_global_frame
 	mov	rdx, rax
-	mov	rsi, rax
+	mov	rdi, rax
 	mov	eax, eax
-	shr	rdx,32
+	shr	rdx, 32
 	mov	ecx, MSR_GSBASE
 	wrmsr
 
-	mov	rdi, rsi
 	mov	rbp, rdi
-	zero	eax
-	mov	ecx, 4096/4
-	rep	stosd
 
-	mov	rax, rsi
-	mov	rdi, rsi
-	stosq ; gs:0 - selfpointer
+	mov	rax, rdi
+	stosq ; self
 	mov	rax, rsp
-	stosq
+	stosq ; rsp
+	pop	rax
+	stosq ; cpu_num
 
-E820_MEM	equ 1
-E820_RESERVED	equ 2
-E820_ACPI_RCL	equ 3
-; There is also 4, which is some ACPI thingy that we shouldn't touch
+	; TODO Do something to record how many CPUs there are - the scheduler
+	; will be interested in that, I think.
+
+create_cpu_gdt:
+	; We need to reload gdtr since it has a 32-bit address (vaddr==paddr)
+	; that will get unmapped as soon as we leave the boot code.
+	; We also need to create a CPU-specific GDT since the tss64_seg will
+	; be "busy" otherwise.
+	; We could do this by generating a shared one and having reserved space
+	; for a number of TSS segments we might need though.
+
+	lea	rdi, [rbp + gseg.gdt]
+	push	rdi ; offset part of GDTR mem16:64
+	lea	rsi, [gdt_start]
+	mov	ecx, (gdt_end - gdt_start) / 4
+	rep movsd
+
+	push	word (gdt_end - gdt_start - 1)
+	; I think we need a CPU-specific TSS too, they can't share stack...
+	lgdt	[rsp]
+	; Pop the GDTR from the stack
+	pop	ax
+	pop	rax
+	lea	rax, [rbp + gseg.tss]
+	mov	[rax + 4], rsp
+	; Start of I/O bitmap.
+	mov	word [rax + 0x66], 0x68
+	; TSS64 descriptor format:
+	;	0		8	16		24
+	; +0 	limit (16)		addr (0:16)
+	; +4	addr (16:24)	flags/access		addr (24:32)
+	; +8	addr (32:64)
+	; +12	0 (32 bits)
+
+	mov	rdx, rax
+	shr	rdx, 32
+	mov	[rbp + gseg.gdt + tss64_seg + 8], edx
+	mov	[rbp + gseg.gdt + tss64_seg + 2], ax
+	shr	eax, 16
+	; ax is address 16:32
+	mov	[rbp + gseg.gdt + tss64_seg + 4], al
+	mov	[rbp + gseg.gdt + tss64_seg + 7], ah
+
+	mov	ax,tss64_seg
+	ltr	ax
 
 fpu_initialize:
 	; Make the first use of fpu/multimedia instructions cause an exception
 	; TODO Deimplement lazy FPU state - it's a mess in SMP
-	mov	rax,cr0
-	bts	rax,CR0_TS_BIT
-	mov	cr0,rax
+	; That is, load a known-good initial FPU state here.
+	mov	rdx,cr0
+	bts	rdx,CR0_TS_BIT
+	mov	cr0,rdx
 
-; TODO Only run this on BSP, not on AP
+	; If we're not the bootstrap CPU start running programs (likely idle)
+	cmp	byte [rbp + gseg.cpu_num], 0
+	jne	switch_next
+
 %if log_mbi
 show_mbi_info:
 	mov	esi, dword [mbi_pointer]

@@ -49,7 +49,6 @@ code_seg	equ	8
 data_seg	equ	16
 code64_seg	equ	24
 data64_seg	equ	32
-tss64_seg	equ	40
 user_code_seg	equ	56
 ; code32_user	equ	56
 ; data32_user	equ	64
