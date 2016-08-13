@@ -1324,13 +1324,14 @@ allocate_global_frame:
 	mov	rcx, [rax]
 	mov	[globals.free_frame], rcx
 
+.unlock_ret:
 	SPIN_UNLOCK [globals.alloc_lock]
 	ret
 
 .clear_garbage_frame:
 	mov	rax, [globals.garbage_frame]
 	test	rax,rax
-	jz	.ret_oom
+	jz	.unlock_ret
 
 	mov	rcx, [rax]
 	mov	[globals.garbage_frame], rcx
@@ -1339,10 +1340,6 @@ allocate_global_frame:
 
 	mov	rdi, rax
 	jmp	zero_page
-
-.ret_oom:
-	SPIN_UNLOCK [globals.alloc_lock]
-	ret
 
 zero_page:
 %if unroll_zero_page
