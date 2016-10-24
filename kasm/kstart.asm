@@ -2654,7 +2654,11 @@ lodstr	rdi, 'Invalid syscall %x! proc=%p', 10
 	sc hmod
 	sc newproc
 	; ("temporary") backdoor syscalls
+%if kernel_vga_console
 	sc write
+%else
+	sc nosys
+%endif
 	sc portio
 	sc grant
 	sc pulse
@@ -2666,8 +2670,8 @@ syscall_nosys:
 	pop rdi
 	jmp syscall_entry.invalid_syscall
 
-syscall_write:
 %if kernel_vga_console
+syscall_write:
 	SPIN_LOCK [globals.vga_lock]
 
 	; user write: 0x0f00 | char (white on black)
@@ -2713,10 +2717,8 @@ lodstr	rsi, 27, '[0m'
 	mov	[globals.vga_pos], rdi
 .ret:
 	SPIN_UNLOCK [globals.vga_lock]
-%endif
 	ret
 
-%if kernel_vga_console
 .scroll_line:
 	mov	rsi, [globals.vga_base]
 	mov	rdi, rsi
