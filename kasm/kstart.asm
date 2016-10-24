@@ -2668,12 +2668,16 @@ syscall_nosys:
 
 syscall_write:
 %if kernel_vga_console
+	SPIN_LOCK [globals.vga_lock]
+
 	; user write: 0x0f00 | char (white on black)
 	movzx	edi, dil
 	or	di, 0x0f00
 	jmp	kputchar.user
 
 kputchar:
+	SPIN_LOCK [globals.vga_lock]
+
 	; kernel write: 0x1f00 | char (white on blue)
 	movzx	edi, dil
 	or	di, 0x1f00
@@ -2684,8 +2688,6 @@ lodstr	rsi, 27, '[44m'
 	rep outsb
 %endif
 .user:
-	SPIN_LOCK [globals.vga_lock]
-
 	mov	eax, edi
 	mov	rdi, [globals.vga_pos]
 	; escape sequences:
