@@ -35,14 +35,45 @@ struct Cpu {
     Process *irq_process;
     Process *fpu_process;
 
+    static const size_t GDT_SIZE = 88;
+    static const size_t TSS_SIZE = 0x68;
+
+    uint8_t gdt[GDT_SIZE];
+    uint8_t tss[TSS_SIZE];
+
     // Assume everything else is 0-initialized
     // FIXME There's already a stack allocated by the boot loader, a bit
     // wasteful to allocate a new one. Non-first CPUs might need this code
     // though?
     Cpu(): self(this), stack(new u8[4096]) {
+        assert(GDT_SIZE == start32::gdt_end - start32::gdt_start);
+        memcpy(gdt, start32::gdt_start, GDT_SIZE);
+
+        // IST0 with per-cpu stack
+        write_u64(tss + 4, (u64)stack);
+        // Start of I/O bitmap
+        write_u16(tss + 0x66, 0x68);
+
+        // TSS64 descriptor format:
+        //	0		8	16		24
+        // +0 	limit (16)		addr (0:16)
+        // +4	addr (16:24)	flags/access		addr (24:32)
+        // +8	addr (32:64)
+        // +12	0 (32 bits)
+        u64 tss_addr = (u64)tss;
+        u8 *desc = gdt + x86::seg::tss64;
+        write_u32(desc + 8, tss_addr >> 32);
+        write_u16(desc + 2, tss_addr);
+        write_u8(desc + 4, tss_addr >> 16);
+        write_u8(desc + 7, tss_addr >> 24);
+        // The limit is prefilled in the GDT from start32.inc.
     }
 
+    // Runs on the CPU itself to set up CPU state.
     void start() {
+        x86::lgdt(x86::gdtr { GDT_SIZE - 1, (u64)gdt });
+        x86::ltr(x86::seg::tss64);
+        idt::load();
         setup_msrs((u64)this);
     }
 

@@ -304,6 +304,7 @@ namespace idt {
     };
     const size_t N_ENTRIES = 49;
     typedef Entry Table[N_ENTRIES];
+    Table idt_table;
 
     struct idtr {
         u16 limit;
@@ -313,7 +314,7 @@ namespace idt {
     void lidt(const idtr& idt) {
         asm("lidt %0" ::"m"(idt));
     }
-    void load(const Table &table) {
+    void load(const Table &table = idt_table) {
         lidt(idtr { N_ENTRIES * 16 - 1, &table });
     }
 
@@ -324,13 +325,11 @@ namespace idt {
     }
 
     void init() {
-        static Table idt_table;
         idt_table[7] = Entry(handler_NM_stub);
         idt_table[14] = Entry(handler_PF_stub);
         for (int i = 32; i < 49; i++) {
             idt_table[i] = Entry((void(*)())&irq_handlers[i - 32]);
         }
-        load(idt_table);
     }
 }
 
@@ -342,11 +341,13 @@ namespace start32 {
 
     namespace low {
         extern "C" u32 mbi_pointer;
-        extern "C" x86::gdtr gdtr;
         extern "C" u64 kernel_pdp[512];
+        extern "C" u8 gdt_start;
+        extern "C" u8 gdt_end;
     }
 
-    static const x86::gdtr& gdtr = *HighAddr(&low::gdtr);
+    static const u8* gdt_start = HighAddr(&low::gdt_start);
+    static const u8* gdt_end = HighAddr(&low::gdt_end);
     static const mboot::Info& mboot_info() {
         return *PhysAddr<mboot::Info>(low::mbi_pointer);
     }
@@ -370,6 +371,7 @@ void dumpMBInfo(const mboot::Info& info) {
 
 #include "dict.h"
 #include "dlist.h"
+#include "serialize.h"
 #include "mem.h"
 #include "aspace.h"
 using aspace::AddressSpace;
@@ -498,13 +500,8 @@ void start64() {
     run_constructors(__CTOR_LIST__, __CTOR_END__);
     dumpMBInfo(start32::mboot_info());
 
-    x86::lgdt(start32::gdtr);
-    x86::ltr(x86::seg::tss64);
-    idt::init();
-
     mem::init(start32::mboot_info(), start32::memory_start, -kernel_base);
-//  write("Memory initialized. ");
-//  mem::stat();
+    idt::init();
 
     auto cpu = new Cpu();
     cpu->start();
