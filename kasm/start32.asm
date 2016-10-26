@@ -8,7 +8,8 @@ global mbi_pointer
 global memory_start
 global kernel_pdp
 
-global gdtr
+global gdt_start
+global gdt_end
 
 section..text.vstart equ pages.kernel
 kernel_pdp equ pages.kernel_pdp
