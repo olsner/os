@@ -45,7 +45,7 @@ struct Cpu {
     // FIXME There's already a stack allocated by the boot loader, a bit
     // wasteful to allocate a new one. Non-first CPUs might need this code
     // though?
-    Cpu(): self(this), stack(new u8[4096]) {
+    Cpu(): self(this), stack(new u8[4096] + 4096) {
         assert(GDT_SIZE == start32::gdt_end - start32::gdt_start);
         memcpy(gdt, start32::gdt_start, GDT_SIZE);
 
