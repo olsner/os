@@ -18,6 +18,7 @@ typedef unsigned int uint;
 #define PACKED __attribute__((packed))
 #define UNUSED __attribute__((unused))
 #define NORETURN __attribute__((noreturn))
+#define NOINLINE __attribute__((noinline))
 #define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
 
 extern "C" void start64() NORETURN;
