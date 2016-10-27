@@ -14,7 +14,7 @@ CFLAGS += -ffreestanding $(COPTFLAGS)
 CFLAGS += -fno-threadsafe-statics
 CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
-CXXFLAGS = $(CFLAGS) -std=gnu++14
+CXXFLAGS = $(CFLAGS) -std=gnu++14 -fno-exceptions -fno-rtti
 LDFLAGS = --check-sections --gc-sections
 
 CP = @cp
