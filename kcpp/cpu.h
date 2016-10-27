@@ -64,7 +64,7 @@ struct Cpu {
         u8 *desc = gdt + x86::seg::tss64;
         write_u32(desc + 8, tss_addr >> 32);
         write_u16(desc + 2, tss_addr);
-        write_u8(desc + 5, tss_addr >> 16);
+        write_u8(desc + 4, tss_addr >> 16);
         write_u8(desc + 7, tss_addr >> 24);
         // The limit is prefilled in the GDT from start32.inc.
     }
@@ -72,11 +72,7 @@ struct Cpu {
     // Runs on the CPU itself to set up CPU state.
     void start() {
         x86::lgdt(x86::gdtr { GDT_SIZE - 1, (u64)gdt });
-        printf("GDT %p loaded\n", gdt);
-        for (;;);
         x86::ltr(x86::seg::tss64);
-        // TODO Figure out why we crash on ltr
-        write("TR loaded\n");
         idt::load();
         setup_msrs((u64)this);
     }
