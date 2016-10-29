@@ -27,6 +27,7 @@ void *malloc(size_t sz) {
     assert(res);
     freelist_head = res->next;
     memset(res, 0, 4096);
+    log(malloc, "malloc(%zu) => %p\n", sz, res);
     used_pages++;
     return res;
 }
