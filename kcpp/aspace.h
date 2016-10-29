@@ -165,7 +165,7 @@ struct AddressSpace {
             log(page_fault, "New physical backing for %#lx -> %#lx\n", vaddr, card->paddr(vaddr));
             return add_phys_backing(card, vaddr);
         } else {
-            abort("not anon or phys for handle==0");
+            panic("not anon or phys for handle==0 (flags=%d)", card->flags());
         }
     }
 
