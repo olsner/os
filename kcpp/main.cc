@@ -153,33 +153,36 @@ static void debugcon_putc(char c) {
 }
 
 namespace Console {
-    static u16* const buffer = PhysAddr<u16>(0xb80a0);
-    static u16 pos;
-    static const u8 width = 80, height = 24;
+namespace {
+u16& buffer(u16 pos) { return PhysAddr<u16>(0xb80a0)[pos]; }
+u16 pos;
+const u8 width = 80, height = 24;
+}
 
-    UNUSED void clear() {
-        pos = 0;
-        memset16(buffer, 0, width * height);
-    }
+UNUSED void clear() {
+    pos = 0;
+    memset16(&buffer(0), 0, width * height);
+}
 
-    void write(char c) {
-        if (c == '\n') {
-            u8 fill = width - (pos % width);
-            while(fill--) buffer[pos++] = 0;
-        } else {
-            buffer[pos++] = 0x0700 | c;
-        }
-        debugcon_putc(c);
-        if (pos == width * height) {
-            memmove(buffer, buffer + width, sizeof(*buffer) * width * (height - 1));
-            pos -= width;
-            memset16(buffer + pos, 0, width);
-        }
+void write(char c) {
+    if (c == '\n') {
+        u8 fill = width - (pos % width);
+        memset16(&buffer(pos), 0, fill);
+        pos += fill;
+    } else {
+        buffer(pos++) = 0x0700 | c;
     }
+    debugcon_putc(c);
+    if (pos == width * height) {
+        memmove(&buffer(0), &buffer(width), 2 * width * (height - 1));
+        pos -= width;
+        memset16(&buffer(pos), 0, width);
+    }
+}
 
-    void write(const char *s) {
-        while (char c = *s++) write(c);
-    }
+void write(const char *s) {
+    while (char c = *s++) write(c);
+}
 };
 
 using Console::write;
@@ -495,7 +498,7 @@ typedef void (*Ctor)();
 extern "C" Ctor __CTOR_LIST__[];
 extern "C" Ctor __CTOR_END__[];
 
-void run_constructors(Ctor *p, Ctor *end) {
+void run_constructors(Ctor *p UNUSED, Ctor *end UNUSED) {
 #if enable_constructors
     while (p != end) (*p++)();
 #endif
