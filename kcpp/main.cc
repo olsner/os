@@ -487,12 +487,18 @@ void irq_entry(u8 vec, u64 err, Cpu *cpu) {
 }
 
 namespace {
+// As long as we have no constructors, the linker stuff (that exports these
+// variables) is actually zero-overhead. This also allows us to at least
+// verify we didn't accidentally need to construct something. Define
+// enable_constructors to non-zero to run the constructors.
 typedef void (*Ctor)();
 extern "C" Ctor __CTOR_LIST__[];
 extern "C" Ctor __CTOR_END__[];
 
 void run_constructors(Ctor *p, Ctor *end) {
+#if enable_constructors
     while (p != end) (*p++)();
+#endif
 }
 void print_constructors(Ctor *p, Ctor *end) {
     if (p == end) return;
@@ -500,10 +506,12 @@ void print_constructors(Ctor *p, Ctor *end) {
     while (p != end) log(constructors, "        %p\n", *p++);
     abort();
 }
+
 }
 
 void start64() {
     run_constructors(__CTOR_LIST__, __CTOR_END__);
+
     dumpMBInfo(start32::mboot_info());
 
     mem::init(start32::mboot_info(), start32::memory_start, -kernel_base);
