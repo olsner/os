@@ -123,21 +123,21 @@ bool isdigit(char c) {
 
 #define printf xprintf
 
-static const intptr_t kernel_base = -(1 << 30);
+const intptr_t kernel_base = -(1 << 30);
 
 template <class T>
-static constexpr T* PhysAddr(uintptr_t phys) {
+constexpr T* PhysAddr(uintptr_t phys) {
     return (T*)(phys + kernel_base);
 }
 template <class T>
-static constexpr T* HighAddr(T* lowptr) {
+constexpr T* HighAddr(T* lowptr) {
     return PhysAddr<T>((uintptr_t)lowptr);
 }
 uintptr_t ToPhysAddr(const volatile void *p) {
     return (uintptr_t)p - kernel_base;
 }
 
-static void memset16(u16* dest, u16 value, size_t n) {
+void memset16(u16* dest, u16 value, size_t n) {
     if (/* constant(value) && */ (value >> 8) == (value & 0xff)) {
         memset(dest, value, n * 2);
     } else {
