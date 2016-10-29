@@ -57,6 +57,7 @@ void unimpl(const char* what) NORETURN;
 #define log_transfer_message 1
 #define log_assoc_procs 0
 #define log_recv 1
+#define log_malloc 0
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
