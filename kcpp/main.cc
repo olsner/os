@@ -58,6 +58,7 @@ void unimpl(const char* what) NORETURN;
 #define log_assoc_procs 0
 #define log_recv 1
 #define log_malloc 0
+#define log_constructors 0
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
@@ -493,6 +494,12 @@ extern "C" Ctor __CTOR_END__[];
 void run_constructors(Ctor *p, Ctor *end) {
     while (p != end) (*p++)();
 }
+void print_constructors(Ctor *p, Ctor *end) {
+    if (p == end) return;
+    log(constructors, "Constructors found!\n");
+    while (p != end) log(constructors, "        %p\n", *p++);
+    abort();
+}
 }
 
 void start64() {
@@ -501,6 +508,8 @@ void start64() {
 
     mem::init(start32::mboot_info(), start32::memory_start, -kernel_base);
     idt::init();
+
+    print_constructors(__CTOR_LIST__, __CTOR_END__);
 
     auto cpu = new Cpu();
     cpu->start();
