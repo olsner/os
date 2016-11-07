@@ -459,14 +459,15 @@ NORETURN void page_fault(Process *p, u64 error) {
 
 } // namespace
 
-extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
+extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu, void *rip) NORETURN;
 
-void irq_entry(u8 vec, u64 err, Cpu *cpu) {
-    log(irq_entry, "irq_entry(%u, %#lx, proc=%p, cr2=%p)\n", vec, err, cpu->process, (void*)x86::cr2());
+void irq_entry(u8 vec, u64 err, Cpu *cpu, void *rip) {
+    assert(cpu->self == cpu);
+    log(irq_entry, "irq_entry(%u, %#lx, rip=%p, proc=%p, cr2=%p)\n", vec, err, rip, cpu->process, (void*)x86::cr2());
     if (vec == 14 && !(err & pf::User)) {
         // TODO Get the stack (e.g. with an asm() variable), check that it's
         // inside the CPU's kernel-stack bounds, print the whole thing.
-        panic("Kernel PF cr2=%p err=%#lx\n", (void*)x86::cr2(), err);
+        panic("Kernel PF cr2=%p err=%#lx rip=%p\n", (void*)x86::cr2(), err, rip);
     }
     auto p = cpu->process;
     cpu->leave(p);

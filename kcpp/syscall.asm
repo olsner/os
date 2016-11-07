@@ -39,6 +39,12 @@ struc iframe
 	.ss	resq 1
 endstruc
 
+struc eframe
+	.vector	resq 1
+	.error	resq 1
+	.iframe	resb iframe_size
+endstruc
+
 struc gseg
 	.self	resq 1
 	.rsp	resq 1
@@ -181,9 +187,9 @@ endproc
 
 section .text.handle_irq_generic, exec
 
-%macro stub 1
+%macro stub 1-2 handle_no_fault
 	push	byte %1
-	jmp	handle_irq_generic
+	jmp	%2
 %endmacro
 
 %macro handle_irqN_generic 1
@@ -221,69 +227,57 @@ combine EXC_ERR_MASK, 8, 10, 11, 12, 13, 14, 17
 %endmacro
 
 ; Stack when we get here (from low to high address)
-; vector
-; (error)
-; rip
-; cs
-; rflags
-; rsp
-; ss
+; fault: vector error rip cs rflags rsp ss
+; non-fault: vector rip cs rflags rsp ss
+
+proc handle_no_fault, NOSECTION
+	; luckily we run with interrupts disabled, since we wouldn't switch
+	; stack on exceptions while in kernel mode the outside-stack data
+	; might be clobbered.
+
+	; Twirl around the stack a bit.
+
+	; | vector -> vector vector |
+	pop	qword [rsp - 8]
+	; vector | 0 (dummy error)
+	push	byte 0
+	; | vector 0
+	sub	rsp, 8
+endproc
+
 ; some tasks:
 ; get gseg
 ; save rip, rflags, rsp to process
 ; save all caller-save regs to process
-proc handle_irq_generic, NOSECTION
-	push	rsi
-	lea	rsi, [rsp + 8]
-	push	rdi
-	push	rax
-
+proc handle_fault, NOSECTION
 	; Set flags to a known state. Must be done before lodsq in case someone
 	; set the direction flag.
 	push	byte 0
 	popfq
 
-	; rsp is always 16-byte aligned before pushing the stack frame, the
-	; basic interrupt stack frame is 5 qwords (making it misaligned), we
-	; always add a vector (aligning it again), and sometimes add another
-	; error making it misaligned.
-	; rsi is the original stack pointer on entry.
-	; I.e. test esi,8 => nz if we have an error.
-	lodsq
-	mov	edi, eax
-	; We removed the vector above, so the parity we're checking is flipped.
-	test	esi, 8
-	cond	z, lodsq
-
-	; edi = vector
-	; rax = error (if applicable, otherwise garbage)
-	; rsi = frame
+	push	rax
 
 	; If we came from privilege level 0, this is some sort of kernel
 	; fault.
-	test	byte [rsi + iframe.cs], 3
+	test	byte [rsp + 8 + eframe.iframe + iframe.cs], 3
 	jz	.kernel_fault
 
 	swapgs
 	zero	eax
 	mov	rax, [gs:rax + gseg.proc]
 
+	; could also mean gs swapping failed or something
+	test	rax, rax
+	jz	.from_idle
+
 	; stack:
-	; saved_rax, saved_rdi, saved_rsi, vector, [error], rip, cs, rflags, rsp, ss
+	; saved_rax, vector, error, rip, cs, rflags, rsp, ss
 
 	pop	qword [rax - proc + proc.rax] ; The rax saved on entry
 	sub	rax, proc
-	pop	qword [rax + proc.rdi]
-	pop	qword [rax + proc.rsi]
-	pop	rdi ; vector
-	; rsp now points to error or frame, rsi should be error or zero
-	zero	esi
-	; size of stack frame is misaligned, meaning if it's aligned we have
-	; an error code.
-	test	esp, 8
-	jnz	.no_err
+	save_regs rax,  rdi, rsi
+	pop	rdi
 	pop	rsi
-.no_err:
 
 	pop	qword [rax + proc.rip]
 	add	rsp, 8 ; cs
@@ -297,13 +291,13 @@ proc handle_irq_generic, NOSECTION
 	save_regs rax,  rdx,rcx,r8,r9,r10,r11
 	save_regs rax,  rbp,rbx,r12,r13,r14,r15
 
-.irq_entry:
-	add	rsp, 0xfff
-	and	sp, ~0xfff
+	add	rsp, 8
 
-	zero    edx
-	mov     rdx, [gs:rdx + gseg.self]
+.irq_entry:
+	zero	edx
+	mov	rdx, [gs:rdx + gseg.self]
 	; Now rdi = vector, rsi = error (or 0), rdx = gseg
+        ; kernel faults also set rcx = rip
 	extern	irq_entry
 	jmp	irq_entry
 
@@ -311,14 +305,26 @@ proc handle_irq_generic, NOSECTION
 	zero	eax
 	mov	rax, [gs:rax + gseg.proc]
 	test	rax, rax
+	; Could be an interrupt during idle if there's no current process.
+	; (though I think this is not actually quite reliable)
 	jz	.from_idle
 
 	cli
 	hlt
 
 .from_idle:
-	; saved_rax, saved_rdi, saved_rsi, vector, [error], rip, cs, rflags, rsp, ss
-	mov	rdi, [rsp + 24]
+	; saved_rax, vector, error, rip, cs, rflags, rsp, ss
+	pop	rax
+%if 0
+	pop	rdi
+	pop	rsi
+	pop	rcx
+%else
+	mov	rdi, [rsp]
+	mov	rsi, [rsp + 8]
+	; rdx is set in .irq_entry
+	mov	rcx, [rsp + 16]
+%endif
 	jmp	.irq_entry
 
 ; slowret: all registers are currently unknown, load *everything* from process
@@ -346,8 +352,8 @@ endproc
 
 endproc
 
-handler_NM_stub stub 7
+handler_NM_stub stub 7, handle_fault
 gfunc handler_NM_stub
-handler_PF_stub stub 14
+handler_PF_stub stub 14, handle_fault
 gfunc handler_PF_stub
 
