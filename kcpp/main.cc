@@ -197,9 +197,23 @@ void abort() {
     __builtin_unreachable();
 }
 
+void dump_stack() {
+    register u64 *rsp __asm__("rsp");
+    u64 *stack = rsp;
+    while ((u64)stack & 0xfff) {
+        printf("%p: %#lx\n", stack, *stack);
+        stack++;
+    }
+}
+
+NORETURN void abort_panicky() {
+    dump_stack();
+    abort();
+}
+
 void assert_failed(const char* fileline, const char* msg) {
     write(fileline); write(": ASSERT FAILED: "); write(msg);
-    abort();
+    abort_panicky();
 }
 
 namespace x86 {
@@ -465,6 +479,7 @@ void irq_entry(u8 vec, u64 err, Cpu *cpu, void *rip) {
     assert(cpu->self == cpu);
     log(irq_entry, "irq_entry(%u, %#lx, rip=%p, proc=%p, cr2=%p)\n", vec, err, rip, cpu->process, (void*)x86::cr2());
     if (vec == 14 && !(err & pf::User)) {
+        dump_stack();
         // TODO Get the stack (e.g. with an asm() variable), check that it's
         // inside the CPU's kernel-stack bounds, print the whole thing.
         panic("Kernel PF cr2=%p err=%#lx rip=%p\n", (void*)x86::cr2(), err, rip);

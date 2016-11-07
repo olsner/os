@@ -42,9 +42,6 @@ struct Cpu {
     uint8_t tss[TSS_SIZE];
 
     // Assume everything else is 0-initialized
-    // FIXME There's already a stack allocated by the boot loader, a bit
-    // wasteful to allocate a new one. Non-first CPUs might need this code
-    // though?
     Cpu(): self(this), stack(new u8[4096] + 4096) {
         assert(GDT_SIZE == start32::gdt_end - start32::gdt_start);
         memcpy(gdt, start32::gdt_start, GDT_SIZE);
@@ -78,6 +75,7 @@ struct Cpu {
     }
 
     NORETURN void run() {
+        assert(this == self);
         if (Process *p = runqueue.pop()) {
             assert(p->is_queued());
             p->unset(proc::Queued);
@@ -115,6 +113,7 @@ struct Cpu {
             // won't fault again)
             x86::set_cr3(p->cr3);
         }
+        assert(this == self);
         if (p->is(proc::FastRet)) {
             p->unset(proc::FastRet);
             fastret(p, p->regs.rax);
@@ -124,6 +123,7 @@ struct Cpu {
     }
 
     NORETURN void syscall_return(Process *p, u64 rax) {
+        assert(this == self);
         p->regs.rax = rax;
         switch_to(p);
     }
