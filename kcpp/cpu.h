@@ -10,22 +10,6 @@ extern "C" void syscall_entry_compat();
 struct Cpu;
 void idle(Cpu *) NORETURN;
 
-void setup_msrs(u64 gs) {
-    using x86::seg;
-    using x86::rflags;
-    using x86::efer;
-    using namespace x86::msr;
-
-    wrmsr(STAR, (seg::user_code32_base << 16) | seg::code);
-    wrmsr(LSTAR, (uintptr_t)syscall_entry_stub);
-    wrmsr(CSTAR, (uintptr_t)syscall_entry_compat);
-    // FIXME: We want to clear a lot more flags - Direction for instance.
-    // FreeBSD sets PSL_NT|PSL_T|PSL_I|PSL_C|PSL_D
-    wrmsr(FMASK, rflags::IF | rflags::VM);
-    wrmsr(EFER, rdmsr(EFER) | efer::SCE | efer::NXE);
-    wrmsr(GSBASE, gs);
-}
-
 struct Cpu {
     Cpu *self;
     u8 *stack;
@@ -64,6 +48,23 @@ struct Cpu {
         write_u8(desc + 4, tss_addr >> 16);
         write_u8(desc + 7, tss_addr >> 24);
         // The limit is prefilled in the GDT from start32.inc.
+        assert(this == self);
+    }
+
+    static void setup_msrs(u64 gs) {
+        using x86::seg;
+        using x86::rflags;
+        using x86::efer;
+        using namespace x86::msr;
+
+        wrmsr(STAR, (seg::user_code32_base << 16) | seg::code);
+        wrmsr(LSTAR, (uintptr_t)syscall_entry_stub);
+        wrmsr(CSTAR, (uintptr_t)syscall_entry_compat);
+        // FIXME: We want to clear a lot more flags - Direction for instance.
+        // FreeBSD sets PSL_NT|PSL_T|PSL_I|PSL_C|PSL_D
+        wrmsr(FMASK, rflags::IF | rflags::VM);
+        wrmsr(EFER, rdmsr(EFER) | efer::SCE | efer::NXE);
+        wrmsr(GSBASE, gs);
     }
 
     // Runs on the CPU itself to set up CPU state.
@@ -96,6 +97,7 @@ struct Cpu {
 
     void leave(Process *p) {
         assert(p == process);
+        assert(this == self);
         p->unset(proc::Running);
         process = NULL;
     }
