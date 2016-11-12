@@ -26,7 +26,7 @@ struct Cpu {
     uint8_t tss[TSS_SIZE];
 
     // Assume everything else is 0-initialized
-    Cpu(): self(this), stack(new u8[4096] + 4096) {
+    Cpu(): self(this), stack(new u8[4096] + 4080) {
         assert(GDT_SIZE == start32::gdt_end - start32::gdt_start);
         memcpy(gdt, start32::gdt_start, GDT_SIZE);
 
@@ -48,6 +48,12 @@ struct Cpu {
         write_u8(desc + 4, tss_addr >> 16);
         write_u8(desc + 7, tss_addr >> 24);
         // The limit is prefilled in the GDT from start32.inc.
+
+        write_u64(stack, 0x1234567890abcdef);
+        write_u64(stack + 8, 0xfedcba0987654321);
+
+        printf("cpu start: %p self=%p stack=%p..%p\n",
+                this, self, stack - 4096, stack);
         assert(this == self);
     }
 
@@ -76,6 +82,7 @@ struct Cpu {
     }
 
     NORETURN void run() {
+        printf("%p ==? %p\n", this, self);
         assert(this == self);
         if (Process *p = runqueue.pop()) {
             assert(p->is_queued());
@@ -115,6 +122,7 @@ struct Cpu {
             // won't fault again)
             x86::set_cr3(p->cr3);
         }
+        log(switch, "%p switch_to %p cr3=%#lx\n", this, p, p->cr3);
         assert(this == self);
         if (p->is(proc::FastRet)) {
             p->unset(proc::FastRet);

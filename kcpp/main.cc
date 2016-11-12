@@ -46,8 +46,8 @@ void unimpl(const char* what) NORETURN;
 #define log_idle 1
 #define log_switch 1
 #define log_runqueue 1
-#define log_page_fault 0
-#define log_add_pte 0
+#define log_page_fault 1
+#define log_add_pte 1
 #define log_irq_entry 1
 #define log_portio 1
 #define log_hmod 1
@@ -55,10 +55,10 @@ void unimpl(const char* what) NORETURN;
 #define log_dict_insert 0
 #define log_ipc 1
 #define log_transfer_message 1
-#define log_assoc_procs 0
+#define log_assoc_procs 1
 #define log_recv 1
 #define log_malloc 0
-#define log_constructors 0
+#define log_constructors 1
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
@@ -477,6 +477,7 @@ extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu, void *rip) NORETURN;
 
 void irq_entry(u8 vec, u64 err, Cpu *cpu, void *rip) {
     assert(cpu->self == cpu);
+    printf("cpu=%p\n", cpu);
     log(irq_entry, "irq_entry(%u, %#lx, rip=%p, proc=%p, cr2=%p)\n", vec, err, rip, cpu->process, (void*)x86::cr2());
     if (vec == 14 && !(err & pf::User)) {
         dump_stack();
@@ -484,6 +485,7 @@ void irq_entry(u8 vec, u64 err, Cpu *cpu, void *rip) {
         // inside the CPU's kernel-stack bounds, print the whole thing.
         panic("Kernel PF cr2=%p err=%#lx rip=%p\n", (void*)x86::cr2(), err, rip);
     }
+    assert(cpu->process);
     auto p = cpu->process;
     cpu->leave(p);
     switch (vec) {
@@ -539,6 +541,7 @@ void start64() {
     print_constructors(__CTOR_LIST__, __CTOR_END__);
 
     auto cpu = new Cpu();
+    printf("Starting CPU %p\n", cpu);
     cpu->start();
     init_modules(cpu, start32::mboot_info());
     cpu->run();
