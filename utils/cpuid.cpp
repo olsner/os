@@ -13,7 +13,7 @@ u32 parse_hex(const char* arg)
 	memset(p, 0, pend-p);
 	if (arg[0] == '0' && (arg[1] == 'x' || arg[1] == 'X'))
 		arg+=2;
-	while (*arg)
+	while (*arg && *arg != ':')
 	{
 		if (*arg != '_')
 			*p++ = *arg;
@@ -44,9 +44,8 @@ void parse_regbit(const char* bitarg, int* reg, int* bit)
 	}
 }
 
-void cpuid(u32 cpuid_num, u32* data)
+void cpuid(u32 cpuid_num, u32 cpuid_num2, u32* data)
 {
-	u32 cpuid_num2 = 0;
 	__asm__ __volatile__(
 		"cpuid"
 		: "=a" (data[0])
@@ -58,9 +57,9 @@ void cpuid(u32 cpuid_num, u32* data)
 		: );
 }
 
-void print_info(u32 num, u32* data, int reg, int bit)
+void print_info(u32 num, u32 num2, u32* data, int reg, int bit)
 {
-	printf("CPUID %08x:\n", num);
+	printf("CPUID %08x:%08x:\n", num, num2);
 	for (int i=0;i<4;i++)
 		printf("%s: %08x\n", regs[i], data[i]);
 	printf("\n");
@@ -78,7 +77,15 @@ int main(int argc, const char *const argv[])
 	if (argc >= 3)
 		bitarg = argv[2];
 
-	u32 cpuid_num = idarg ? parse_hex(idarg) : 0;
+	u32 cpuid_num = 0, cpuid_num2 = 0;
+	if (idarg)
+	{
+		cpuid_num = parse_hex(idarg);
+		if (const char *col = strchr(idarg, ':'))
+		{
+			cpuid_num2 = parse_hex(col + 1);
+		}
+	}
 	int bitnum = -1;
 	int reg = -1;
 	if (bitarg) parse_regbit(bitarg, &reg, &bitnum);
@@ -86,6 +93,6 @@ int main(int argc, const char *const argv[])
 	printf("cpuid'ing %08x %d bit %d\n", cpuid_num, reg, bitnum);
 
 	u32 data[4];
-	cpuid(cpuid_num, data);
-	print_info(cpuid_num, data, reg, bitnum);
+	cpuid(cpuid_num, cpuid_num2, data);
+	print_info(cpuid_num, cpuid_num2, data, reg, bitnum);
 }
