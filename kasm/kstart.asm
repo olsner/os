@@ -39,11 +39,12 @@
 ; configuration for pages.inc and start32.inc, use a single 1GB mapping instead
 ; of 512 2MB-pages.
 %define use_1gb_pages 0
+%define smp_kernel 0
 
 %define debug_tcalls 0
 
 ; Use an unrolled loop of movntdq (MMX?) instructions to clear pages
-%define unroll_memset_0 0
+%define unroll_zero_page 0
 
 %define PANIC PANIC_ __LINE__
 %macro PANIC_ 1
@@ -1240,7 +1241,7 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	mov	rax, [rbp + gseg.free_frame]
 	test	rax, rax
 	; If local stack is out of frames, steal from global stack
-	jz	.steal_global_frames
+	jz	allocate_global_frame
 
 	mov	rsi, [rax]
 	mov	[rbp + gseg.free_frame], rsi
@@ -1248,34 +1249,38 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	mov	[rax], rsi
 	ret
 
-.steal_global_frames:
-	; TODO acquire global-page-structures spinlock
+allocate_global_frame:
+	SPIN_LOCK [globals.alloc_lock]
+
 	mov	rax, [globals.free_frame]
 	test	rax,rax
 	jz	.clear_garbage_frame
 
 	mov	rcx, [rax]
-	test	ecx, ecx
-	jz	.skip_steal2
-	; If we can, steal two pages :)
-	mov	rsi, [rcx]
-	mov	[rbp + gseg.free_frame], rcx
-	mov	rcx, rsi
-.skip_steal2:
 	mov	[globals.free_frame], rcx
-	; TODO release global-page-structures spinlock
+
+.unlock_ret:
+	SPIN_UNLOCK [globals.alloc_lock]
 	ret
 
 .clear_garbage_frame:
 	mov	rax, [globals.garbage_frame]
 	test	rax,rax
-	jz	.ret_oom
+	jz	.unlock_ret
 
 	mov	rcx, [rax]
 	mov	[globals.garbage_frame], rcx
 
+	SPIN_UNLOCK [globals.alloc_lock]
+
 	mov	rdi, rax
-%if unroll_memset_0
+	jmp	zero_page
+
+zero_page:
+%if unroll_zero_page
+	; return value
+	push	rdi
+
 	add	rdi, 128
 	mov	ecx, 16
 	; Clear the task-switched flag while we reuse some registers
@@ -1296,6 +1301,7 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	movdqu	xmm0, [rbp + gseg.temp_xmm0]
 	; Reset TS to whatever it was before
 	mov	cr0, rdx
+	pop	rax
 %else
 	mov	ecx, 4096/8
 	zero	eax
@@ -1303,8 +1309,7 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 	lea	rax, [rdi - 4096]
 %endif
 
-.ret_oom:
-	; TODO release global-page-structures spinlock
+	SPIN_UNLOCK [globals.alloc_lock]
 	ret
 
 ; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storage?
@@ -3989,6 +3994,9 @@ globals:
 ; media/fpu instructions. Points to a whole page but only 512 bytes is actually
 ; required.
 .initial_fpstate	resq 1
+%if smp_kernel
+.alloc_lock	resb 1
+%endif
 
 %if kernel_vga_console
 .vga_base	resq 1

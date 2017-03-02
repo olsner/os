@@ -27,3 +27,16 @@ __SECT__
 	resb (%1 %+ _size) * %2
 %endmacro
 
+%macro SPIN_LOCK 1
+%if smp_kernel
+%%spin:
+lock	bts	dword %1, 1
+	jc	%%spin
+%endif
+%endmacro
+
+%macro SPIN_UNLOCK 1
+%if smp_kernel
+	mov	byte %1, 0
+%endif
+%endmacro
