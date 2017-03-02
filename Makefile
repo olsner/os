@@ -13,6 +13,8 @@ CROSS :=
 endif
 CC := $(CROSS)gcc
 CXX := $(CROSS)g++
+HOST_CC := gcc
+HOST_CXX := g++
 
 export LD := $(CROSS)ld
 export OBJCOPY := $(CROSS)objcopy
@@ -86,13 +88,13 @@ all: $(UTIL_BINS)
 
 clean::
 	rm -fr $(OUTDIR)
-	rm -f cpuid rflags
+	rm -f cpuid rflags $(UTIL_BINS)
 
 %: %.cpp
-	$(HUSH_CXX) $(CXX) $(CXXFLAGS) -o $@ $<
+	$(HUSH_CXX) $(HOST_CXX) $(CXXFLAGS) -o $@ $<
 
 %: %.c
-	$(HUSH_CC) $(CC) $(CFLAGS) -o $@ $<
+	$(HUSH_CC) $(HOST_CC) $(CFLAGS) -o $@ $<
 
 -include $(DEPFILES)
 
