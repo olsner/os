@@ -43,9 +43,6 @@
 
 %define debug_tcalls 0
 
-; Use an unrolled loop of movntdq (MMX?) instructions to clear pages
-%define unroll_zero_page 0
-
 %define PANIC PANIC_ __LINE__
 %macro PANIC_ 1
 	call	panic
@@ -1267,43 +1264,12 @@ allocate_global_frame:
 
 	SPIN_UNLOCK [globals.alloc_lock]
 
+	push	rax
 	mov	rdi, rax
-	jmp	zero_page
-
-zero_page:
-%if unroll_zero_page
-	; return value
-	push	rdi
-
-	add	rdi, 128
-	mov	ecx, 16
-	; Clear the task-switched flag while we reuse some registers
-	mov	rdx, cr0
-	clts
-	movdqu	[rbp + gseg.temp_xmm0], xmm0
-	xorps	xmm0, xmm0
-
-.loop:
-%assign i -128
-%rep 16
-	movntdq	[rdi + i], xmm0
-%assign i i+16
-%endrep
-	add	rdi, 16*16
-	loop	.loop
-
-	movdqu	xmm0, [rbp + gseg.temp_xmm0]
-	; Reset TS to whatever it was before
-	mov	cr0, rdx
-	pop	rax
-%else
 	mov	ecx, 4096/8
 	zero	eax
 	rep stosq
-	lea	rax, [rdi - 4096]
-%endif
-
-	SPIN_UNLOCK [globals.alloc_lock]
+	pop	rax
 	ret
 
 ; CPU-local garbage-frame stack? Background process for trickling cleared pages into cpu-local storage?
