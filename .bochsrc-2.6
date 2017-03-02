@@ -21,9 +21,10 @@ pci: enabled=1, chipset=i440fx, slot1=pcivga
 vga: extension=vbe, update_freq=5
 cpu: count=1, ips=400000000, model=bx_generic, reset_on_triple_fault=0, cpuid_limit_winnt=0, ignore_bad_msrs=1, mwait_is_nop=0
 cpuid: level=6, stepping=3, model=3, family=6, vendor_string="GenuineIntel", brand_string="              Intel(R) Pentium(R) 4 CPU        "
-cpuid: mmx=1, apic=xapic, sse=sse2, sse4a=0, misaligned_sse=0, sep=1, movbe=0, adx=0
-cpuid: aes=0, xsave=0, xsaveopt=0, x86_64=1, 1g_pages=1, pcid=0, fsgsbase=0, smep=0
+cpuid: mmx=1, apic=xapic, sse4a=0, misaligned_sse=0, sep=1, movbe=0, adx=0
+cpuid: aes=0, xsave=1, xsaveopt=1, x86_64=1, 1g_pages=1, pcid=0, fsgsbase=0, smep=0
 cpuid: smap=0, mwait=1
+cpuid: simd=avx
 print_timestamps: enabled=0
 debugger_log: -
 magic_break: enabled=0

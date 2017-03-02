@@ -1,7 +1,7 @@
 Configuration required for Bochs (2.6.2):
 
 Required:
---enable-x86-64 --enable-pci --enable-clgd54xx --enable-e1000
+--enable-x86-64 --enable-pci --enable-clgd54xx --enable-e1000 --enable-avx
 
 Recommended:
 * debugger
@@ -16,4 +16,4 @@ Optimization flags:
 --enable-all-optimizations
 
 Whole shebang:
-./configure  -C --prefix=/opt/bochs --enable-debugger --enable-x86-debugger --enable-x86-64 --enable-all-optimizations --enable-pci --enable-readline --enable-clgd54xx --enable-disasm --enable-idle-hack --enable-ne2000 --enable-e1000
+./configure  -C --prefix=/opt/bochs --enable-debugger --enable-x86-debugger --enable-x86-64 --enable-all-optimizations --enable-pci --enable-readline --enable-clgd54xx --enable-disasm --enable-idle-hack --enable-ne2000 --enable-e1000 --enable-avx
