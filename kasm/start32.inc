@@ -253,7 +253,7 @@ KERNEL_PML4E	equ	pages.kernel_pdp | PT_FLAGS
 %endif
 
 	; Start mode-switching
-	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT
+	mov	eax, CR4_PAE | CR4_MCE | CR4_PGE | CR4_PCE | CR4_OSFXSR | CR4_OSXMMEXCPT | CR4_OSXSAVE
 	mov	cr4, eax
 
 	mov	edx, pages.pml4 ; address of PML4

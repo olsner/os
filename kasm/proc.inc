@@ -10,6 +10,9 @@
 %endrep
 %endmacro
 
+; 512 bytes for legacy area, 64 bytes of XSAVE header, 256 bytes of AVX state.
+%define XSAVE_AREA_SIZE 512+64+256
+
 struc	proc, -0x80
 	.regs	resq 16 ; a,c,d,b,sp,bp,si,di,r8-15
 
@@ -41,8 +44,8 @@ struc	proc, -0x80
 	; The lower bits are access flags for the fault/request.
 	.fault_addr	resq 1
 
-	align 16
-	.fxsave	resb	512
+	align 64
+	.xsave	resb	XSAVE_AREA_SIZE
 endstruc
 
 %macro defbit 2
