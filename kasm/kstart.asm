@@ -1094,6 +1094,9 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 	; Require that previous/current process is already null? We should not
 	; surprise-switch until we've e.g. saved all registers...
 	and	[rbx + proc.flags], byte ~PROC_RUNNING
+
+	; TODO Save old FPU state with xsaveopt
+
 .no_prev_proc:
 	mov	[rbp + gseg.process], rax
 	or	[rax + proc.flags], byte PROC_RUNNING
