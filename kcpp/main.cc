@@ -42,20 +42,22 @@ void unimpl(const char* what) NORETURN;
     do { if (enable_assert && !(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X "\n"); } } while (0)
 
 #define enable_assert 1
-#define log_idle 1
-#define log_switch 1
-#define log_runqueue 1
+#define log_idle 0
+#define log_switch 0
+#define log_runqueue 0
 #define log_page_fault 0
 #define log_add_pte 0
-#define log_irq_entry 1
-#define log_portio 1
-#define log_hmod 1
+#define log_irq_entry 0
+#define log_portio 0
+#define log_hmod 0
 #define log_dict_find 0
 #define log_dict_insert 0
-#define log_ipc 1
-#define log_transfer_message 1
+#define log_ipc 0
+#define log_transfer_message 0
 #define log_assoc_procs 0
-#define log_recv 1
+#define log_recv 0
+#define log_map_range 0
+#define log_syscall 0
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
