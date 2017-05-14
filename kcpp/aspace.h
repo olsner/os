@@ -112,20 +112,68 @@ PageTable *get_alloc_pt(PageTable table, u64 index, u16 flags) {
     }
 }
 
-struct AddressSpace {
+class AddressSpace: public RefCounted<AddressSpace> {
     PML4 *pml4;
-    u32 count;
-
-    AddressSpace(): pml4(allocate_pml4()), count(1) {}
 
     Dict<MapCard> mapcards;
     Dict<Backing> backings;
 
-    void mapcard_set(uintptr_t vaddr, uintptr_t handle, intptr_t offset, int flags) {
+    Dict<Handle> handles;
+    Dict<PendingPulse> pending;
+
+    DList<Process> waiters;
+
+public:
+    AddressSpace(): pml4(allocate_pml4()) {}
+
+    void mapcard_set(uintptr_t vaddr, uintptr_t handle, uintptr_t offsetFlags) {
         if (MapCard *p = mapcards.find_exact(vaddr)) {
-            p->set(handle, offset | flags);
+            p->set(handle, offsetFlags);
         } else {
-            mapcards.insert(new MapCard(vaddr, handle, offset | flags));
+            mapcards.insert(new MapCard(vaddr, handle, offsetFlags));
+        }
+    }
+    void mapcard_set(uintptr_t vaddr, uintptr_t handle, intptr_t offset, int flags) {
+        mapcard_set(vaddr, handle, offset | flags);
+    }
+
+    void map_range(uintptr_t start, uintptr_t end, uintptr_t handle, uintptr_t offsetFlags) {
+        log(map_range, "map_range %#lx..%#lx to %#lx:%#lx\n", start, end, handle, offsetFlags);
+
+        // Start by figuring out what to do with the end of the range. We want
+        // to make sure that end.. is mapped to whatever it was mapped to
+        // before, and also optimize away any unnecessary cards.
+
+        uintptr_t end_handle = 0, end_offset = 0;
+        MapCard *endCard = mapcards.find_le(end);
+        if (endCard) {
+            end_handle = endCard->handle;
+            end_offset = endCard->offset;
+        }
+        if (end_offset == offsetFlags && end_handle == handle) {
+            // Remove end card, it's equivalent to the start-card we're adding.
+            // TODO Seems to be missing a few cases here... If end-vaddr <
+            // start, we shouldn't touch it. (and we shouldn't add a start
+            // handle either.)
+            delete mapcards.remove(end);
+        } else {
+            // If the vaddr is less than our end, it's either inside the range
+            // and will be removed below, or it's before the range and needs
+            // to be duplicated at the end. If the vaddr is exactly equal, we
+            // can just keep it to mark the end of the range.
+            if (endCard->vaddr() != end) {
+                mapcard_set(end, end_handle, end_offset);
+            }
+        }
+
+        // Set this last, since there might be an older mapcard at vaddr==start
+        // that sets what the parameters starting at end.
+        mapcard_set(start, handle, offsetFlags);
+
+        // Find all cards vaddr < key < end and remove them.
+        while (MapCard *p = mapcards.remove_range_exclusive(start, end))
+        {
+            delete p;
         }
     }
 
@@ -175,6 +223,40 @@ struct AddressSpace {
         auto pd = get_alloc_pt(*pdp, vaddr >> 30, 7);
         auto pt = get_alloc_pt(*pd, vaddr >> 21, 7);
         (*pt)[(vaddr >> 12) & 0x1ff] = pte;
+    }
+
+    Handle *new_handle(uintptr_t key, AddressSpace *other) {
+        if (Handle *old = handles.find_exact(key)) {
+            delete_handle(old);
+        }
+        return handles.insert(new Handle(key, other));
+    }
+
+    Handle *find_handle(uintptr_t key) const {
+        return handles.find_exact(key);
+    }
+    void rename_handle(Handle *handle, uintptr_t new_key) {
+        handles.rekey(handle, new_key);
+    }
+    void delete_handle(Handle *handle) {
+        handle->dissociate();
+        Handle* existing = handles.remove(handle->key());
+        assert(existing == handle);
+        delete handle;
+    }
+
+    Process *get_sender(uintptr_t key);
+    Process *pop_sender(uintptr_t key);
+    Process *get_recipient(uintptr_t key);
+    Process *pop_recipient(uintptr_t key);
+
+    void add_waiter(Process *p)
+    {
+        waiters.append(p);
+    }
+    void remove_waiter(Process *p)
+    {
+        waiters.remove(p);
     }
 };
 }

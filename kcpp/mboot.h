@@ -92,10 +92,6 @@ struct Info {
     FB fb;
 
     bool has(InfoFlags flag) const { return !!(flags & flag); }
-
-    /*slice<Module> modules() {
-        return make_slice(PhysAddr<Module>(mods_addr), mods_count);
-    }*/
 };
 
 struct Module {

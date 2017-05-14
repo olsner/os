@@ -42,51 +42,6 @@ struct Regs {
     u64 r8, r9, r10, r11, r12, r13, r14, r15;
 };
 
-struct Process;
-
-struct Handle
-{
-    typedef uintptr_t Key;
-    DictNode<Key, Handle> node;
-    Process *process;
-    Handle *other;
-    u64 pulses;
-
-    Handle(uintptr_t key, Process *process):
-        node(key), process(process), other(NULL), pulses(0) {}
-
-    uintptr_t key() const { return node.key; }
-
-    void dissociate() {
-        if (other) {
-            other->other = NULL;
-            other = NULL;
-        }
-    }
-
-    void associate(Process *p, Handle *g) {
-        g->process = p;
-        g->other = this;
-        other = g;
-    }
-
-    static void associate(Process *p, Process *q, Handle *h, Handle *g) {
-        h->process = q;
-        h->other = g;
-
-        g->process = p;
-        g->other = h;
-    }
-};
-
-struct PendingPulse
-{
-    typedef uintptr_t Key;
-    DictNode<Key, PendingPulse> node;
-
-    PendingPulse(Handle *handle): node(handle->key()) {}
-};
-
 struct Process {
     // First: fields shared with asm code...
     Regs regs;
@@ -95,14 +50,10 @@ struct Process {
     u64 cr3;
     // End of assembly-shared fields.
     u64 flags;
-    Process *waiting_for;
 
-    DList<Process> waiters;
     DListNode<Process> node;
 
-    AddressSpace *aspace;
-    Dict<Handle> handles;
-    Dict<PendingPulse> pending;
+    RefCnt<AddressSpace> aspace;
     u64 fault_addr;
     // TODO FXSave
 
@@ -115,41 +66,35 @@ struct Process {
     }
 
     void assoc_handles(uintptr_t j, Process *other, uintptr_t i) {
-//        AddressSpace *otherspace = other->aspace;
-//        auto x = aspace->new_handle(j, other);
-//        auto y = otherspace->new_handle(i, this);
-        auto x = new_handle(j, other);
-        auto y = other->new_handle(i, this);
+        AddressSpace *otherspace = other->aspace.get();
+        auto x = aspace->new_handle(j, otherspace);
+        auto y = otherspace->new_handle(i, aspace.get());
         x->other = y;
         y->other = x;
     }
 
-    Handle *new_handle(uintptr_t key, Process *other) {
-        if (Handle *old = handles.find_exact(key)) {
-            delete_handle(old);
-        }
-        return handles.insert(new Handle(key, other));
+    Handle *new_handle(uintptr_t key, AddressSpace *otherspace) {
+        return aspace->new_handle(key, otherspace);
     }
-
     Handle *find_handle(uintptr_t key) const {
-        return handles.find_exact(key);
+        return aspace->find_handle(key);
     }
     void rename_handle(Handle *handle, uintptr_t new_key) {
-        handles.rekey(handle, new_key);
+        aspace->rename_handle(handle, new_key);
     }
     void delete_handle(Handle *handle) {
-        handle->dissociate();
-        Handle* existing = handles.remove(handle->key());
-        assert(existing == handle);
-        delete handle;
+        aspace->delete_handle(handle);
     }
 
+    void wait_for(AddressSpace *otherspace) {
+        assert(!is_queued());
+        otherspace->add_waiter(this);
+    }
     void add_waiter(Process *other) {
-        assert(!other->is_queued());
-        waiters.append(other);
+        other->wait_for(aspace.get());
     }
     void remove_waiter(Process *other) {
-        waiters.remove(other);
+        aspace->remove_waiter(other);
     }
 
     bool is(ProcFlags flag) const {
@@ -172,4 +117,37 @@ struct Process {
     }
     bool is_blocked() const { return !is_runnable(); }
 };
+}
+
+namespace aspace {
+
+Process *AddressSpace::get_sender(uintptr_t key) {
+    for (auto p: waiters) {
+        if (p->is(proc::InSend) && (key == 0 || key == p->regs.rdi)) {
+            return p;
+        }
+    }
+
+    return nullptr;
+}
+
+Process *AddressSpace::pop_sender(uintptr_t key) {
+    Process *p = get_sender(key);
+    if (p) remove_waiter(p);
+    return p;
+}
+
+Process *AddressSpace::get_recipient(uintptr_t key) {
+    // Iterate waiters, find a process that can receive for this key
+    Process *p = nullptr;
+    if (p) {
+        if (p->ipc_state() == proc::mask(proc::InRecv)) {
+            auto rcpt = p->regs.rdi;
+            if (rcpt == key || !p->find_handle(rcpt)) {
+                return p;
+            }
+        }
+    }
+    return nullptr;
+}
 }

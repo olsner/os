@@ -368,13 +368,18 @@ void dumpMBInfo(const mboot::Info& info) {
     }
 }
 
+namespace proc { struct Process; }
+using proc::Process;
+namespace aspace { struct AddressSpace; }
+using aspace::AddressSpace;
+
 #include "dict.h"
 #include "dlist.h"
 #include "mem.h"
+#include "refcnt.h"
+#include "handle.h"
 #include "aspace.h"
-using aspace::AddressSpace;
 #include "proc.h"
-using proc::Process;
 #include "cpu.h"
 using cpu::Cpu;
 using cpu::getcpu;
@@ -388,7 +393,7 @@ Process *new_proc_simple(u32 start, u32 end_unaligned) {
     ret->regs.rsp = 0x100000;
     ret->rip = 0x100000 + (start & 0xfff);
 
-    using namespace aspace;
+    using namespace aspace; // for MAP_*
     aspace->mapcard_set(0x0ff000, 0, 0, MAP_ANON | MAP_RW);
     aspace->mapcard_set(0x100000, 0, start_page - 0x100000, MAP_PHYS | MAP_RX);
     aspace->mapcard_set(0x100000 + (end - start_page), 0, 0, 0);
@@ -447,7 +452,7 @@ NORETURN void page_fault(Process *p, u64 error) {
     i64 fault_addr = x86::cr2();
     assert(fault_addr >= 0);
 
-    auto as = p->aspace;
+    auto as = p->aspace.get();
     auto &back = as->find_add_backing(fault_addr & -0x1000);
     as->add_pte(back.vaddr(), back.pte());
 

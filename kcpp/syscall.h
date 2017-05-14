@@ -51,19 +51,18 @@ u64 portio(u16 port, u8 op, u32 data) {
 
 void hmod(Process *p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
     log(hmod, "%p hmod: id=%lx rename=%lx copy=%lx\n", p, id, rename, copy);
-    if (auto handle = p->find_handle(id)) {
+    AddressSpace* aspace = p->aspace.get();
+    if (auto handle = aspace->find_handle(id)) {
         if (copy) {
-            p->new_handle(copy, handle->process);
+            aspace->new_handle(copy, handle->owner);
         }
         if (rename) {
-            p->rename_handle(handle, rename);
+            aspace->rename_handle(handle, rename);
         } else {
-            p->delete_handle(handle);
+            aspace->delete_handle(handle);
         }
     }
 }
-
-using proc::Handle;
 
 void transfer_set_handle(Process *target, Process *source) {
     auto rcpt = target->regs.rdi;
@@ -80,8 +79,8 @@ void transfer_set_handle(Process *target, Process *source) {
                 g, rcpt);
         } else {
             // Associate new handle
-            g = target->new_handle(rcpt, source);
-            g->associate(target, h);
+            g = target->new_handle(rcpt, source->aspace.get());
+            g->associate(target->aspace.get(), h);
             assert(g->key() == rcpt);
         }
     } else {
@@ -129,21 +128,18 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     u64 other_id = 0;
     if (auto other = h->other) other_id = other->key();
 
-    auto p = h->process;
-    if (p->ipc_state() == proc::mask(proc::InRecv)) {
-        auto rcpt = p->regs.rdi;
-        if (rcpt == other_id || !p->find_handle(rcpt)) {
-            transfer_message(p, sender);
-        }
+    auto aspace = h->owner;
+    if (auto p = aspace->get_recipient(other_id)) {
+        transfer_message(p, sender);
+    } else {
+        log(ipc, "send_or_block: %p waits for %p\n", sender, aspace);
+        sender->wait_for(aspace);
     }
-
-    log(ipc, "send_or_block: %p waits for %p\n", sender, p);
-    p->add_waiter(sender);
 }
 
 NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
-    log(ipc, "%p ipc_send to %lx ==> %p (%p)\n", p, rcpt, handle, handle ? handle->process : NULL);
+    log(ipc, "%p ipc_send to %lx ==> %p (%p)\n", p, rcpt, handle, handle ? handle->owner : NULL);
     assert(handle);
     p->set(proc::InSend);
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
@@ -154,7 +150,7 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
 NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
     assert(handle);
-    log(ipc, "%p ipc_call to %lx ==> process %p\n", p, rcpt, handle->process);
+    log(ipc, "%p ipc_call to %lx ==> process %p\n", p, rcpt, handle->owner);
     p->set(proc::InSend);
     p->set(proc::InRecv);
     p->regs.rdi = rcpt;
@@ -165,12 +161,13 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
 
 void recv(Process *p, Handle *handle) {
     auto other_id = handle->other->key();
-    auto rcpt = handle->process;
-    if (rcpt->is(proc::InSend) && other_id == rcpt->regs.rdi) {
+    assert(handle->owner == p->aspace.get());
+    auto aspace = handle->owner;
+    if (auto rcpt = aspace->get_sender(other_id)) {
         transfer_message(p, rcpt);
         // doesn't return
     } else {
-        rcpt->add_waiter(p);
+        aspace->add_waiter(p);
     }
 }
 
@@ -182,13 +179,9 @@ T latch(T& var, T value = T()) {
 }
 
 void recv_from_any(Process *p) {
-    for (auto waiter: p->waiters) {
-        log(recv, "%p recv: found waiter %p flags %lx\n", p, waiter, waiter->flags);
-        if (waiter->is(proc::InSend)) {
-            log(recv, "%p recv: found sender %p\n", p, waiter);
-            p->remove_waiter(waiter);
-            transfer_message(p, waiter);
-        }
+    if (auto waiter = p->aspace->pop_sender(0)) {
+        log(recv, "%p recv: found sender %p\n", p, waiter);
+        transfer_message(p, waiter);
     }
 
 #if 0
@@ -211,7 +204,7 @@ NORETURN void ipc_recv(Process *p, u64 from) {
     p->set(proc::InRecv);
     p->regs.rdi = from;
     if (handle) {
-        log(recv, "==> process %p\n", handle->process);
+        log(recv, "==> aspace %p\n", handle->owner);
         recv(p, handle);
     } else {
         log(recv, "==> fresh\n");

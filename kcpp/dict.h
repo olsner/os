@@ -90,6 +90,20 @@ template <class V, class K = typename V::Key> struct Dict
         }
         return NULL;
     }
+
+    // Find and remove one item with start < key < end and return it to the
+    // caller (which takes over ownership).
+    WARN_UNUSED_RESULT V *remove_range_exclusive(K start, K end) {
+        Node **p = &root;
+        while (Node *node = *p) {
+            if (start < node->key && node->key < end) {
+                *p = node->right;
+                return node->item();
+            }
+            p = &node->right;
+        }
+        return NULL;
+    }
 };
 
 #define DICT_NODE(Class, member) \
