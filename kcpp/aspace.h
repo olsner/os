@@ -37,6 +37,9 @@ struct MapCard {
     u16 flags() const {
         return offset & 0xfff;
     }
+    uintptr_t offsetFlags(uintptr_t vaddr) const {
+        return vaddr + offset;
+    }
     void set(uintptr_t handle, uintptr_t offset) {
         this->handle = handle;
         this->offset = offset;
@@ -215,6 +218,16 @@ public:
         } else {
             abort("not anon or phys for handle==0");
         }
+    }
+
+    bool find_mapping(uintptr_t vaddr, uintptr_t& offsetFlags, uintptr_t& handle) {
+        auto card = mapcards.find_le(vaddr);
+        if (!card) return false;
+
+        offsetFlags = card->offsetFlags(vaddr);
+        handle = card->handle;
+
+        return true;
     }
 
     void add_pte(uintptr_t vaddr, uintptr_t pte) {

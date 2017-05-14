@@ -147,7 +147,7 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
     getcpu().run();
 }
 
-NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     auto handle = p->find_handle(rcpt);
     assert(handle);
     log(ipc, "%p ipc_call to %lx ==> process %p\n", p, rcpt, handle->owner);
@@ -257,6 +257,26 @@ NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr
     syscall_return(p, 0);
 }
 
+NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
+    // TODO Error out instead of silently adjusting the values.
+    vaddr &= -4096;
+    flags &= aspace::MAP_RWX;
+    log(prefault, "prefault: %lx flags %lx\n", vaddr, flags);
+
+    p->fault_addr = vaddr | flags;
+
+    // Look up mapping at vaddr, adjust vaddr to offset.
+    uintptr_t offsetFlags, handle;
+    if (!p->aspace->find_mapping(vaddr, offsetFlags, handle)) {
+        // TODO Error code instead
+        abort("No mapping for PFAULT");
+    }
+
+    log(prefault, "prefault: mapped to %lx:%lx\n", handle, offsetFlags);
+    p->set(proc::PFault);
+    ipc_call(p, SYS_PFAULT, handle, offsetFlags & -4096, flags & offsetFlags);
+}
+
 } // namespace
 
 extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
@@ -276,7 +296,10 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     case SYS_MAP:
         syscall_map(p, arg0, arg1, arg2, arg3, arg4);
         break;
-    SC_UNIMPL(PFAULT);
+    case SYS_PFAULT:
+        /* First argument (arg0) is not used. */
+        syscall_pfault(p, arg1, arg2);
+        break;
     SC_UNIMPL(UNMAP);
     case SYS_HMOD:
         hmod(p, arg0, arg1, arg2);

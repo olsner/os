@@ -58,6 +58,7 @@ void unimpl(const char* what) NORETURN;
 #define log_recv 0
 #define log_map_range 0
 #define log_syscall 0
+#define log_prefault 0
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
