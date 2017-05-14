@@ -31,6 +31,10 @@ void *malloc(size_t sz) {
     return res;
 }
 
+uintptr_t allocate_frame() {
+    return ToPhysAddr(malloc(4096));
+}
+
 void init(const mboot::Info& info, u32 memory_start, u64 memory_end) {
     assert(info.has(mboot::MemoryMap));
     auto mmap = PhysAddr<const mboot::MemoryMapItem>(info.mmap_addr);

@@ -218,6 +218,45 @@ NORETURN void syscall_return(Process *p, u64 res) {
     getcpu().syscall_return(p, res);
 }
 
+NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
+    using namespace aspace;
+
+    // TODO (also unimpl in asm): remove any previously backed pages.
+    // (not necessarily necessary - vaddr mappings and what's actually mapped
+    // don't have to match, there's no syscall for unbacking pages though.)
+
+    // TODO Check that offset & 4095 == 0, can't map unaligned memory
+    // TODO Check that flags & ~4095 == 0, it'll change the offset otherwise
+
+	// With handle = 0, the flags can be:
+	// phys: raw physical memory mapping
+	// anon: anonymous memory mapped on use
+	// anon|phys: similar to anonymous, but the backing is allocated
+	// immediately, the memory is "locked" (actually all allocations are),
+	// and the phys. address of the memory (always a single page) is
+	// returned in rax.
+
+    // For DMA memory we want to allocate the memory right away so we can
+    // return the address to the caller.
+    if (!handle && (flags & MAP_DMA) == MAP_DMA) {
+        // Maybe require that offset == 0, since it's currently not used but we
+        // might find a use for it later? And then we'd not want stuff relying
+        // on garbage being OK.
+        offset = mem::allocate_frame();
+
+        // TODO Check that size == 4096, otherwise we'll give the process
+        // access to a whole bunch of extra physical memory.
+    }
+
+    uintptr_t end_vaddr = vaddr + size;
+    p->aspace->map_range(vaddr, end_vaddr, handle, flags | (offset - vaddr));
+
+    if (flags & MAP_PHYS) {
+        syscall_return(p, offset);
+    }
+    syscall_return(p, 0);
+}
+
 } // namespace
 
 extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
@@ -235,7 +274,7 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
         ipc_recv(p, arg0);
         break;
     case SYS_MAP:
-        unimpl("map");
+        syscall_map(p, arg0, arg1, arg2, arg3, arg4);
         break;
     SC_UNIMPL(PFAULT);
     SC_UNIMPL(UNMAP);
