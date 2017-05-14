@@ -34,6 +34,13 @@ void abort() NORETURN;
 void abort(const char *msg) NORETURN;
 void unimpl(const char* what) NORETURN;
 
+void strlcpy(char *dst, const char *src, size_t dstsize) {
+    size_t n = strlen(src);
+    if (n > dstsize - 1) n = dstsize = 1;
+    memcpy(dst, src, n);
+    dst[n] = 0;
+}
+
 }
 
 #define S_(X) #X
@@ -388,10 +395,11 @@ using cpu::Cpu;
 using cpu::getcpu;
 #include "syscall.h"
 
-Process *new_proc_simple(u32 start, u32 end_unaligned) {
+Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     u32 end = (end_unaligned + 0xfff) & ~0xfff;
     u32 start_page = start & ~0xfff;
     auto aspace = new AddressSpace();
+    aspace->set_name(name);
     auto ret = new Process(aspace);
     ret->regs.rsp = 0x100000;
     ret->rip = 0x100000 + (start & 0xfff);
@@ -416,11 +424,9 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
     printf("%zu module(s)\n", count);
     Process **procs = new Process *[count];
     for (size_t n = 0; n < count; n++) {
-        printf("Module %#x..%#x: %s\n",
-            mod->start, mod->end, PhysAddr<char>(mod->string));
-        procs[n] = new_proc_simple(mod->start, mod->end);
-        printf("Module %#x..%#x: %p\n",
-            mod->start, mod->end, procs[n]);
+        const char *name = PhysAddr<char>(mod->string);
+        printf("Module %#x..%#x: %s\n", mod->start, mod->end, name);
+        procs[n] = new_proc_simple(mod->start, mod->end, name);
         mod++;
     }
     if (count) {

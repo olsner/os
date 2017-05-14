@@ -126,8 +126,18 @@ class AddressSpace: public RefCounted<AddressSpace> {
 
     DList<Process> waiters;
 
+    char name_[16];
+
 public:
-    AddressSpace(): pml4(allocate_pml4()) {}
+    AddressSpace(): pml4(allocate_pml4()) {
+        //snprintf(name_, sizeof(name_), "%p", this);
+        name_[0] = '\0';
+    }
+
+    void set_name(const char *newname) {
+        strlcpy(name_, newname, sizeof(name_));
+    }
+    const char *name() const { return name_; }
 
     void mapcard_set(uintptr_t vaddr, uintptr_t handle, uintptr_t offsetFlags) {
         if (MapCard *p = mapcards.find_exact(vaddr)) {

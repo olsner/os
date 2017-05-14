@@ -116,6 +116,8 @@ struct Process {
         return ipc_state() == 0;
     }
     bool is_blocked() const { return !is_runnable(); }
+
+    const char *name() const { return aspace->name(); }
 };
 }
 

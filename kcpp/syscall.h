@@ -132,14 +132,14 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     if (auto p = aspace->get_recipient(other_id)) {
         transfer_message(p, sender);
     } else {
-        log(ipc, "send_or_block: %p waits for %p\n", sender, aspace);
+        log(ipc, "send_or_block: no available recipient found, %s waits for %s\n", sender->name(), aspace->name());
         sender->wait_for(aspace);
     }
 }
 
 NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
-    log(ipc, "%p ipc_send to %lx ==> %p (%p)\n", p, rcpt, handle, handle ? handle->owner : NULL);
+    log(ipc, "%s ipc_send to %lx ==> %p (%p)\n", p->name(), rcpt, handle, handle ? handle->owner : NULL);
     assert(handle);
     p->set(proc::InSend);
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
@@ -150,7 +150,7 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
 NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     auto handle = p->find_handle(rcpt);
     assert(handle);
-    log(ipc, "%p ipc_call to %lx ==> process %p\n", p, rcpt, handle->owner);
+    log(ipc, "%s ipc_call to %lx ==> %s\n", p->name(), rcpt, handle->owner->name());
     p->set(proc::InSend);
     p->set(proc::InRecv);
     p->regs.rdi = rcpt;
@@ -180,9 +180,11 @@ T latch(T& var, T value = T()) {
 
 void recv_from_any(Process *p) {
     if (auto waiter = p->aspace->pop_sender(0)) {
-        log(recv, "%p recv: found sender %p\n", p, waiter);
+        log(recv, "%s recv: found sender %s\n", p->name(), waiter->name());
         transfer_message(p, waiter);
     }
+
+    log(recv, "%s recv: found no senders\n", p->name());
 
 #if 0
     if (auto h = p->pop_pending_handle()) {

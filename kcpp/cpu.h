@@ -72,8 +72,8 @@ struct Cpu {
     }
 
     NORETURN void switch_to(Process *p) {
-        log(switch, "switch_to %p rip=%#lx fastret=%d queued=%d\n",
-                p, p->rip, p->is(proc::FastRet), p->is(proc::Queued));
+        log(switch, "switch_to %s rip=%#lx fastret=%d queued=%d\n",
+                p->name(), p->rip, p->is(proc::FastRet), p->is(proc::Queued));
         assert(!process);
         assert(!p->is(proc::Running));
         assert(p->is_runnable());
