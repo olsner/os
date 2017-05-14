@@ -10,13 +10,13 @@ struct Handle
 {
     typedef uintptr_t Key;
     DictNode<Key, Handle> node;
-    AddressSpace *owner;
+    AddressSpace *otherspace;
     Handle *other;
     u64 pulses;
     u8 type;
 
-    Handle(uintptr_t key, AddressSpace *owner):
-        node(key), owner(owner), other(nullptr), pulses(0) {}
+    Handle(uintptr_t key, AddressSpace *otherspace):
+        node(key), otherspace(otherspace), other(nullptr), pulses(0) {}
 
     uintptr_t key() const { return node.key; }
 
@@ -28,16 +28,16 @@ struct Handle
     }
 
     void associate(AddressSpace *p, Handle *g) {
-        g->owner = p;
+        g->otherspace = p;
         g->other = this;
         other = g;
     }
 
     static void associate(AddressSpace *p, AddressSpace *q, Handle *h, Handle *g) {
-        h->owner = q;
+        h->otherspace = q;
         h->other = g;
 
-        g->owner = p;
+        g->otherspace = p;
         g->other = h;
     }
 };

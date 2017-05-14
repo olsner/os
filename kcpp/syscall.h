@@ -50,11 +50,11 @@ u64 portio(u16 port, u8 op, u32 data) {
 }
 
 void hmod(Process *p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
-    log(hmod, "%p hmod: id=%lx rename=%lx copy=%lx\n", p, id, rename, copy);
+    log(hmod, "%s hmod: id=%lx rename=%lx copy=%lx\n", p->name(), id, rename, copy);
     AddressSpace* aspace = p->aspace.get();
     if (auto handle = aspace->find_handle(id)) {
         if (copy) {
-            aspace->new_handle(copy, handle->owner);
+            aspace->new_handle(copy, handle->otherspace);
         }
         if (rename) {
             aspace->rename_handle(handle, rename);
@@ -91,9 +91,13 @@ void transfer_set_handle(Process *target, Process *source) {
     target->regs.rdi = rcpt;
 }
 
+NORETURN void syscall_return(Process *p, u64 res) {
+    getcpu().syscall_return(p, res);
+}
+
 NORETURN void transfer_message(Process *target, Process *source) {
     transfer_set_handle(target, source);
-    log(transfer_message, "transfer_message %p <- %p\n", target, source);
+    log(transfer_message, "transfer_message %s <- %s\n", target->name(), source->name());
 
     target->regs.rax = source->regs.rax;
     target->regs.rsi = source->regs.rsi;
@@ -128,19 +132,22 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     u64 other_id = 0;
     if (auto other = h->other) other_id = other->key();
 
-    auto aspace = h->owner;
-    if (auto p = aspace->get_recipient(other_id)) {
+    auto otherspace = h->otherspace;
+    if (auto p = otherspace->get_recipient(other_id)) {
         transfer_message(p, sender);
     } else {
-        log(ipc, "send_or_block: no available recipient found, %s waits for %s\n", sender->name(), aspace->name());
-        sender->wait_for(aspace);
+        log(ipc, "send_or_block: no available recipient found in address space, %s waits for %s\n", sender->name(), otherspace->name());
+        sender->wait_for(otherspace);
     }
 }
 
 NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
-    log(ipc, "%s ipc_send to %lx ==> %p (%p)\n", p->name(), rcpt, handle, handle ? handle->owner : NULL);
+    log(ipc, "%s ipc_send to %lx ==> %p (%s)\n", p->name(), rcpt, handle, handle ? handle->otherspace->name() : NULL);
     assert(handle);
+    if (!handle->other) {
+        syscall_return(p, 0);
+    }
     p->set(proc::InSend);
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
     log(ipc, "ipc_send: blocked\n");
@@ -150,7 +157,10 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
 NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     auto handle = p->find_handle(rcpt);
     assert(handle);
-    log(ipc, "%s ipc_call to %lx ==> %s\n", p->name(), rcpt, handle->owner->name());
+    log(ipc, "%s ipc_call to %lx ==> %s\n", p->name(), rcpt, handle->otherspace->name());
+    if (!handle->other) {
+        syscall_return(p, 0);
+    }
     p->set(proc::InSend);
     p->set(proc::InRecv);
     p->regs.rdi = rcpt;
@@ -161,11 +171,9 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
 
 void recv(Process *p, Handle *handle) {
     auto other_id = handle->other->key();
-    assert(handle->owner == p->aspace.get());
-    auto aspace = handle->owner;
+    auto aspace = handle->otherspace;
     if (auto rcpt = aspace->get_sender(other_id)) {
         transfer_message(p, rcpt);
-        // doesn't return
     } else {
         aspace->add_waiter(p);
     }
@@ -202,22 +210,18 @@ void recv_from_any(Process *p) {
 
 NORETURN void ipc_recv(Process *p, u64 from) {
     auto handle = from ? p->find_handle(from) : nullptr;
-    log(recv, "%p recv from %lx\n", p, from);
+    log(recv, "%s recv from %lx\n", p->name(), from);
     p->set(proc::InRecv);
     p->regs.rdi = from;
     if (handle) {
-        log(recv, "==> aspace %p\n", handle->owner);
+        log(recv, "==> %s\n", handle->otherspace->name());
         recv(p, handle);
     } else {
         log(recv, "==> fresh\n");
         recv_from_any(p);
     }
-    log(recv, "%p recv: nothing to receive\n", p);
+    log(recv, "%s recv: nothing to receive\n", p->name());
     getcpu().run();
-}
-
-NORETURN void syscall_return(Process *p, u64 res) {
-    getcpu().syscall_return(p, res);
 }
 
 NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
