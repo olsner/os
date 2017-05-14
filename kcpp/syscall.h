@@ -9,6 +9,7 @@ enum syscalls_builtins {
     SYS_PFAULT,
     SYS_UNMAP,
     SYS_HMOD,
+    SYS_NEWPROC, // Not really used, ungood.
     SYS_WRITE = 6,
     // arg0 (dst) = port
     // arg1 = flags (i/o) and data size:
@@ -228,6 +229,8 @@ NORETURN void syscall_return(Process *p, u64 res) {
 
 extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
 
+#define SC_UNIMPL(name) case SYS_##name: unimpl(#name)
+
 NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr) {
     printf("syscall %#x: %lx %lx %lx %lx %lx %lx\n", (unsigned)nr, arg0, arg1, arg2, arg3, arg4, arg5);
     auto p = getcpu().process;
@@ -241,13 +244,19 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     case SYS_MAP:
         unimpl("map");
         break;
+    SC_UNIMPL(PFAULT);
+    SC_UNIMPL(UNMAP);
     case SYS_HMOD:
         hmod(p, arg0, arg1, arg2);
         syscall_return(p, 0);
         break;
+    SC_UNIMPL(NEWPROC);
+    SC_UNIMPL(WRITE);
     case SYS_IO:
         syscall_return(p, portio(arg0, arg1, arg2));
         break;
+    SC_UNIMPL(GRANT);
+    SC_UNIMPL(PULSE);
     default:
         if (nr >= MSG_USER) {
             if ((nr & MSG_KIND_MASK) == MSG_KIND_SEND) {
