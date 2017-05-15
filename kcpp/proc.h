@@ -54,6 +54,7 @@ struct Process {
     DListNode<Process> node;
 
     RefCnt<AddressSpace> aspace;
+    AddressSpace *waiting_for;
     u64 fault_addr;
     // TODO FXSave
 
@@ -87,7 +88,6 @@ struct Process {
     }
 
     void wait_for(AddressSpace *otherspace) {
-        assert(!is_queued());
         otherspace->add_waiter(this);
     }
     void add_waiter(Process *other) {
@@ -141,8 +141,10 @@ Process *AddressSpace::pop_sender(uintptr_t key) {
 
 Process *AddressSpace::get_recipient(uintptr_t key) {
     // Iterate waiters, find a process that can receive for this key
-    Process *p = nullptr;
-    if (p) {
+    for (auto p: waiters) {
+        log(waiters,
+                "%s get_recipient(%#lx): found %s, ipc state %lu, rcpt %#lx\n",
+                name(), key, p->name(), p->ipc_state(), p->regs.rdi);
         if (p->ipc_state() == proc::mask(proc::InRecv)) {
             auto rcpt = p->regs.rdi;
             if (rcpt == key || !p->find_handle(rcpt)) {
@@ -150,6 +152,26 @@ Process *AddressSpace::get_recipient(uintptr_t key) {
             }
         }
     }
+    // TODO Must also find waiters in an open-ended receive and they won't be
+    // in *our* waiters list... (Since when they received they can't have
+    // known who to wait for.)
+    log(waiters, "%s get_recipient(%#lx): no match\n", name(), key);
     return nullptr;
+}
+
+void AddressSpace::add_waiter(Process *p)
+{
+    log(waiters, "%s adds waiter %s\n", name(), p->name());
+    assert(!p->waiting_for);
+    assert(!p->is_queued());
+    waiters.append(p);
+    p->waiting_for = this;
+}
+void AddressSpace::remove_waiter(Process *p)
+{
+    log(waiters, "%s removes waiter %s\n", name(), p->name());
+    assert(p->waiting_for == this);
+    waiters.remove(p);
+    p->waiting_for = nullptr;
 }
 }

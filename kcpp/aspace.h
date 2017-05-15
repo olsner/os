@@ -272,14 +272,7 @@ public:
     Process *pop_sender(uintptr_t key);
     Process *get_recipient(uintptr_t key);
     Process *pop_recipient(uintptr_t key);
-
-    void add_waiter(Process *p)
-    {
-        waiters.append(p);
-    }
-    void remove_waiter(Process *p)
-    {
-        waiters.remove(p);
-    }
+    void add_waiter(Process *p);
+    void remove_waiter(Process *p);
 };
 }
