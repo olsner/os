@@ -42,7 +42,7 @@ public:
     }
     DListIterator& operator ++() {
         assert(node);
-        node = Node::node(node->next);
+        node = node->next ? Node::node(node->next) : nullptr;
         return *this;
     }
     bool operator==(const DListIterator &other) const {
