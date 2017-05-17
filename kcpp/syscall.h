@@ -159,6 +159,7 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
     assert(handle);
     log(ipc, "%s ipc_call to %lx ==> %s\n", p->name(), rcpt, handle->otherspace->name());
     if (!handle->other) {
+        log(ipc, "ipc_call: call to unknown handle (error?)\n");
         syscall_return(p, 0);
     }
     p->set(proc::InSend);
@@ -169,16 +170,6 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
     getcpu().run();
 }
 
-void recv(Process *p, Handle *handle) {
-    auto other_id = handle->other->key();
-    auto aspace = handle->otherspace;
-    if (auto rcpt = aspace->get_sender(other_id)) {
-        transfer_message(p, rcpt);
-    } else {
-        aspace->add_waiter(p);
-    }
-}
-
 template <typename T>
 T latch(T& var, T value = T()) {
     T res = var;
@@ -186,41 +177,36 @@ T latch(T& var, T value = T()) {
     return res;
 }
 
-void recv_from_any(Process *p) {
-    if (auto waiter = p->aspace->pop_sender(0)) {
-        log(recv, "%s recv: found sender %s\n", p->name(), waiter->name());
-        transfer_message(p, waiter);
-    }
-
-    log(recv, "%s recv: found no senders\n", p->name());
-
-#if 0
-    if (auto h = p->pop_pending_handle()) {
-    }
-#endif
-
-#if 0
-    auto c = getcpu();
-    if (c->irq_process == p && c->irq_delayed) {
-        auto irqs = latch(c->irq_delayed);
-        deliver_pulse(p, 0, irqs);
-    }
-#endif
-}
-
 NORETURN void ipc_recv(Process *p, u64 from) {
     auto handle = from ? p->find_handle(from) : nullptr;
     log(recv, "%s recv from %lx\n", p->name(), from);
     p->set(proc::InRecv);
     p->regs.rdi = from;
-    if (handle) {
-        log(recv, "==> %s\n", handle->otherspace->name());
-        recv(p, handle);
-    } else {
-        log(recv, "==> fresh\n");
-        recv_from_any(p);
+    log(recv, "==> %s\n", handle ? handle->otherspace->name() : "fresh");
+    if (auto sender = p->aspace->pop_sender(handle)) {
+        log(recv, "%s recv: found sender %s\n", p->name(), sender->name());
+        transfer_message(p, sender);
+        // noreturn
     }
-    log(recv, "%s recv: nothing to receive\n", p->name());
+    if (handle) {
+        handle->otherspace->add_waiter(p);
+    } else {
+#if 0
+        if (auto h = p->pop_pending_handle()) {
+        }
+#endif
+
+#if 0
+        auto c = getcpu();
+        if (c.irq_process == p && c.irq_delayed) {
+            auto irqs = latch(c.irq_delayed);
+            deliver_pulse(p, 0, irqs);
+        }
+#endif
+
+        p->aspace->add_blocked(p);
+    }
+    log(recv, "%s recv: found no senders\n", p->name());
     getcpu().run();
 }
 
