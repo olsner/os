@@ -121,6 +121,9 @@ NORETURN void transfer_message(Process *target, Process *source) {
 }
 
 void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+    auto other = h->other;
+    assert(other);
+
     sender->regs.rax = msg;
     sender->regs.rdi = h->key();
     sender->regs.rsi = arg1;
@@ -129,15 +132,15 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     sender->regs.r8 = arg4;
     sender->regs.r9 = arg5;
 
-    u64 other_id = 0;
-    if (auto other = h->other) other_id = other->key();
-
-    auto otherspace = h->otherspace;
-    if (auto p = otherspace->get_recipient(other_id)) {
+    if (auto p = sender->aspace->pop_recipient(h)) {
+        log(ipc, "send_or_block: %s sends to (specific) %s\n", sender->name(), p->name());
+        transfer_message(p, sender);
+    } else if (auto p = h->otherspace->pop_open_recipient()) {
+        log(ipc, "send_or_block: %s sends to %s\n", sender->name(), p->name());
         transfer_message(p, sender);
     } else {
-        log(ipc, "send_or_block: no available recipient found in address space, %s waits for %s\n", sender->name(), otherspace->name());
-        sender->wait_for(otherspace);
+        log(ipc, "send_or_block: no available recipient, %s waits for %s\n", sender->name(), h->otherspace->name());
+        sender->wait_for(h->otherspace);
     }
 }
 

@@ -124,7 +124,11 @@ class AddressSpace: public RefCounted<AddressSpace> {
     Dict<Handle> handles;
     Dict<PendingPulse> pending;
 
+    // Processes waiting for this address space to do something.
     DList<Process> waiters;
+    // Processes in this address space waiting for something to happen, e.g. in
+    // an open-ended receive that could be fulfilled by any other process.
+    DList<Process> blocked;
 
     char name_[16];
 
@@ -268,11 +272,29 @@ public:
         delete handle;
     }
 
-    Process *get_sender(uintptr_t key);
-    Process *pop_sender(uintptr_t key);
-    Process *get_recipient(uintptr_t key);
-    Process *pop_recipient(uintptr_t key);
+    // Find a process waiting to send a message to 'target' in our address
+    // space, and remove it from the waiters list.
+    Process *pop_sender(Handle *target);
+
+    // Find a process waiting to receive a message from source (our end),
+    // return it or NULL if no match is found. Also removes the process from
+    // the relevant wait list.
+    Process *pop_recipient(Handle *source);
+
+    // Find a process in this address space waiting to receive any message.
+    // Note that as opposed to pop_sender/recipient, the blocked process is in
+    // this address space, in other words you want to run this on the target
+    // address space when trying to send.
+    Process *pop_open_recipient();
+
+    // Add a process (in *another* address space) that is blocked on something
+    // in this address space.
     void add_waiter(Process *p);
     void remove_waiter(Process *p);
+
+    // Add a process (in this address space) that is blocked on something
+    // unspecified.
+    void add_blocked(Process *p);
+    void remove_blocked(Process *p);
 };
 }
