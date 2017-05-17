@@ -74,7 +74,7 @@ void transfer_set_handle(Process *target, Process *source) {
     } else if (!target->find_handle(rcpt)) {
         if (auto g = h->other) {
             rcpt = g->key();
-            assert(g->other == g);
+            assert(g->other == h);
             log(transfer_message, "transfer_set_handle: g=%p, g.id=%lx\n",
                 g, rcpt);
         } else {
