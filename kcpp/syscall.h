@@ -116,6 +116,8 @@ NORETURN void transfer_message(Process *target, Process *source) {
     if (!source->ipc_state()) {
         target->remove_waiter(source);
         c.queue(source);
+    } else {
+        target->add_waiter(source);
     }
     c.run();
 }
