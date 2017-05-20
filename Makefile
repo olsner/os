@@ -132,7 +132,7 @@ GRUB_MODULES = --modules="boot multiboot"
 
 GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
-USER_CFLAGS := -ffreestanding -g -Os -W -Wall -Wextra -march=native -mno-avx -std=gnu99
+USER_CFLAGS := -ffreestanding -g -Os -W -Wall -Wextra -march=sandybridge -mno-avx -std=gnu99
 USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter -Wstrict-prototypes
 USER_CFLAGS += -ffunction-sections -fdata-sections
 USER_CFLAGS += -Werror
