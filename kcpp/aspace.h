@@ -65,8 +65,9 @@ struct Backing {
     static Backing* new_anon(uintptr_t vaddrFlags) {
         return new Backing(vaddrFlags | MAP_PHYS, ToPhysAddr(new u8[4096]));
     }
-//    static Backing* new_share(uintptr_t vadddrFlags, Sharing* share) {
-//    }
+    static Backing* new_shared(uintptr_t vaddrFlags, Sharing* share) {
+        return new Backing(vaddrFlags, (uintptr_t)share);
+    }
 
     u64 vaddr() const {
         return node.key & -0x1000;
@@ -74,9 +75,7 @@ struct Backing {
     u16 flags() const {
         return node.key & 0xfff;
     }
-    u64 paddr() const {
-        return flags() & MAP_PHYS ? pp.paddr : 0 /*pp.parent->paddr()*/;
-    }
+    u64 paddr() const;
     u64 pte() const {
         return paddr() | pte_flags();
     }
@@ -93,6 +92,25 @@ struct Backing {
     }
 };
 DLIST_NODE(Backing, child_node);
+struct Sharing {
+    // Key is virtual address
+    typedef uintptr_t Key;
+    DictNode<Key, Sharing> node;
+    uintptr_t paddr;
+    // Hmm?
+    //AddressSpace *aspace;
+    DList<Backing> children;
+
+    Sharing(uintptr_t vaddr, uintptr_t paddr): node(vaddr), paddr(paddr) {
+    }
+
+    Backing *new_backing(uintptr_t vaddrFlags) {
+        return children.append(Backing::new_shared(vaddrFlags, this));
+    }
+};
+u64 Backing::paddr() const {
+    return flags() & MAP_PHYS ? pp.paddr : pp.parent->paddr;
+}
 
 typedef u64 PageTable[512];
 typedef PageTable PML4;
@@ -120,6 +138,7 @@ class AddressSpace: public RefCounted<AddressSpace> {
 
     Dict<MapCard> mapcards;
     Dict<Backing> backings;
+    Dict<Sharing> sharings;
 
     Dict<Handle> handles;
     Dict<PendingPulse> pending;
@@ -207,12 +226,23 @@ public:
             vaddr | card->flags(), card->paddr(vaddr)));
     }
 
+    Backing& add_shared_backing(uintptr_t vaddrFlags, Sharing *sharing) {
+        return *backings.insert(sharing->new_backing(vaddrFlags));
+    }
+
+    Backing* find_backing(uintptr_t vaddr) {
+        auto back = backings.find_le(vaddr | 0xfff);
+        if (back && back->vaddr() == (vaddr & -0x1000)) {
+            // FIXME Not page_fault
+            log(page_fault, "Found existing backing for %#lx at %#lx -> %#lx\n", vaddr, back->vaddr(), back->paddr());
+            return back;
+        }
+        return nullptr;
+    }
+
     Backing& find_add_backing(uintptr_t vaddr) {
-        if (auto back = backings.find_le(vaddr | 0xfff)) {
-            if (back->vaddr() == (vaddr & -0x1000)) {
-                log(page_fault, "Found existing backing for %#lx at %#lx -> %#lx\n", vaddr, back->vaddr(), back->paddr());
-                return *back;
-            }
+        if (auto back = find_backing(vaddr)) {
+            return *back;
         }
 
         auto card = mapcards.find_le(vaddr);
@@ -232,6 +262,14 @@ public:
         } else {
             abort("not anon or phys for handle==0");
         }
+    }
+
+    Sharing *find_add_sharing(uintptr_t vaddr, uintptr_t paddr) {
+        if (auto share = sharings.find_exact(vaddr)) {
+            return share;
+        }
+
+        return sharings.insert(new Sharing(vaddr, paddr));
     }
 
     bool find_mapping(uintptr_t vaddr, uintptr_t& offsetFlags, uintptr_t& handle) {
@@ -280,6 +318,9 @@ public:
     // return it or NULL if no match is found. Also removes the process from
     // the relevant wait list.
     Process *pop_recipient(Handle *source);
+    Process *pop_pfault_recipient(Handle *source);
+    // Also accept processes in a specific ipc state (e.g. page fault).
+    Process *pop_recipient(Handle *source, uintptr_t ipc_state);
 
     // Find a process in this address space waiting to receive any message.
     // Note that as opposed to pop_sender/recipient, the blocked process is in

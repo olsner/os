@@ -67,6 +67,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_map_range 0
 #define log_syscall 0
 #define log_prefault 0
+#define log_grant 0
 #define log_waiters 0
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \

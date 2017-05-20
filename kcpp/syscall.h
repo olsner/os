@@ -143,7 +143,7 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     }
 }
 
-NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     auto handle = p->find_handle(rcpt);
     log(ipc, "%s ipc_send to %lx (%s)\n", p->name(), rcpt, handle ? handle->otherspace->name() : NULL);
     assert(handle);
@@ -156,7 +156,7 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
 NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     auto handle = p->find_handle(rcpt);
     assert(handle);
-    log(ipc, "%s ipc_call to %lx ==> %s\n", p->name(), rcpt, handle->otherspace->name());
+    log(ipc, "%s ipc_call to %lx (%s)\n", p->name(), rcpt, handle->otherspace->name());
     p->set(proc::InSend);
     p->set(proc::InRecv);
     p->regs.rdi = rcpt;
@@ -174,10 +174,10 @@ T latch(T& var, T value = T()) {
 
 NORETURN void ipc_recv(Process *p, u64 from) {
     auto handle = from ? p->find_handle(from) : nullptr;
-    log(recv, "%s recv from %lx\n", p->name(), from);
+    log(recv, "%s recv from %lx (%s)\n", p->name(), from,
+            handle ? handle->otherspace->name() : "fresh");
     p->set(proc::InRecv);
     p->regs.rdi = from;
-    log(recv, "==> %s\n", handle ? handle->otherspace->name() : "fresh");
     if (auto sender = p->aspace->pop_sender(handle)) {
         log(recv, "%s recv: found sender %s\n", p->name(), sender->name());
         transfer_message(p, sender);
@@ -248,7 +248,7 @@ NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
     // TODO Error out instead of silently adjusting the values.
     vaddr &= -4096;
     flags &= aspace::MAP_RWX;
-    log(prefault, "prefault: %lx flags %lx\n", vaddr, flags);
+    log(prefault, "%s prefault: %lx flags %lx\n", p->name(), vaddr, flags);
 
     p->fault_addr = vaddr | flags;
 
@@ -259,9 +259,74 @@ NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
         abort("No mapping for PFAULT");
     }
 
-    log(prefault, "prefault: mapped to %lx:%lx\n", handle, offsetFlags);
+    auto h = p->find_handle(handle);
+    assert(h);
+    log(prefault, "%s prefault: mapped to %lx (%s) offset %lx\n", p->name(), handle, h->otherspace->name(), offsetFlags);
     p->set(proc::PFault);
     ipc_call(p, SYS_PFAULT, handle, offsetFlags & -4096, flags & offsetFlags);
+}
+
+// Respond to a PFAULT message from a process that's mapped some memory from
+// us. This could be from a "prefault" syscall, or from the page fault
+// exception handler.
+NORETURN void syscall_grant(Process *p, uintptr_t handle, uintptr_t vaddr, uintptr_t flags) {
+    using namespace aspace;
+
+    // TODO Error out instead of adjusting
+    flags &= MAP_RWX;
+
+    auto h = p->find_handle(handle);
+    if (!h) {
+        abort("GRANT for unknown handle\n");
+    }
+    if (!h->other) {
+        abort("GRANT for unassociated handle\n");
+    }
+    log(grant, "%s grant(%lx (%s) vaddr=%#lx flags=%lu)\n", p->name(), handle,
+            h->otherspace->name(), vaddr, flags);
+
+    // Find faulted process in otherspace
+    auto rcpt = p->aspace->pop_pfault_recipient(h);
+    if (!rcpt) {
+        abort("No-one seems to be waiting for a page fault...\n");
+    }
+    if (!rcpt->is(proc::PFault)) {
+        // Note that rcpt has already been popped from a waiting list, to
+        // allow more progress we should add it back if we don't send anything.
+        abort("GRANT target is not handling a fault\n");
+    }
+    auto fault_addr = rcpt->fault_addr;
+    uintptr_t offsetFlags;
+    uintptr_t mapped_handle;
+    if (!rcpt->aspace->find_mapping(fault_addr, offsetFlags, mapped_handle)) {
+        abort("Process fault addr is not mapped\n");
+    }
+    if (mapped_handle != h->other->key()) {
+        abort("Process fault addr is mapped to the wrong handle\n");
+    }
+    flags &= offsetFlags;
+
+    Backing *backing = p->aspace->find_backing(vaddr);
+    uintptr_t paddr = backing->paddr();
+    if (!paddr) {
+        abort("Recursive fault required...\n");
+    }
+    // TODO Find previously mapped page, release it if necessary
+    Sharing *sharing = p->aspace->find_add_sharing(vaddr, paddr);
+    assert(sharing->paddr == paddr);
+    h->otherspace->add_shared_backing(fault_addr | flags, sharing);
+
+    rcpt->unset(proc::PFault);
+    if (rcpt->is(proc::InRecv)) {
+        // If this is set we got here from an explicit pfault syscall, so
+        // respond with a message.
+        p->regs.rax = MSG_KIND_SEND | SYS_GRANT;
+        p->regs.rdi = handle;
+        p->regs.rsi = vaddr;
+        p->regs.rdx = flags;
+        transfer_message(rcpt, p);
+    }
+    unimpl("grant after page fault");
 }
 
 } // namespace
@@ -271,8 +336,10 @@ extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
 #define SC_UNIMPL(name) case SYS_##name: unimpl(#name)
 
 NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr) {
-    log(syscall, "syscall %#x: %lx %lx %lx %lx %lx %lx\n", (unsigned)nr, arg0, arg1, arg2, arg3, arg4, arg5);
     auto p = getcpu().process;
+    log(syscall, "%s: syscall %#x: %lx %lx %lx %lx %lx %lx\n",
+            p->name(),
+            (unsigned)nr, arg0, arg1, arg2, arg3, arg4, arg5);
     getcpu().leave(p);
     p->set(proc::FastRet);
 
@@ -300,7 +367,9 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     case SYS_IO:
         syscall_return(p, portio(arg0, arg1, arg2));
         break;
-    SC_UNIMPL(GRANT);
+    case SYS_GRANT:
+        syscall_grant(p, arg0, arg1, arg2);
+        break;
     SC_UNIMPL(PULSE);
     default:
         if (nr >= MSG_USER) {

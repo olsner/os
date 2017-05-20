@@ -58,7 +58,7 @@ struct Process {
 
     RefCnt<AddressSpace> aspace;
     AddressSpace *waiting_for;
-    u64 fault_addr;
+    uintptr_t fault_addr;
     // TODO FXSave
 
     Process(AddressSpace *aspace):
@@ -138,11 +138,17 @@ Process *AddressSpace::pop_sender(Handle *target) {
 }
 
 Process *AddressSpace::pop_recipient(Handle *source) {
+    return pop_recipient(source, proc::mask(proc::InRecv));
+}
+Process *AddressSpace::pop_pfault_recipient(Handle *source) {
+    return pop_recipient(source, proc::mask(proc::InRecv) | proc::mask(proc::PFault));
+}
+Process *AddressSpace::pop_recipient(Handle *source, uintptr_t ipc_state) {
     // Iterate waiters, find a "remote" process that can receive something from
     // source.
     Handle *other = source->other;
     for (auto p: waiters) {
-        if (p->ipc_state() == proc::mask(proc::InRecv)) {
+        if (p->ipc_state() == ipc_state) {
             auto rcpt = p->find_handle(p->regs.rdi);
             log(waiters,
                     "%s get_recipient(%#lx): found %s receiving from %p (looking for %p)\n",
@@ -154,6 +160,9 @@ Process *AddressSpace::pop_recipient(Handle *source) {
                 remove_waiter(p);
                 return p;
             }
+        } else {
+            log(waiters, "%s get_recipient(%#lx): found %s in state %lu (wanted %lu)\n",
+                    name(), source->key(), p->name(), p->ipc_state(), ipc_state);
         }
     }
     log(waiters, "%s get_recipient(%#lx): no match\n", name(), source->key());
