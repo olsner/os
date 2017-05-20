@@ -10,6 +10,10 @@ extern "C" void syscall_entry_compat();
 struct Cpu;
 void idle(Cpu *) NORETURN;
 
+Cpu &getcpu() {
+    return *(Cpu *)x86::get_cpu_specific();
+}
+
 void setup_msrs(u64 gs) {
     using x86::seg;
     using x86::rflags;
@@ -80,6 +84,8 @@ struct Cpu {
         stack(new u8[4096]),
         kernel_reg_save_pointer(&kernel_reg_save) {
     }
+    Cpu(Cpu&) = delete;
+    Cpu& operator=(Cpu&) = delete;
 
     void start() {
         setup_msrs((u64)this);
@@ -115,6 +121,7 @@ struct Cpu {
     NORETURN void switch_to(Process *p) {
         log(switch, "switch_to %s rip=%#lx fastret=%d queued=%d\n",
                 p->name(), p->rip, p->is(proc::FastRet), p->is(proc::Queued));
+        assert(this == &getcpu());
         assert(!process);
         assert(!p->is(proc::Running));
         assert(p->is_runnable());
@@ -164,10 +171,6 @@ void idle(Cpu *cpu) {
         cpu->process = NULL;
         asm volatile("cli; hlt; cli" ::: "memory");
     }
-}
-
-Cpu &getcpu() {
-    return *(Cpu *)x86::get_cpu_specific();
 }
 
 }

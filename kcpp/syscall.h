@@ -111,7 +111,7 @@ NORETURN void transfer_message(Process *target, Process *source) {
     source->unset(proc::InSend);
     source->remove_waiter(target);
 
-    auto c = getcpu();
+    Cpu& c = getcpu();
     c.queue(target);
     if (!source->ipc_state()) {
         target->remove_waiter(source);
