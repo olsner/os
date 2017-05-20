@@ -488,12 +488,16 @@ extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
 void irq_entry(u8 vec, u64 err, Cpu *cpu) {
     log(irq_entry, "irq_entry(%u, %#lx, cr2=%#lx)\n", vec, err, x86::cr2());
     if (vec == 14 && !(err & pf::User)) {
-        printf("Kernel page fault! %#lx, cr2=%#lx)\n", err, x86::cr2());
+        printf("Kernel page fault! %#lx, cr2=%#lx, cpu=%p)\n", err, x86::cr2(), cpu);
         cpu->dump_regs();
         abort();
     }
     auto p = cpu->process;
-    cpu->leave(p);
+    if (p) {
+        cpu->leave(p);
+    } else {
+        log(idle, "Got interrupt %u while idle\n", vec);
+    }
     switch (vec) {
     case 7:
         unimpl("handler_NM");
@@ -508,6 +512,9 @@ void irq_entry(u8 vec, u64 err, Cpu *cpu) {
                 cpu->queue(p);
             }
             unimpl("generic_irq_handler(vec);");
+        } else {
+            printf("Unimplemented CPU Exception #%d\n", vec);
+            abort();
         }
     }
     cpu->run();
