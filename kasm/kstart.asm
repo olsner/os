@@ -94,7 +94,7 @@ struc	gseg
 	.irq_process	resq 1
 	; bitmask of irqs that have been delayed
 	; (also add per-irq counter?)
-	.irq_delayed	resq 1
+	.irq_delayed	resq 4
 
 	.free_frame	resq 1
 	.temp_xmm0	resq 2
