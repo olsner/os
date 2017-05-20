@@ -165,13 +165,6 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
     getcpu().run();
 }
 
-template <typename T>
-T latch(T& var, T value = T()) {
-    T res = var;
-    var = value;
-    return res;
-}
-
 NORETURN void ipc_recv(Process *p, u64 from) {
     auto handle = from ? p->find_handle(from) : nullptr;
     log(recv, "%s recv from %lx (%s)\n", p->name(), from,

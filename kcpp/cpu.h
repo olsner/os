@@ -44,6 +44,7 @@ struct Cpu {
     DList<Process> runqueue;
     Process *irq_process;
     Process *fpu_process;
+    u64 irq_delayed[4];
 
     SavedRegs kernel_reg_save;
 

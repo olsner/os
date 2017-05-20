@@ -221,6 +221,13 @@ void assert_failed(const char* fileline, const char* msg) {
     abort();
 }
 
+template <typename T>
+T latch(T& var, T value = T()) {
+    T res = var;
+    var = value;
+    return res;
+}
+
 namespace x86 {
     namespace msr {
         enum MSR {
@@ -511,12 +518,42 @@ NORETURN void page_fault(Process *p, u64 error) {
     getcpu().switch_to(p);
 }
 
+void handle_irq_generic(Cpu *cpu, u8 vec) {
+    auto p = cpu->irq_process;
+    assert(p);
+    log(irq_entry, "IRQ %d triggered, irq process is %s\n", vec, p->name());
+
+    vec -= 32;
+    u8 ix = vec >> 6;
+    u8 mask = 1 << (vec & 63);
+    if (cpu->irq_delayed[ix] & mask) {
+        // Already delayed, so we can't do anything else here
+        log(irq_entry, "handle_irq_generic: already delayed\n");
+        return;
+    }
+    cpu->irq_delayed[ix] |= mask;
+
+    if (p->ipc_state() == proc::mask(proc::InRecv)) {
+        auto h = p->find_handle(p->regs.rdi);
+        if (h && h->other) {
+            log(irq_entry, "handle_irq_generic: process receiving something else\n");
+            return;
+        }
+        p->unset(proc::InRecv);
+        p->regs.rdi = 0;
+        p->regs.rsi = latch(cpu->irq_delayed[0]);
+        // dx, cx, r8(?) with additional words of interrupts?
+        p->regs.rax = syscall::SYS_PULSE;
+        cpu->switch_to(p);
+    }
+}
+
 } // namespace
 
 extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
 
 void irq_entry(u8 vec, u64 err, Cpu *cpu) {
-    log(irq_entry, "irq_entry(%u, %#lx, cr2=%#lx)\n", vec, err, x86::cr2());
+    log(irq_entry, "irq_entry(%u, %#lx, cr2=%#lx) in %s\n", vec, err, x86::cr2(), cpu->process ? cpu->process->name() : "(idle)");
     assert(cpu == &getcpu());
     if (vec == 14 && !(err & pf::User)) {
         printf("Kernel page fault! %#lx, cr2=%#lx)\n", err, x86::cr2());
@@ -547,13 +584,13 @@ void irq_entry(u8 vec, u64 err, Cpu *cpu) {
             if (p) {
                 cpu->queue(p);
             }
-            unimpl("generic_irq_handler(vec);");
+            handle_irq_generic(cpu, vec);
+            cpu->run();
         } else {
             printf("Unimplemented CPU Exception #%d\n", vec);
             abort();
         }
     }
-    cpu->run();
 }
 
 namespace {
