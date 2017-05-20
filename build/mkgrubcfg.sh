@@ -15,18 +15,6 @@ mkgrubcfg1() {
     shift
 
 cat <<EOF
-menuentry "shell" {
-    multiboot /$kernel
-    module /kern/irq.mod irq
-    module /kern/pic.mod pic
-    module /kern/console.mod console
-    module /cuser/apic.mod APIC
-    module /cuser/ioapic.mod IOAPIC
-    module /cuser/acpica.mod ACPICA
-    module /user/shell.mod
-    boot
-}
-
 menuentry "lwIP" {
     multiboot /$kernel
     module /kern/irq.mod irq
@@ -37,6 +25,18 @@ menuentry "lwIP" {
     module /cuser/acpica.mod ACPICA
     module /cuser/e1000.mod e1000
     module /cuser/lwip.mod lwip
+    boot
+}
+
+menuentry "shell" {
+    multiboot /$kernel
+    module /kern/irq.mod irq
+    module /kern/pic.mod pic
+    module /kern/console.mod console
+    module /cuser/apic.mod APIC
+    module /cuser/ioapic.mod IOAPIC
+    module /cuser/acpica.mod ACPICA
+    module /user/shell.mod
     boot
 }
 
