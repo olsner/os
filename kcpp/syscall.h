@@ -123,9 +123,6 @@ NORETURN void transfer_message(Process *target, Process *source) {
 }
 
 void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
-    auto other = h->other;
-    assert(other);
-
     sender->regs.rax = msg;
     sender->regs.rdi = h->key();
     sender->regs.rsi = arg1;
@@ -150,9 +147,6 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
     auto handle = p->find_handle(rcpt);
     log(ipc, "%s ipc_send to %lx (%s)\n", p->name(), rcpt, handle ? handle->otherspace->name() : NULL);
     assert(handle);
-    if (!handle->other) {
-        syscall_return(p, 0);
-    }
     p->set(proc::InSend);
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
     log(ipc, "ipc_send: blocked\n");
@@ -163,10 +157,6 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
     auto handle = p->find_handle(rcpt);
     assert(handle);
     log(ipc, "%s ipc_call to %lx ==> %s\n", p->name(), rcpt, handle->otherspace->name());
-    if (!handle->other) {
-        log(ipc, "ipc_call: call to unknown handle (error?)\n");
-        syscall_return(p, 0);
-    }
     p->set(proc::InSend);
     p->set(proc::InRecv);
     p->regs.rdi = rcpt;
