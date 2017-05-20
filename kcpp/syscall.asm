@@ -272,6 +272,9 @@ proc handle_irq_generic, NOSECTION
 	zero	eax
 	mov	rax, [gs:rax + gseg.proc]
 
+	test	rax, rax
+	jz	.idle
+
 .save_regs:
 	; stack:
 	; saved_rax, saved_rdi, saved_rsi, vector, [error], rip, cs, rflags, rsp, ss
@@ -316,6 +319,18 @@ proc handle_irq_generic, NOSECTION
 	extern	irq_entry
 	jmp	irq_entry
 
+.idle:
+	; Ignore saved_{rax,rdi,rsi}, just get the vector
+	add	rsp, 24
+	pop	rdi
+	zero	esi
+	; See above for details on the stack misalignment check to detect the
+	; error code
+	test	esp, 8
+	jz	.irq_entry
+	pop	rsi
+	jmp	.irq_entry
+
 .kernel_fault:
 	; Since this was a kernel fault of some kind, tnstead of saving regs in
 	; proc we should save it in a temporary register storage area for
@@ -336,7 +351,7 @@ proc handle_irq_generic, NOSECTION
 ; slowret: all registers are currently unknown, load *everything* from process
 ; (in rdi), then iretq
 proc slowret, NOSECTION
-	sub	rdi, proc ; offset because it comes from Rust code
+	sub	rdi, proc ; offset because it comes from C++ code
 	; All the callee-saves
 	load_regs rdi,  rbp,rbx,r12,r13,r14,r15
 .from_int:
