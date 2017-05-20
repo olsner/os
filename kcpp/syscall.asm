@@ -43,6 +43,10 @@ struc gseg
 	.self	resq 1
 	.rsp	resq 1
 	.proc	resq 1
+	; Pointer to register save area. Most likely inside of gseg, but
+	; referenced by pointer to avoid depending on its location from the
+	; assembly stubs.
+	.kernel_reg_save resq 1
 endstruc
 
 struc	proc, -0x80
@@ -268,9 +272,14 @@ proc handle_irq_generic, NOSECTION
 	zero	eax
 	mov	rax, [gs:rax + gseg.proc]
 
+.save_regs:
 	; stack:
 	; saved_rax, saved_rdi, saved_rsi, vector, [error], rip, cs, rflags, rsp, ss
 
+	; rax points to the actual start of proc (C++ pointer), not at the 0x80
+	; struct offset. Special case for proc.rax here, since it's at offset
+	; 0, this is shorter than the corresponding offseted [rax-0x80]. It
+	; matters more for regs 8 and up.
 	pop	qword [rax - proc + proc.rax] ; The rax saved on entry
 	sub	rax, proc
 	pop	qword [rax + proc.rdi]
@@ -289,18 +298,18 @@ proc handle_irq_generic, NOSECTION
 	add	rsp, 8 ; cs
 	pop	qword [rax + proc.rflags]
 	pop	qword [rax + proc.rsp]
+	add	rsp, 8 ; ss
 
 	; already saved: ax, di, si
 	; caller-save: rax, rcx, rdx, rsi, rdi, r8-r11
-	; calee-save regs are not saved here because we assume that the
-	; compiler generated irq_entry code is correct.
 	save_regs rax,  rdx,rcx,r8,r9,r10,r11
+	; callee-saved regs (the rest):
+	; if we had irq_entry *return* instead of tail-calling it, we could
+	; perhaps avoid saving callee-save registers to the process and doing
+	; an iretq from here.
 	save_regs rax,  rbp,rbx,r12,r13,r14,r15
 
 .irq_entry:
-	add	rsp, 0xfff
-	and	sp, ~0xfff
-
 	zero    edx
 	mov     rdx, [gs:rdx + gseg.self]
 	; Now rdi = vector, rsi = error (or 0), rdx = gseg
@@ -308,18 +317,21 @@ proc handle_irq_generic, NOSECTION
 	jmp	irq_entry
 
 .kernel_fault:
+	; Since this was a kernel fault of some kind, tnstead of saving regs in
+	; proc we should save it in a temporary register storage area for
+	; faults (somewhere in gseg). Our stack layout is compatible with the
+	; state at .save_regs, so we just need to load rax and adjust it for
+	; the proc struct offset.
 	zero	eax
-	mov	rax, [gs:rax + gseg.proc]
+	mov	rax, [gs:rax + gseg.kernel_reg_save]
 	test	rax, rax
-	jz	.from_idle
+	; If we have a kernel-reg-save-area, store everything there
+	jnz .save_regs
 
-	cli
-	hlt
-
-.from_idle:
-	; saved_rax, saved_rdi, saved_rsi, vector, [error], rip, cs, rflags, rsp, ss
-	mov	rdi, [rsp + 24]
-	jmp	.irq_entry
+	; Otherwise just "panic" (should try to print something first though)
+.panic:
+	extern	abort
+	jmp	abort
 
 ; slowret: all registers are currently unknown, load *everything* from process
 ; (in rdi), then iretq
@@ -350,4 +362,3 @@ handler_NM_stub stub 7
 gfunc handler_NM_stub
 handler_PF_stub stub 14
 gfunc handler_PF_stub
-

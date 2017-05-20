@@ -30,7 +30,7 @@ extern "C" void start64() NORETURN;
 namespace {
 
 void assert_failed(const char* fileline, const char* msg) NORETURN;
-void abort() NORETURN;
+extern "C" void abort() NORETURN;
 void abort(const char *msg) NORETURN;
 void unimpl(const char* what) NORETURN;
 
@@ -117,9 +117,7 @@ ssize_t fwrite_unlocked(const void* p, size_t sz, size_t n, FILE *) {
 void fputc_unlocked(char c, FILE *) {
     Console::write(c);
 }
-long int strtol(const char *, char **, int) {
-    unimpl("strtol");
-}
+long int strtol(const char *p, char **end, int radix);
 bool isdigit(char c) {
     return c >= '0' && c <= '9';
 }
@@ -131,6 +129,15 @@ bool isdigit(char c) {
 
 #define printf xprintf
 
+long int strtol(const char *p, char **end, int radix) {
+    assert(radix == 10);
+    if (!memcmp(p, "16l", 3)) {
+        if (end) *end = (char*)p + 2;
+        return 16;
+    }
+    printf("strtol(%s,%p,%d)\n", p, end, radix);
+    unimpl("strtol");
+}
 static const intptr_t kernel_base = -(1 << 30);
 
 template <class T>
@@ -269,14 +276,14 @@ namespace x86 {
     void ltr(seg tr) {
         asm("ltr %0" ::"r"(tr));
     }
-    u64 get_cr3() {
+    u64 cr3() {
         u64 cr3;
         asm volatile("movq %%cr3, %0" : "=r"(cr3));
         return cr3;
     }
-    void set_cr3(u64 cr3) {
-        if (cr3 != get_cr3()) {
-            asm volatile("movq %0, %%cr3" :: "r"(cr3));
+    void set_cr3(u64 new_cr3) {
+        if (new_cr3 != cr3()) {
+            asm volatile("movq %0, %%cr3" :: "r"(new_cr3));
         }
     }
 
@@ -291,6 +298,11 @@ namespace x86 {
         asm("gs movq (%0), %0": "=r"(res) : "0"(res));
         return res;
     }
+
+    struct Regs {
+        u64 rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi;
+        u64 r8, r9, r10, r11, r12, r13, r14, r15;
+    };
 }
 
 namespace idt {
@@ -455,8 +467,8 @@ namespace pf {
 };
 
 NORETURN void page_fault(Process *p, u64 error) {
-    log(page_fault, "page fault %lx cr2=%p rip=%p in proc=%p\n",
-        error, (void*)x86::cr2(), (void*)p->rip, p);
+    log(page_fault, "page fault %lx cr2=%p rip=%p in %s\n",
+        error, (void*)x86::cr2(), (void*)p->rip, p->name());
 
     assert(error & pf::User);
     i64 fault_addr = x86::cr2();
@@ -474,9 +486,11 @@ NORETURN void page_fault(Process *p, u64 error) {
 extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
 
 void irq_entry(u8 vec, u64 err, Cpu *cpu) {
-    log(irq_entry, "irq_entry(%u, %#lx, cpu=%p, cr2=%#lx)\n", vec, err, cpu, x86::cr2());
-    if (vec == 14) {
-        assert(err & pf::User);
+    log(irq_entry, "irq_entry(%u, %#lx, cr2=%#lx)\n", vec, err, x86::cr2());
+    if (vec == 14 && !(err & pf::User)) {
+        printf("Kernel page fault! %#lx, cr2=%#lx)\n", err, x86::cr2());
+        cpu->dump_regs();
+        abort();
     }
     auto p = cpu->process;
     cpu->leave(p);
