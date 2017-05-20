@@ -30,42 +30,14 @@ void setup_msrs(u64 gs) {
     wrmsr(GSBASE, gs);
 }
 
-struct KernelRegSave {
-    x86::Regs regs;
-    u64 rip;
-    u64 rflags;
-    // syscall.asm does have cr3 here too, but that's not saved in interrupts
-    // since the value in Proc is authoritative anyway.
-    // u64 cr3;
-
-    void dump() {
-        printf("RIP= %16lx  RFLAGS= %lx\n", rip, rflags);
-#define R(n) #n "= %16lx  "
-#define N "\n"
-        // Left column is not the correct number order
-        // (should be a,c,d,b, sp,bp, si,di)
-        printf(
-            R(rax) " " R(r8) N
-            R(rcx) " " R(r9) N
-            R(rdx) R(r10) N
-            R(rbx) R(r11) N
-            R(rsp) R(r12) N
-            R(rbp) R(r13) N
-            R(rsi) R(r14) N
-            R(rdi) R(r15) N,
-#undef R
-#define R(r) regs.r
-            R(rax), R(r8), R(rcx), R(r9), R(rdx), R(r10), R(rbx), R(r11),
-            R(rsp), R(r12), R(rbp), R(r13), R(rsi), R(r14), R(rdi), R(r15));
-    }
-};
+using x86::SavedRegs;
 
 struct Cpu {
     // NB: Initial fields shared with assembly code.
     Cpu *self;
     u8 *stack;
     Process *process;
-    KernelRegSave *kernel_reg_save_pointer;
+    SavedRegs *kernel_reg_save_pointer;
     // END OF ASSEMBLY-SHARED FIELDS
 
     // mem::PerCpu memory
@@ -73,7 +45,7 @@ struct Cpu {
     Process *irq_process;
     Process *fpu_process;
 
-    KernelRegSave kernel_reg_save;
+    SavedRegs kernel_reg_save;
 
     // Assume everything else is 0-initialized
     // FIXME There's already a stack allocated by the boot loader, a bit

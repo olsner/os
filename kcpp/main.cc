@@ -55,6 +55,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_page_fault 0
 #define log_add_pte 0
 #define log_irq_entry 0
+#define log_irq_entry_regs 0
 #define log_portio 0
 #define log_hmod 0
 #define log_dict_find 0
@@ -303,6 +304,34 @@ namespace x86 {
         u64 rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi;
         u64 r8, r9, r10, r11, r12, r13, r14, r15;
     };
+
+    struct SavedRegs {
+        Regs regs;
+        u64 rip;
+        u64 rflags;
+        u64 cr3;
+
+        void dump() {
+            printf("RIP=%016lx  RFLAGS=%lx\n", rip, rflags);
+#define R(n) #n "=%016lx  "
+#define N "\n"
+            // Left column is not the correct number order
+            // (should be a,c,d,b, sp,bp, si,di)
+            printf(
+                R(rax) " " R(r8) N
+                R(rcx) " " R(r9) N
+                R(rdx) R(r10) N
+                R(rbx) R(r11) N
+                R(rsp) R(r12) N
+                R(rbp) R(r13) N
+                R(rsi) R(r14) N
+                R(rdi) R(r15) N,
+#undef R
+#define R(r) regs.r
+                R(rax), R(r8), R(rcx), R(r9), R(rdx), R(r10), R(rbx), R(r11),
+                R(rsp), R(r12), R(rbp), R(r13), R(rsi), R(r14), R(rdi), R(r15));
+        }
+    };
 }
 
 namespace idt {
@@ -487,17 +516,23 @@ extern "C" void irq_entry(u8 vec, u64 err, Cpu *cpu) NORETURN;
 
 void irq_entry(u8 vec, u64 err, Cpu *cpu) {
     log(irq_entry, "irq_entry(%u, %#lx, cr2=%#lx)\n", vec, err, x86::cr2());
+    assert(cpu == &getcpu());
     if (vec == 14 && !(err & pf::User)) {
-        printf("Kernel page fault! %#lx, cr2=%#lx, cpu=%p)\n", err, x86::cr2(), cpu);
+        printf("Kernel page fault! %#lx, cr2=%#lx)\n", err, x86::cr2());
         cpu->dump_regs();
         abort();
     }
     auto p = cpu->process;
     if (p) {
+        if (log_irq_entry_regs) {
+            printf("Process registers (%s)\n", cpu->process->name());
+            cpu->process->saved_regs.dump();
+        }
         cpu->leave(p);
     } else {
         log(idle, "Got interrupt %u while idle\n", vec);
     }
+    // TODO Add symbolic constants for all defined exceptions
     switch (vec) {
     case 7:
         unimpl("handler_NM");

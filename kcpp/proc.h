@@ -38,13 +38,19 @@ u64 mask(ProcFlags flag) {
     return 1 << flag;
 }
 using x86::Regs;
+using x86::SavedRegs;
 
 struct Process {
     // First: fields shared with asm code...
-    Regs regs;
-    u64 rip;
-    u64 rflags;
-    u64 cr3;
+    union {
+        struct {
+            Regs regs;
+            u64 rip;
+            u64 rflags;
+            u64 cr3;
+        };
+        SavedRegs saved_regs;
+    };
     // End of assembly-shared fields.
     u64 flags;
 

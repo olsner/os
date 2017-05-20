@@ -146,7 +146,7 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
 
 NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
-    log(ipc, "%s ipc_send to %lx ==> %p (%s)\n", p->name(), rcpt, handle, handle ? handle->otherspace->name() : NULL);
+    log(ipc, "%s ipc_send to %lx (%s)\n", p->name(), rcpt, handle ? handle->otherspace->name() : NULL);
     assert(handle);
     if (!handle->other) {
         syscall_return(p, 0);
