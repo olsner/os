@@ -380,12 +380,14 @@ namespace idt {
     namespace {
         extern "C" void handler_PF_stub();
         extern "C" void handler_NM_stub();
+        extern "C" void handler_DF_stub();
         extern "C" u32 irq_handlers[17];
     }
 
     void init() {
         static Table idt_table;
         idt_table[7] = Entry(handler_NM_stub);
+        idt_table[8] = Entry(handler_DF_stub);
         idt_table[14] = Entry(handler_PF_stub);
         for (int i = 32; i < 49; i++) {
             idt_table[i] = Entry((void(*)())&irq_handlers[i - 32]);
@@ -556,7 +558,11 @@ void int_entry(u8 vec, u64 err, Cpu *cpu) {
     log(int_entry, "int_entry(%u, %#lx, cr2=%#lx) in %s\n", vec, err, x86::cr2(), cpu->process ? cpu->process->name() : "(idle)");
     assert(cpu == &getcpu());
     if (vec == 8 || (vec == 14 && !(err & pf::User))) {
-        printf("Kernel page fault! %#lx, cr2=%#lx)\n", err, x86::cr2());
+        if (vec == 8) {
+            printf("Double fault!\n");
+        } else {
+            printf("Kernel page fault! %#lx, cr2=%#lx\n", err, x86::cr2());
+        }
         cpu->dump_regs();
         abort();
     }
@@ -572,9 +578,6 @@ void int_entry(u8 vec, u64 err, Cpu *cpu) {
     }
     // TODO Add symbolic constants for all defined exceptions
     switch (vec) {
-    case 7:
-        unimpl("handler_NM");
-        break;
     case 14:
         assert(p);
         page_fault(p, err);

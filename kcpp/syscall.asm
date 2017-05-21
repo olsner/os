@@ -377,3 +377,5 @@ handler_NM_stub stub 7
 gfunc handler_NM_stub
 handler_PF_stub stub 14
 gfunc handler_PF_stub
+handler_DF_stub stub 8
+gfunc handler_DF_stub
