@@ -298,6 +298,7 @@ NORETURN void syscall_grant(Process *p, uintptr_t handle, uintptr_t vaddr, uintp
         abort("Process fault addr is mapped to the wrong handle\n");
     }
     flags &= offsetFlags;
+    flags |= offsetFlags & MAP_NOCACHE;
 
     Backing *backing = p->aspace->find_backing(vaddr);
     uintptr_t paddr = backing->paddr();
@@ -308,6 +309,7 @@ NORETURN void syscall_grant(Process *p, uintptr_t handle, uintptr_t vaddr, uintp
     Sharing *sharing = p->aspace->find_add_sharing(vaddr, paddr);
     assert(sharing->paddr == paddr);
     h->otherspace->add_shared_backing(fault_addr | flags, sharing);
+    // TODO Add the PTE for the newly added page to save a page fault
 
     rcpt->unset(proc::PFault);
     if (rcpt->is(proc::InRecv)) {

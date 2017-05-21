@@ -8,8 +8,9 @@ enum MapFlags {
     MAP_RWX = MAP_R | MAP_W | MAP_X,
     MAP_ANON = 1 << 3,
     MAP_PHYS = 1 << 4,
+    MAP_NOCACHE = 1 << 5,
     MAP_DMA = MAP_ANON | MAP_PHYS,
-    MAP_USER = MAP_DMA | MAP_RW | MAP_X,
+    MAP_USER = MAP_NOCACHE | MAP_DMA | MAP_RWX,
 };
 struct MapCard {
     typedef uintptr_t Key;
@@ -86,7 +87,10 @@ struct Backing {
             pte |= 1ull << 63;
         }
         if (flags() & MAP_W) {
-            pte |= 2;
+            pte |= 1 << 1;
+        }
+        if (flags() & MAP_NOCACHE) {
+            pte |= 1 << 4;
         }
         return pte;
     }
