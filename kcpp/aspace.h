@@ -314,6 +314,24 @@ public:
         delete handle;
     }
 
+    void pulse_handle(Handle *handle, uintptr_t events) {
+        // If any events are pending we know it's already on the list.
+        if (!handle->events) {
+            handle->events |= events;
+            pending.insert(new PendingPulse(handle));
+        }
+    }
+    Handle *pop_pending_handle() {
+        PendingPulse *p = pending.pop();
+        if (p) {
+            Handle *res = find_handle(p->key());
+            delete p;
+            assert(res->events);
+            return res;
+        }
+        return nullptr;
+    }
+
     // Find a process waiting to send a message to 'target' in our address
     // space, and remove it from the waiters list.
     Process *pop_sender(Handle *target);

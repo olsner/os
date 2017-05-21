@@ -57,6 +57,17 @@ template <class V, class K = typename V::Key> struct Dict
         return NULL;
     }
 
+    bool contains(V* item) const {
+        Node *node = root;
+        while (node) {
+            if (node == node_from_item(item)) {
+                return true;
+            }
+            node = node->right;
+        }
+        return false;
+    }
+
     V *insert(V* item) {
         Node *node = node_from_item(item);
         log(dict_insert, "insert(%p): key %#lx root %p (%#lx)\n",
@@ -87,6 +98,14 @@ template <class V, class K = typename V::Key> struct Dict
                 return node->item();
             }
             p = &node->right;
+        }
+        return NULL;
+    }
+    WARN_UNUSED_RESULT V *pop() {
+        Node **p = &root;
+        if (Node *node = *p) {
+            *p = node->right;
+            return node->item();
         }
         return NULL;
     }

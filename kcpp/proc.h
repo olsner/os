@@ -201,7 +201,7 @@ void AddressSpace::remove_waiter(Process *p)
 }
 void AddressSpace::add_blocked(Process *p)
 {
-    log(waiters, "%s adds blocked\n", name());
+    log(waiters, "%s is now blocked on %s\n", p->name(), name());
     assert(!p->waiting_for);
     assert(!p->is_queued());
     blocked.append(p);

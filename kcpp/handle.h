@@ -12,11 +12,12 @@ struct Handle
     DictNode<Key, Handle> node;
     AddressSpace *otherspace;
     Handle *other;
-    u64 pulses;
+    u64 events;
     u8 type;
 
+    // Assume 0-init!
     Handle(uintptr_t key, AddressSpace *otherspace):
-        node(key), otherspace(otherspace), other(nullptr), pulses(0) {}
+        node(key), otherspace(otherspace) {}
 
     uintptr_t key() const { return node.key; }
 
@@ -48,6 +49,7 @@ struct PendingPulse
     DictNode<Key, PendingPulse> node;
 
     PendingPulse(Handle *handle): node(handle->key()) {}
-};
 
+    uintptr_t key() const { return node.key; }
+};
 }

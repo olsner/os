@@ -56,6 +56,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_add_pte 0
 #define log_int_entry 0
 #define log_int_entry_regs 0
+#define log_irq 0
 #define log_portio 0
 #define log_hmod 0
 #define log_dict_find 0
@@ -69,6 +70,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_prefault 0
 #define log_grant 0
 #define log_waiters 0
+#define log_pulse 0
 #define log(scope, ...) do { \
     if (log_ ## scope) { printf(__VA_ARGS__); } \
 } while (0)
@@ -526,30 +528,22 @@ NORETURN void page_fault(Process *p, u64 error) {
 void handle_irq_generic(Cpu *cpu, u8 vec) {
     auto p = cpu->irq_process;
     assert(p);
-    log(int_entry, "IRQ %d triggered, irq process is %s\n", vec, p->name());
+    log(irq, "IRQ %d triggered, irq process is %s\n", vec, p->name());
 
     vec -= 32;
     u8 ix = vec >> 6;
-    u8 mask = 1 << (vec & 63);
+    u64 mask = 1 << (vec & 63);
     if (cpu->irq_delayed[ix] & mask) {
         // Already delayed, so we can't do anything else here
-        log(int_entry, "handle_irq_generic: already delayed\n");
+        log(irq, "handle_irq_generic: already delayed\n");
         return;
     }
     cpu->irq_delayed[ix] |= mask;
 
-    if (p->ipc_state() == proc::mask(proc::InRecv)) {
-        auto h = p->find_handle(p->regs.rdi);
-        if (h && h->other) {
-            log(int_entry, "handle_irq_generic: process receiving something else\n");
-            return;
-        }
-        p->unset(proc::InRecv);
-        p->regs.rdi = 0;
-        p->regs.rsi = latch(cpu->irq_delayed[0]);
-        // dx, cx, r8(?) with additional words of interrupts?
-        p->regs.rax = syscall::SYS_PULSE;
-        cpu->switch_to(p);
+    if (auto rcpt = p->aspace->pop_open_recipient()) {
+        auto irqs = latch(cpu->irq_delayed[0]);
+        log(irq, "handle_irq_generic: sending %lx to %s\n", irqs, rcpt->name());
+        syscall::transfer_pulse(rcpt, 0, irqs);
     }
 }
 

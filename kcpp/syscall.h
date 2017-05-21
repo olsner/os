@@ -122,6 +122,21 @@ NORETURN void transfer_message(Process *target, Process *source) {
     c.run();
 }
 
+NORETURN void transfer_pulse(Process *target, uintptr_t key, uintptr_t events) {
+    // Apparently we need the source process for transfer_set_handle, but we
+    // already know the key that we should set.
+    target->regs.rax = SYS_PULSE;
+    target->regs.rdi = key;
+    target->regs.rsi = events;
+    log(pulse, "delivering %ld: handle %lx events %lx\n", target->regs.rax,
+            target->regs.rdi, target->regs.rsi);
+
+    target->unset(proc::InRecv);
+    target->unset(proc::FastRet); // This really should be possible though
+    assert(target->is_runnable());
+    getcpu().switch_to(target);
+}
+
 void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     sender->regs.rax = msg;
     sender->regs.rdi = h->key();
@@ -177,25 +192,50 @@ NORETURN void ipc_recv(Process *p, u64 from) {
         // noreturn
     }
     if (handle) {
+        log(recv, "%s recv: waiting for %s\n", p->name(), handle->otherspace->name());
+        // TODO Handle cases where 'handle' is the handle with a pulse waiting.
+        assert(!handle->events);
         handle->otherspace->add_waiter(p);
     } else {
-#if 0
-        if (auto h = p->pop_pending_handle()) {
+        if (auto h = p->aspace->pop_pending_handle()) {
+            uintptr_t events = latch(h->events);
+            log(pulse, "%s recv: got events %lx from %lx\n", p->name(), events, h->key());
+            transfer_pulse(p, h->key(), events);
         }
-#endif
 
-#if 0
-        auto c = getcpu();
-        if (c.irq_process == p && c.irq_delayed) {
-            auto irqs = latch(c.irq_delayed);
-            deliver_pulse(p, 0, irqs);
+        Cpu &c = getcpu();
+        if (c.irq_process == p && c.irq_delayed[0]) {
+            auto irqs = latch(c.irq_delayed[0]);
+            log(pulse, "%s recv: got pending IRQs %lx\n", p->name(), irqs);
+            transfer_pulse(p, 0, irqs);
         }
-#endif
 
+        log(recv, "%s recv: found no senders\n", p->name());
         p->aspace->add_blocked(p);
     }
-    log(recv, "%s recv: found no senders\n", p->name());
     getcpu().run();
+}
+
+NORETURN void syscall_pulse(Process *p, uintptr_t handle, uintptr_t bits) {
+    auto h = p->find_handle(handle);
+    log(pulse, "%s sending pulse %lx to %lx (%s)\n", p->name(), bits, handle,
+            h ? h->otherspace->name() : "null");
+    if (!h || !h->other) {
+        syscall_return(p, 0); // FIXME Error code
+    }
+
+    auto rcpt = p->aspace->pop_recipient(h);
+    if (!rcpt) rcpt = h->otherspace->pop_open_recipient();
+    if (rcpt) {
+        uintptr_t send_bits = latch(h->other->events) | bits;
+        log(pulse, "delivering %lx to %lu (%s)\n", send_bits, h->other->key(), rcpt->name());
+        getcpu().queue(p);
+        transfer_pulse(rcpt, h->other->key(), send_bits);
+    } else {
+        log(pulse, "pulse not deliverable, saved for later\n");
+        h->otherspace->pulse_handle(h->other, bits);
+        syscall_return(p, 0);
+    }
 }
 
 NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
@@ -365,7 +405,9 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     case SYS_GRANT:
         syscall_grant(p, arg0, arg1, arg2);
         break;
-    SC_UNIMPL(PULSE);
+    case SYS_PULSE:
+        syscall_pulse(p, arg0, arg1);
+        break;
     default:
         if (nr >= MSG_USER) {
             if ((nr & MSG_KIND_MASK) == MSG_KIND_SEND) {

@@ -119,6 +119,18 @@ template <class T> struct DList
         }
         return item;
     }
+
+    bool contains(T* item) const {
+        T *p = head;
+        while (p) {
+            if (p == item) {
+                return true;
+            }
+            p = node(p)->next;
+        }
+        return false;
+    }
+
 };
 
 #define DLIST_NODE(Class, member) \
