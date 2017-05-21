@@ -186,7 +186,11 @@ endproc
 section .text.handle_irq_generic, exec
 
 %macro stub 1
+%if %1 >= 128
+	push	byte %1 - 256
+%else
 	push	byte %1
+%endif
 	jmp	asm_int_entry
 %endmacro
 
@@ -198,8 +202,12 @@ handle_irq_ %+ %1:
 align 4
 irq_handlers:
 
+; NB! 32 is the maximum number of stubs we can emit with a fixed size entry
+; Exactly 32 entries is ok since the jump is actually at the end so the maximum
+; offset we need to encode is only 124, with 33 entries the first one needs the
+; offset to be 128 which is too big.
 %assign irq 32
-%rep 17
+%rep 32
 handle_irqN_generic irq
 %assign irq irq + 1
 %endrep

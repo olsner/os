@@ -362,7 +362,8 @@ namespace idt {
             this->high = addr >> 32;
         }
     };
-    const size_t N_ENTRIES = 49;
+    const size_t N_IRQ_STUBS = 32;
+    const size_t N_ENTRIES = 32 + N_IRQ_STUBS;
     typedef Entry Table[N_ENTRIES];
 
     struct idtr {
@@ -381,7 +382,7 @@ namespace idt {
         extern "C" void handler_PF_stub();
         extern "C" void handler_NM_stub();
         extern "C" void handler_DF_stub();
-        extern "C" u32 irq_handlers[17];
+        extern "C" u32 irq_handlers[N_IRQ_STUBS];
     }
 
     void init() {
@@ -389,7 +390,9 @@ namespace idt {
         idt_table[7] = Entry(handler_NM_stub);
         idt_table[8] = Entry(handler_DF_stub);
         idt_table[14] = Entry(handler_PF_stub);
-        for (int i = 32; i < 49; i++) {
+        for (size_t i = 32; i < N_ENTRIES; i++) {
+            // If the first byte is not a push imm8 we know something is wrong.
+            assert(*(u8*)&irq_handlers[i - 32] == 0x6a);
             idt_table[i] = Entry((void(*)())&irq_handlers[i - 32]);
         }
         load(idt_table);
