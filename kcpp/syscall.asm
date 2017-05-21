@@ -187,7 +187,7 @@ section .text.handle_irq_generic, exec
 
 %macro stub 1
 	push	byte %1
-	jmp	handle_irq_generic
+	jmp	asm_int_entry
 %endmacro
 
 %macro handle_irqN_generic 1
@@ -236,7 +236,7 @@ combine EXC_ERR_MASK, 8, 10, 11, 12, 13, 14, 17
 ; get gseg
 ; save rip, rflags, rsp to process
 ; save all caller-save regs to process
-proc handle_irq_generic, NOSECTION
+proc asm_int_entry, NOSECTION
 	push	rsi
 	lea	rsi, [rsp + 8]
 	push	rdi
@@ -307,17 +307,17 @@ proc handle_irq_generic, NOSECTION
 	; caller-save: rax, rcx, rdx, rsi, rdi, r8-r11
 	save_regs rax,  rdx,rcx,r8,r9,r10,r11
 	; callee-saved regs (the rest):
-	; if we had irq_entry *return* instead of tail-calling it, we could
+	; if we had int_entry *return* instead of tail-calling it, we could
 	; perhaps avoid saving callee-save registers to the process and doing
 	; an iretq from here.
 	save_regs rax,  rbp,rbx,r12,r13,r14,r15
 
-.irq_entry:
+.int_entry:
 	zero    edx
 	mov     rdx, [gs:rdx + gseg.self]
 	; Now rdi = vector, rsi = error (or 0), rdx = gseg
-	extern	irq_entry
-	jmp	irq_entry
+	extern	int_entry
+	jmp	int_entry
 
 .idle:
 	; Ignore saved_{rax,rdi,rsi}, just get the vector
@@ -327,9 +327,9 @@ proc handle_irq_generic, NOSECTION
 	; See above for details on the stack misalignment check to detect the
 	; error code
 	test	esp, 8
-	jz	.irq_entry
+	jz	.int_entry
 	pop	rsi
-	jmp	.irq_entry
+	jmp	.int_entry
 
 .kernel_fault:
 	; Since this was a kernel fault of some kind, tnstead of saving regs in
