@@ -321,7 +321,7 @@ namespace x86 {
         u64 rflags;
         u64 cr3;
 
-        void dump() {
+        void dump() const {
             printf("RIP=%016lx  RFLAGS=%lx\n", rip, rflags);
 #define R(n) #n "=%016lx  "
 #define N "\n"
@@ -519,8 +519,13 @@ NORETURN void page_fault(Process *p, u64 error) {
     assert(fault_addr >= 0);
 
     auto as = p->aspace.get();
-    auto &back = as->find_add_backing(fault_addr & -0x1000);
-    as->add_pte(back.vaddr(), back.pte());
+    auto *back = as->find_add_backing(fault_addr & -0x1000);
+    if (!back) {
+        printf("Fatal page fault in %s. err=%lx cr2=%p\n", p->name(), error, (void*)x86::cr2());
+        p->dump_regs();
+        abort();
+    }
+    as->add_pte(back->vaddr(), back->pte());
 
     getcpu().switch_to(p);
 }

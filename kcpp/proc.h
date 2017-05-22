@@ -121,6 +121,8 @@ struct Process {
     bool is_blocked() const { return !is_runnable(); }
 
     const char *name() const { return aspace->name(); }
+
+    void dump_regs() const { saved_regs.dump(); }
 };
 }
 

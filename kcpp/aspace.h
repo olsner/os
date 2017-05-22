@@ -221,12 +221,12 @@ public:
         return ToPhysAddr(pml4);
     }
 
-    Backing& add_anon_backing(MapCard* card, uintptr_t vaddr) {
-        return *backings.insert(Backing::new_anon(vaddr | card->flags()));
+    Backing* add_anon_backing(MapCard* card, uintptr_t vaddr) {
+        return backings.insert(Backing::new_anon(vaddr | card->flags()));
     }
 
-    Backing& add_phys_backing(MapCard* card, uintptr_t vaddr) {
-        return *backings.insert(Backing::new_phys(
+    Backing* add_phys_backing(MapCard* card, uintptr_t vaddr) {
+        return backings.insert(Backing::new_phys(
             vaddr | card->flags(), card->paddr(vaddr)));
     }
 
@@ -244,14 +244,16 @@ public:
         return nullptr;
     }
 
-    Backing& find_add_backing(uintptr_t vaddr) {
+    Backing* find_add_backing(uintptr_t vaddr) {
         if (auto back = find_backing(vaddr)) {
-            return *back;
+            return back;
         }
 
         auto card = mapcards.find_le(vaddr);
+        if (!card) {
+            return nullptr;
+        }
         assert(card->vaddr() <= vaddr);
-        assert(card && "No mapping");
         assert((card->flags() & MAP_RWX) && "No access");
         if (card->handle) {
             unimpl("User mappings");
