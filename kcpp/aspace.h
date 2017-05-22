@@ -315,11 +315,12 @@ public:
     }
 
     void pulse_handle(Handle *handle, uintptr_t events) {
+        assert(events);
         // If any events are pending we know it's already on the list.
         if (!handle->events) {
-            handle->events |= events;
             pending.insert(new PendingPulse(handle));
         }
+        handle->events |= events;
     }
     Handle *pop_pending_handle() {
         PendingPulse *p = pending.pop();
