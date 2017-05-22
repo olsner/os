@@ -139,11 +139,12 @@ struct Cpu {
 };
 
 void idle(Cpu *cpu) {
-    for (;;) {
-        log(idle, "idle\n");
-        cpu->process = NULL;
-        asm volatile("cli; hlt; cli" ::: "memory");
-    }
+    log(idle, "idle\n");
+    cpu->process = NULL;
+    asm volatile("sti; hlt" ::: "memory");
+    // We should have entered an interrupt handler which would not "return"
+    // here but rather just re-idle.
+    abort("idle returned");
 }
 
 }
