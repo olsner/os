@@ -18,6 +18,9 @@ typedef int32_t     s32_t;
 typedef uintptr_t   mem_ptr_t;
 
 #define LWIP_ERR_T  int
+#define LWIP_NO_INTTYPES_H 1
+
+#define X8_F  "02x"
 
 #define U16_F "u"
 #define S16_F "d"
@@ -26,6 +29,8 @@ typedef uintptr_t   mem_ptr_t;
 #define U32_F "u"
 #define S32_F "d"
 #define X32_F "x"
+
+#define SZT_F "zu"
 
 /* Compiler hints for packing structures */
 #define PACK_STRUCT_FIELD(x)    x

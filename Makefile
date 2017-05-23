@@ -302,16 +302,19 @@ $(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
 
 LWIP = lwip
 LWIP_CORE = $(LWIP)/src/core
+LWIP_NETIF = $(LWIP)/src/netif
 LWIP4_CORE = $(LWIP_CORE)/ipv4
 LWIP_API = $(LWIP)/src/api
 
-LWIP_CORE_SRCS = def.c dns.c inet_chksum.c init.c mem.c memp.c netif.c \
-	pbuf.c raw.c stats.c sys.c tcp.c tcp_in.c tcp_out.c timers.c udp.c
-LWIP4_CORE_SRCS = autoip.c dhcp.c icmp.c igmp.c ip4_addr.c ip4.c ip_frag.c
+LWIP_NETIF_SRCS = ethernet.c
+LWIP_CORE_SRCS = def.c dns.c inet_chksum.c init.c ip.c mem.c memp.c netif.c \
+	pbuf.c raw.c stats.c sys.c tcp.c tcp_in.c tcp_out.c timeouts.c udp.c
+LWIP4_CORE_SRCS = \
+	autoip.c dhcp.c etharp.c icmp.c igmp.c ip4_addr.c ip4.c ip4_frag.c
 
 LWIP_SRCS := \
-	$(LWIP)/src/netif/etharp.c \
 	$(addprefix $(LWIP_CORE)/, $(LWIP_CORE_SRCS)) \
+	$(addprefix $(LWIP_NETIF)/, $(LWIP_NETIF_SRCS)) \
 	$(addprefix $(LWIP4_CORE)/, $(LWIP4_CORE_SRCS)) \
 	$(addprefix $(LWIP_API)/, api_lib.c api_msg.c err.c netbuf.c netdb.c netifapi.c sockets.c tcpip.c)
 

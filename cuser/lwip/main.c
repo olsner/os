@@ -3,7 +3,7 @@
 #include "lwip/init.h"
 #include "lwip/ip.h"
 #include "lwip/sys.h"
-#include "lwip/timers.h"
+#include "lwip/timeouts.h"
 #include "netif/etharp.h"
 
 #include "common.h"
@@ -66,7 +66,8 @@ u32 lwip_random() {
 }
 
 static void check_timers(void) {
-	u64 timeout_ms = sys_check_timeouts();
+	sys_check_timeouts();
+	u64 timeout_ms = sys_timeouts_sleeptime();
 	if (timeout_ms == (u32)-1) timeout_ms = 500;
 	if (timeout_ms != (u32)-1) {
 		debug("lwip: timeout %lums\n", timeout_ms);

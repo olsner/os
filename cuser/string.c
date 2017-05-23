@@ -28,6 +28,15 @@ STRING_INL_LINKAGE int strcmp(const char* a, const char* b) {
 	return *a - *b;
 }
 
+STRING_INL_LINKAGE int strncmp(const char* a, const char* b, size_t n) {
+	if (!n) return 0;
+
+	while (n-- && *a && *b && *a == *b) {
+		a++, b++;
+	}
+	return *a - *b;
+}
+
 STRING_INL_LINKAGE size_t strlen(const char* s) {
 	size_t res = 0;
 	while (*s++) res++;

@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #define NO_SYS 1
+#define SYS_LIGHTWEIGHT_PROT 0
 
 // options, options, options!
 #define MEMP_OVERFLOW_CHECK 1
