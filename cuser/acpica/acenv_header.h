@@ -1,21 +1,13 @@
 #define ACPI_MACHINE_WIDTH 64
 #define ACPI_SINGLE_THREADED
 #define ACPI_USE_LOCAL_CACHE
-#define ACPI_INLINE inline
 #define ACPI_USE_NATIVE_DIVIDE
-#define ACPI_UNUSED_VAR __attribute__ ((unused))
-#define ACPI_PRINTF_LIKE(c) __attribute__ ((__format__ (__printf__, c, c+1)))
 
 #define DEBUGGER_THREADING DEBUGGER_SINGLE_THREADED
 
+#undef ACPI_GET_FUNCTION_NAME
 #ifdef ACPI_FULL_DEBUG
-#define ACPI_DEBUG_OUTPUT
-#define ACPI_DISASSEMBLER
-
-// Depends on threading support
-#define ACPI_DEBUGGER
 //#define ACPI_DBG_TRACK_ALLOCATIONS
-
 #define ACPI_GET_FUNCTION_NAME __FUNCTION__
 #else
 #define ACPI_GET_FUNCTION_NAME ""

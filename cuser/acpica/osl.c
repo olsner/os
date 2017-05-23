@@ -492,3 +492,20 @@ uint32_t AcpiOsAcquireGlobalLock(ACPI_TABLE_FACS* facs)
 	return !(new & 1);
 }
 
+// OS-specific processing to do "just before" setting the register values.
+ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegA, UINT32 RegB)
+{
+    return AE_OK;
+}
+
+// We don't use the debugger loop from dbinput.c, but just call
+// AcpiDbCommandDispatch directly, so these should never get called really.
+ACPI_STATUS AcpiOsWaitCommandReady()
+{
+    return AE_CTRL_TERMINATE;
+}
+
+ACPI_STATUS AcpiOsNotifyCommandComplete()
+{
+    return AE_CTRL_TERMINATE;
+}

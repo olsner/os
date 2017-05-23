@@ -4,12 +4,14 @@
 #define STRING_INL_LINKAGE
 #endif
 
-STRING_INL_LINKAGE void memcpy(void* dest, const void* src, size_t n) {
+STRING_INL_LINKAGE void* memcpy(void* dest, const void* src, size_t n) {
 	asm("rep movsb": "+D"(dest), "+S"(src), "+c"(n), "=m"(dest) : : "memory");
+	return dest;
 }
 
-STRING_INL_LINKAGE void memset(void* dest, int c, size_t n) {
+STRING_INL_LINKAGE void* memset(void* dest, int c, size_t n) {
 	asm("rep stosb": "+D"(dest), "+c"(n), "=m"(dest) : "a"(c) : "memory");
+	return dest;
 }
 
 STRING_INL_LINKAGE int memcmp(const void* a_, const void* b_, size_t n) {
@@ -43,7 +45,14 @@ STRING_INL_LINKAGE size_t strlen(const char* s) {
 	return res;
 }
 
-STRING_INL_LINKAGE void strcat(char* dest, const char* src) {
-	memcpy(dest + strlen(dest), src, strlen(src));
+STRING_INL_LINKAGE char *strcat(char* dest, const char* src) {
+	char *p = dest + strlen(dest);
+	size_t n = strlen(src);
+	memcpy(p, src, n + 1);
+	return p + n;
 }
 
+STRING_INL_LINKAGE char* strchr(const char* s, int c) {
+	while (*s && *s != c) s++;
+	return *s ? (char*)s : NULL;
+}

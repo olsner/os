@@ -1,6 +1,15 @@
 #include "common.h"
 #include "acpica.h"
 
+static void FreeBuffer(ACPI_BUFFER* buffer) {
+	ACPI_FREE(buffer->Pointer);
+}
+static void ResetBuffer(ACPI_BUFFER* buffer) {
+	FreeBuffer(buffer);
+	buffer->Pointer = 0;
+	buffer->Length = ACPI_ALLOCATE_BUFFER;
+}
+
 /******************************************************************************
  *
  * Example ACPICA handler and handler installation
@@ -13,7 +22,7 @@ static void NotifyHandler (
     void                        *Context)
 {
 
-    ACPI_INFO ((AE_INFO, "Received a notify 0x%x (device %p, context %p)", Value, Device, Context));
+    ACPI_INFO(("Received a notify 0x%x (device %p, context %p)", Value, Device, Context));
 }
 
 static ACPI_STATUS InstallHandlers (void)
@@ -121,14 +130,15 @@ static ACPI_STATUS ExecuteOSI(int pic_mode)
     Arg[0].Type = ACPI_TYPE_INTEGER;
     Arg[0].Integer.Value = pic_mode;
 
-    ACPI_INFO ((AE_INFO, "Executing _PIC(%ld)", Arg[0].Integer.Value));
+    ACPI_INFO(("Executing _PIC(%ld)", Arg[0].Integer.Value));
 
     /* Ask ACPICA to allocate space for the return object */
 
+    ReturnValue.Pointer = 0;
     ReturnValue.Length = ACPI_ALLOCATE_BUFFER;
 
     Status = AcpiEvaluateObject (NULL, "\\_PIC", &ArgList, &ReturnValue);
-	ACPI_FREE_BUFFER(ReturnValue);
+	FreeBuffer(&ReturnValue);
 	if (Status == AE_NOT_FOUND)
 	{
 		printf("\\_PIC was not found. Assuming that's ok.\n");
@@ -317,11 +327,6 @@ typedef struct IRQRouteData
 	BOOLEAN found;
 } IRQRouteData;
 
-static void ResetBuffer(ACPI_BUFFER* buffer) {
-	ACPI_FREE_BUFFER((*buffer));
-	buffer->Pointer = 0;
-	buffer->Length = ACPI_ALLOCATE_BUFFER;
-}
 
 static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE* found, IRQRouteData* data) {
 	ACPI_STATUS status = AE_OK;
@@ -367,7 +372,7 @@ static ACPI_STATUS RouteIRQLinkDevice(ACPI_HANDLE Device, ACPI_PCI_ROUTING_TABLE
 	CHECK_STATUS("AcpiSetCurrentResources");
 
 failed:
-	ACPI_FREE_BUFFER(buffer);
+	FreeBuffer(&buffer);
 	return_ACPI_STATUS(status);
 }
 
@@ -410,15 +415,15 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 		if (status == AE_OK && addr64.ResourceType == ACPI_BUS_NUMBER_RANGE)
 		{
 			printf("RouteIRQ: Root bridge bus range %#x..%#x\n",
-					addr64.Minimum,
-					addr64.Maximum);
-			if (data->pci.Bus < addr64.Minimum ||
-				data->pci.Bus > addr64.Maximum)
+					addr64.Address.Minimum,
+					addr64.Address.Maximum);
+			if (data->pci.Bus < addr64.Address.Minimum ||
+				data->pci.Bus > addr64.Address.Maximum)
 			{
 				// This is not the root bridge we're looking for...
 				goto failed;
 			}
-			rootBus = addr64.Minimum;
+			rootBus = addr64.Address.Minimum;
 			break;
 		}
 		resource = ACPI_NEXT_RESOURCE(resource);
@@ -475,7 +480,7 @@ static ACPI_STATUS RouteIRQCallback(ACPI_HANDLE Device, UINT32 Depth, void *Cont
 	status = AE_CTRL_TERMINATE;
 
 failed:
-	ACPI_FREE_BUFFER(buffer);
+	FreeBuffer(&buffer);
 	ACPI_FREE(info);
 	return_ACPI_STATUS(status);
 }

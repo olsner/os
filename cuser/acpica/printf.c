@@ -6,6 +6,7 @@
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
 #define flockfile(file) (void)0
 
+#undef isdigit
 static int isdigit(int c) {
 	return c >= '0' && c <= '9';
 }
@@ -18,7 +19,7 @@ static void putchars(const char* buf, size_t n) {
 
 static long int strtol(const char* p, char** end, int base) {
 	// FIXME This is the last of the ACPICA dependencies. plzfix.
-	return AcpiUtStrtoul(p, end, base);
+	return strtoul(p, end, base);
 }
 
 static void format_num(int width, bool leading_zero, int base, bool show_base, uintmax_t num)

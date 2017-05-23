@@ -507,11 +507,6 @@ static u64 portio(u16 port, u64 flags, u64 data) {
 	return syscall3(SYSCALL_IO, port, flags, data);
 }
 
-static char* strchr(const char* s, char c) {
-	while (*s && *s != c) s++;
-	return *s ? (char*)s : NULL;
-}
-
 /* Not all of these are implemented, depending on what you link against. */
 extern void printf(const char* fmt, ...);
 extern void vprintf(const char* fmt, va_list ap);

@@ -178,7 +178,7 @@ WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
 WANT_REAL_PRINTF = e1000 apic bochsvga fbtest ioapic
 
-WANT_STRING = acpica
+WANT_STRING =
 
 $(WANT_PRINTF:%=$(OUTDIR)/cuser/%.elf): $(OUTDIR)/cuser/printf.o
 $(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
@@ -214,10 +214,10 @@ $(OUTDIR)/grub.iso: $(GRUB_CFG) $(KERNELS) $(MODFILES)
 
 ACPICA_SRC =            $(ACPICA)/source
 ACPICA_COMMON =         $(ACPICA_SRC)/common
-ACPICA_TOOLS =          $(ACPICA_SRC)/tools
-ACPICA_OSL =            $(ACPICA_SRC)/os_specific/service_layers
 ACPICA_CORE =           $(ACPICA_SRC)/components
 ACPICA_INCLUDE =        $(ACPICA_SRC)/include
+ACPICA_OSL =            $(ACPICA_SRC)/os_specific/service_layers
+ACPICA_TOOLS =          $(ACPICA_SRC)/tools
 ACPICA_DEBUGGER =       $(ACPICA_CORE)/debugger
 ACPICA_DISASSEMBLER =   $(ACPICA_CORE)/disassembler
 ACPICA_DISPATCHER =     $(ACPICA_CORE)/dispatcher
@@ -234,9 +234,9 @@ UT_SRCS := \
 	xface xferror xfinit \
 	excep debug global alloc clib track decode string math cache mutex lock \
 	delete object state misc address ownerid error osi eval ids copy predef \
-	buffer resrc init
+	buffer resrc init ascii resdecode uuid nonansi strtoul64 hex
 TB_SRCS := \
-	xface xfload instal utils print fadt find xfroot
+	xface xfload instal utils print fadt find xfroot data
 EV_SRCS := \
 	xface glock xfevnt gpeblk event region handler misc gpe rgnini gpeutil \
 	sci xfregn gpeinit
@@ -246,22 +246,24 @@ NS_SRCS := \
 EX_SRCS := \
 	utils mutex resnte system dump region prep resop resolv convrt create \
 	names field store fldio debug oparg1 oparg2 oparg3 oparg6 storen misc \
-	config storob
+	config storob concat trace
 DB_SRCS := \
 	xface input utils histry method names fileio exec disply cmds names stats \
-	convert
+	convert object
 DS_SRCS := \
 	init wscope wstate opcode wload mthdat object utils field wload2 method \
-	wexec args control
+	wexec args control debug
 HW_SRCS := \
 	xface acpi gpe pci regs xfsleep esleep sleep valid
 PS_SRCS := \
 	xface scope utils walk tree opinfo parse opcode args loop object
 DM_SRCS := \
-	walk object utils opcode names buffer deferred resrc resrcs resrcl resrcl2
+	walk utils opcode names buffer deferred resrc resrcs resrcl resrcl2 cstyle
 RS_SRCS := \
 	xface create dump info list dumpinfo utils calc memory io irq serial misc \
 	addr
+ACPICA_COMMON_SRCS := \
+	ahids.c ahuuids.c
 
 ACPI_SRCS := \
 	$(UT_SRCS:%=$(ACPICA_UTILITIES)/ut%.c) \
@@ -275,6 +277,7 @@ ACPI_SRCS := \
 	$(PS_SRCS:%=$(ACPICA_PARSER)/ps%.c) \
 	$(DM_SRCS:%=$(ACPICA_DISASSEMBLER)/dm%.c) \
 	$(RS_SRCS:%=$(ACPICA_RESOURCES)/rs%.c) \
+	$(ACPICA_COMMON_SRCS:%=$(ACPICA_COMMON)/%)
 
 ACPI_OBJS := $(ACPI_SRCS:$(ACPICA)/%.c=$(ACPICA_OUT)/%.o)
 ACPI_OBJS += $(addprefix $(OUTDIR)/cuser/acpica/, \
