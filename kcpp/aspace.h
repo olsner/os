@@ -325,12 +325,13 @@ public:
         handle->events |= events;
     }
     Handle *pop_pending_handle() {
-        PendingPulse *p = pending.pop();
-        if (p) {
+        while (PendingPulse *p = pending.pop()) {
             Handle *res = find_handle(p->key());
             delete p;
-            assert(res->events);
-            return res;
+            // The handle could've been deleted while still pending.
+            if (res && res->events) {
+                return res;
+            }
         }
         return nullptr;
     }
