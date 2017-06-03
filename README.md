@@ -7,15 +7,18 @@ An x86-64 &micro;kernel in Assembly. User-space parts in Assembly and C.
 
 This software is licensed under the MIT license. See the LICENSE file.
 
+## Building the cross-toolchain ##
+
+Scripts for building a cross compiler can be found in `toolchain/`. Running
+`./build.sh` in that directory will download the tarballs (if necessary),
+verify the signatures, unpack, configure and build.
+
 ## Building ##
 
-To build, just run `make`. ccache is used by default, but can be disabled by
+After building the cross-compiler, just run `make` to build the kernel(s) and
+user-space components. ccache is used by default, but can be disabled by
 setting `CCACHE=` on the Make command line. (Just install ccache though.
 Srsly.)
-
-Since I'm too lazy to set up a cross compiler for the userspace parts, the
-build OS must be very similar to what I'm runing on my computers. It's been
-tested in Ubuntu 12.10 and 13.10 so far. A 64-bit OS is required.
 
 ## Setting up tun/tap networking ##
 
