@@ -49,6 +49,8 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
     do { if (enable_assert && !(X)) { assert_failed(__FILE__, __LINE__, #X); } } while (0)
 
 #define enable_assert 1
+#define log_fileline 1
+
 #define log_idle 0
 #define log_switch 0
 #define log_runqueue 0
@@ -71,8 +73,15 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_grant 0
 #define log_waiters 0
 #define log_pulse 0
-#define log(scope, ...) do { \
-    if (log_ ## scope) { printf(__VA_ARGS__); } \
+
+#define log(scope, fmt, ...) do { \
+    if (log_ ## scope) { \
+        if (log_fileline) { \
+            printf("K[%s] %s:%d: " fmt, #scope, __FILE__, __LINE__, ## __VA_ARGS__); \
+        } else { \
+            printf(fmt, ## __VA_ARGS__); \
+        } \
+    } \
 } while (0)
 
 namespace { namespace mem { void *malloc(size_t); void free(void *); } }
