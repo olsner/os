@@ -334,20 +334,20 @@ static void incoming_packet(int start, int end) {
 	debug("e1000: %ld bytes ethertype %04x\n", sum, ethtype);
 	protocol* proto = find_proto_ethtype(ethtype);
 	buffer* buf = proto ? buffer_for_recv(proto) : NULL;
-	if (buf && sum <= 4094) {
+	// TODO Collect stats or something about dropped incoming packets
+	if (!proto) {
+		log("e1000: No protocol for %ld bytes ethertype %04x\n", sum, ethtype);
+	} else if (!buf) {
+		log("e1000: Protocol busy for %ld bytes ethertype %04x\n", sum, ethtype);
+	} else if (sum > 4094) {
+		log("e1000: Too large packet: %ld bytes ethertype %04x\n", sum, ethtype);
+	} else {
 		copy_packet(buf->data, start, end);
 		*(u16*)(buf->data + 4094) = sum;
 		size_t index = buf - proto->buffers;
 		assert(buf->state == RECV);
 		buf->state = UNUSED;
 		pulse((uintptr_t)proto, UINT64_C(1) << index);
-	} else {
-		if (!buf) {
-			log("e1000: No protocol for %ld bytes ethertype %04x\n", sum, ethtype);
-		} else {
-			log("e1000: Too large packet: %ld bytes ethertype %04x\n", sum, ethtype);
-		}
-		// TODO Collect stats or something about dropped incoming packets
 	}
 	for (int i = start; i != end; i = (i + 1) % N_DESC)
 	{
