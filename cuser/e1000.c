@@ -316,7 +316,7 @@ static buffer* buffer_for_recv(protocol* proto);
 // Must only be used if we know the client is already blocked for a reply.
 static void send_recvd(protocol* proto, buffer* buf);
 
-static bool incoming_packet(int start, int end) {
+static void incoming_packet(int start, int end) {
 	size_t sum = 0;
 	u16 ethtype = 0;
 	// Are packets split *only* when they are too big or can they be split just
@@ -334,7 +334,7 @@ static bool incoming_packet(int start, int end) {
 	debug("e1000: %ld bytes ethertype %04x\n", sum, ethtype);
 	protocol* proto = find_proto_ethtype(ethtype);
 	buffer* buf = proto ? buffer_for_recv(proto) : NULL;
-	if (buf && sum <= 4096) {
+	if (buf && sum <= 4094) {
 		copy_packet(buf->data, start, end);
 		*(u16*)(buf->data + 4094) = sum;
 		size_t index = buf - proto->buffers;
@@ -342,8 +342,12 @@ static bool incoming_packet(int start, int end) {
 		buf->state = UNUSED;
 		pulse((uintptr_t)proto, UINT64_C(1) << index);
 	} else {
-		log("Delayed packet %d: %ld bytes ethertype %04x\n", start, sum, ethtype);
-		return false;
+		if (!buf) {
+			log("e1000: No protocol for %ld bytes ethertype %04x\n", sum, ethtype);
+		} else {
+			log("e1000: Too large packet: %ld bytes ethertype %04x\n", sum, ethtype);
+		}
+		// TODO Collect stats or something about dropped incoming packets
 	}
 	for (int i = start; i != end; i = (i + 1) % N_DESC)
 	{
@@ -351,7 +355,6 @@ static bool incoming_packet(int start, int end) {
 		// we can use the DD bit to check if it's done.
 		receive_descriptors[i].status = 0;
 	}
-	return true;
 }
 
 void print_dev_state(void) {
@@ -381,10 +384,7 @@ static void recv_poll(void) {
 			break;
 
 		debug("e1000: done RX descriptors: %d..%d\n", rdhead, new_rdhead);
-		if (!incoming_packet(rdhead, new_rdhead)) {
-			debug("e1000: unable to receive\n");
-			return;
-		}
+		incoming_packet(rdhead, new_rdhead);
 
 		// Device's real RDHEAD is somewhere "between" new_rdhead and rdtail
 		// new_rdhead <= rdh < rdtail (if new_rdhead < rdtail)
