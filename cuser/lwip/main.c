@@ -27,7 +27,7 @@ static const uintptr_t fresh_handle = 0x200;
 
 // static const u16 ETHERTYPE_ARP = 0x0806;
 
-#define NBUFS 4
+#define NBUFS 32
 #define BUFFER_SIZE 4096
 static char receive_buffers[NBUFS][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
 static char send_buffers[NBUFS][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
@@ -178,7 +178,7 @@ void start() {
 			switch (msg & 0xff) {
 			case MSG_PULSE:
 				for (int i = 0; i < 2 * NBUFS; i++) {
-					if (arg1 & (1 << i)) {
+					if (arg1 & (UINT64_C(1) << i)) {
 						buffer_done(i);
 					}
 				}

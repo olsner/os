@@ -217,7 +217,7 @@ static buffer* tdesc_owners[N_DESC];
 // by the driver - since we don't know which client will receive a packet we
 // have to receive, inspect and then forward it.
 static char receive_buffers[N_DESC][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
-#define NBUFS 16
+#define NBUFS 64
 // Buffers shared with clients. These get used both as receive and send buffers.
 // Since we use them as send buffers directly, they have to be DMA allocated by
 // us.
@@ -226,7 +226,8 @@ static char buffers[NBUFS][BUFFER_SIZE] PLACEHOLDER_SECTION ALIGN(BUFFER_SIZE);
 static uintptr_t buffer_addr[NBUFS];
 static buffer* buffer_owners[NBUFS];
 
-#define PROTO_NBUFS 8
+// Maximum number of buffers per protocol (both receive and send buffers)
+#define PROTO_NBUFS 64
 // protocol pointer doubles as handle for the protocol process
 typedef struct protocol
 {
@@ -339,7 +340,7 @@ static bool incoming_packet(int start, int end) {
 		size_t index = buf - proto->buffers;
 		assert(buf->state == RECV);
 		buf->state = UNUSED;
-		pulse((uintptr_t)proto, 1 << index);
+		pulse((uintptr_t)proto, UINT64_C(1) << index);
 	} else {
 		log("Delayed packet %d: %ld bytes ethertype %04x\n", start, sum, ethtype);
 		return false;
@@ -507,7 +508,7 @@ static protocol* find_proto_ethtype(u16 ethertype) {
 static protocol* get_proto_from_buffer(buffer* buf) {
 	size_t protoIx = ((char*)buf - (char*)protocols) / sizeof(protocol);
 	protocol* proto = protocols + protoIx;
-	assert(proto->buffers <= buf && buf < proto->buffers + NBUFS);
+	assert(proto->buffers <= buf && buf < proto->buffers + PROTO_NBUFS);
 	return proto;
 }
 
@@ -528,7 +529,7 @@ static char* allocate_buffer(buffer* buffer) {
 }
 
 static buffer* buffer_for_recv(protocol* proto) {
-	for (size_t i = 0; i < NBUFS; i++) {
+	for (size_t i = 0; i < PROTO_NBUFS; i++) {
 		buffer* buf = &proto->buffers[i];
 		if (buf->state == RECV) {
 			return buf;
@@ -553,7 +554,7 @@ static void proto_ack_send(protocol* proto, buffer* buf) {
 	size_t index = buf - proto->buffers;
 	debug("e1000: ack_send proto %d buffer %d (state = %d)\n", proto - protocols, index, buf->state);
 	assert(buf->state == SEND);
-	pulse((uintptr_t)proto, 1 << index);
+	pulse((uintptr_t)proto, UINT64_C(1) << index);
 	// We're done with the buffer so ownership goes back to the client.
 	buf->state = UNUSED;
 }
@@ -805,7 +806,7 @@ void start() {
 			if (proto) {
 				arg >>= 12;
 				debug("e1000: fault for protocol %x buffer %d\n", proto->ethertype, arg);
-				if (arg < NBUFS) {
+				if (arg < PROTO_NBUFS) {
 					arg = (uintptr_t)allocate_buffer(proto->buffers + arg);
 					arg2 &= PROT_READ | PROT_WRITE;
 				} else {
