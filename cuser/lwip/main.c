@@ -137,8 +137,8 @@ void start() {
 	puts("lwip: initialized timer\n");
 
 	hmod(eth_handle, eth_handle, proto_handle);
-	uintptr_t arg1 = ETHERTYPE_ANY, arg2 = NBUFS;
-	sendrcv2(MSG_ETHERNET_REG_PROTO, proto_handle, &arg1, &arg2);
+	uintptr_t arg1 = ETHERTYPE_ANY;
+	sendrcv1(MSG_ETHERNET_REG_PROTO, proto_handle, &arg1);
 	hwaddr = arg1;
 	debug("lwip: registered protocol on %012lx, mapping+faulting buffer...\n", hwaddr);
 
@@ -172,6 +172,7 @@ void start() {
 	check_timers();
 	for (;;) {
 		uintptr_t rcpt = fresh_handle;
+		uintptr_t arg2 = 0;
 		uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
 		//debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
 		if (rcpt == proto_handle) {
