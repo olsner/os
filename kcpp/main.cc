@@ -29,7 +29,7 @@ extern "C" void start64() NORETURN;
 
 namespace {
 
-void assert_failed(const char* fileline, const char* msg) NORETURN;
+void assert_failed(const char* file, int line, const char* msg) NORETURN UNUSED;
 extern "C" void abort() NORETURN;
 void abort(const char *msg) NORETURN;
 void unimpl(const char* what) NORETURN;
@@ -46,7 +46,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define S_(X) #X
 #define S(X) S_(X)
 #define assert(X) \
-    do { if (enable_assert && !(X)) { assert_failed(__FILE__ ":" S(__LINE__), #X "\n"); } } while (0)
+    do { if (enable_assert && !(X)) { assert_failed(__FILE__, __LINE__, #X); } } while (0)
 
 #define enable_assert 1
 #define log_idle 0
@@ -218,8 +218,8 @@ void abort() {
     __builtin_unreachable();
 }
 
-void assert_failed(const char* fileline, const char* msg) {
-    write(fileline); write(": ASSERT FAILED: "); write(msg);
+void assert_failed(const char* file, int line, const char* msg) {
+    printf("%s:%d: ASSERT FAILED: %s\n", file, line, msg);
     abort();
 }
 

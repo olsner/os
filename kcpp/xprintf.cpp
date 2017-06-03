@@ -1,8 +1,5 @@
 // Headers that might be available without stdlib itself (e.g. that are
 // compiler/target specific rather than part of any library).
-#ifndef assert
-#include <assert.h>
-#endif
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -39,11 +36,13 @@ static void format_num(FILE* file, int width, bool leading_zero, bool sign, int 
 		num = -num;
 		fputc_unlocked('-', file);
 	}
-	if (show_base)
+	// For o and x, include the 0 or 0x, for other formats it's undefined.
+	// This appends a prefix even if the value is 0.
+	if (show_base && (base == 8 || base == 16))
 	{
-		assert(base == 16);
 		fputc_unlocked('0', file);
-		fputc_unlocked('x', file);
+		if (base == 16)
+			fputc_unlocked('x', file);
 	}
 	char buf[32];
 	memset(buf, 0, sizeof(buf));
