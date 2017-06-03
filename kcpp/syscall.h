@@ -128,8 +128,6 @@ NORETURN void transfer_pulse(Process *target, uintptr_t key, uintptr_t events) {
     target->regs.rax = SYS_PULSE;
     target->regs.rdi = key;
     target->regs.rsi = events;
-    log(pulse, "delivering %ld: handle %lx events %lx\n", target->regs.rax,
-            target->regs.rdi, target->regs.rsi);
 
     target->unset(proc::InRecv);
     target->unset(proc::FastRet); // This really should be possible though
@@ -220,6 +218,7 @@ NORETURN void syscall_pulse(Process *p, uintptr_t handle, uintptr_t bits) {
     auto h = p->find_handle(handle);
     log(pulse, "%s sending pulse %lx to %lx (%s)\n", p->name(), bits, handle,
             h ? h->otherspace->name() : "null");
+    assert(h);
     if (!h || !h->other) {
         syscall_return(p, 0); // FIXME Error code
     }
@@ -232,7 +231,8 @@ NORETURN void syscall_pulse(Process *p, uintptr_t handle, uintptr_t bits) {
         getcpu().queue(p);
         transfer_pulse(rcpt, h->other->key(), send_bits);
     } else {
-        log(pulse, "pulse not deliverable, saved for later\n");
+        log(pulse, "pulse from %s not deliverable, saved in %s for later\n",
+                p->name(), h->otherspace->name());
         h->otherspace->pulse_handle(h->other, bits);
         syscall_return(p, 0);
     }
