@@ -1,6 +1,9 @@
 #include "lwip/ip.h"
 #include "lwip/tcp.h"
 
+#define log_enabled 0
+#define log(...) do { if (log_enabled) printf(__VA_ARGS__); } while (0)
+
 typedef struct tcp_pcb tcp_pcb;
 
 static tcp_pcb* server_pcb;
@@ -13,7 +16,7 @@ const char response[] =
 ;
 
 static err_t http_request(tcp_pcb* pcb, struct pbuf* p) {
-	printf("http[%d]: sending response.\n", pcb->remote_port);
+	log("http[%d]: sending response.\n", pcb->remote_port);
 	tcp_write(pcb, response, sizeof(response) - 1, 0);
 	tcp_close(pcb);
 	// TODO Forward error codes from tcp write/close
@@ -22,7 +25,7 @@ static err_t http_request(tcp_pcb* pcb, struct pbuf* p) {
 
 static err_t http_recv_cb(void* arg_, tcp_pcb* pcb, struct pbuf* p, err_t err) {
 	if (err != ERR_OK) {
-		printf("http: recv_cb err=%d\n", err);
+		log("http: recv_cb err=%d\n", err);
 		tcp_recv(pcb, NULL);
 		tcp_output(pcb);
 		tcp_close(pcb);
@@ -32,7 +35,7 @@ static err_t http_recv_cb(void* arg_, tcp_pcb* pcb, struct pbuf* p, err_t err) {
 	if (p) {
 		size_t len = p->len;
 		size_t total = (arg ? arg->tot_len : 0) + len;
-		printf("http[%d]: received %ld bytes (%ld total)\n", pcb->remote_port, len, total);
+		log("http[%d]: received %ld bytes (%ld total)\n", pcb->remote_port, len, total);
 		if (arg) {
 			pbuf_cat(arg, p);
 		} else {
@@ -46,7 +49,7 @@ static err_t http_recv_cb(void* arg_, tcp_pcb* pcb, struct pbuf* p, err_t err) {
 			pbuf_free(arg);
 		}
 	} else if (arg) {
-		printf("http: received %ld bytes without sending response\n", arg->tot_len);
+		log("http: received %ld bytes without sending response\n", arg->tot_len);
 		tcp_arg(pcb, NULL);
 		pbuf_free(arg);
 		tcp_close(pcb);
@@ -55,7 +58,7 @@ static err_t http_recv_cb(void* arg_, tcp_pcb* pcb, struct pbuf* p, err_t err) {
 }
 
 static err_t http_accept_cb(void *arg, tcp_pcb *newpcb, err_t err) {
-	printf("http[%d]: accepted connection from %x, err=%d\n", newpcb->remote_port, newpcb->remote_ip.addr, err);
+	log("http[%d]: accepted connection from %x, err=%d\n", newpcb->remote_port, newpcb->remote_ip.addr, err);
 	if (err != ERR_OK) {
 		return err;
 	}
