@@ -2,6 +2,15 @@
 
 .PHONY: all clean install commit
 
+# Set JOBS to NO to disable this code (e.g. when making recursively), set JOBS
+# to another value to pass it to -j$(JOBS), or leave unset to default to the
+# number of processors.
+ifneq (NO,$(JOBS))
+NPROC := $(shell nproc)
+JOBS ?= $(NPROC)
+MAKEFLAGS += -j$(JOBS)
+endif
+
 CP=cp
 
 CCACHE ?= ccache
