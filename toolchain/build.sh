@@ -86,8 +86,8 @@ CONFIGURE() {
 	fi
 }
 
-mkdir -p build-binutils
-cd build-binutils
+mkdir -p build-$BINUTILSVER
+cd build-$BINUTILSVER
 setlog binutils_configure
 CONFIGURE "$BINUTILSVER" --target=$TARGET --prefix="$PREFIX" --with-sysroot --disable-nls --disable-werror
 setlog binutils_build
@@ -99,8 +99,8 @@ cd ..
 # Check that binutils installed successfully and is in path
 which -- $TARGET-as >/dev/null || echo $TARGET-as is not in the PATH
 
-mkdir -p build-gcc
-cd build-gcc
+mkdir -p build-$GCCVER
+cd build-$GCCVER
 setlog gcc_configure
 CONFIGURE "$GCCVER" --target=$TARGET --prefix="$PREFIX" --disable-nls --enable-languages=c,c++ --without-headers --disable-libstdcxx
 setlog gcc_build
