@@ -134,8 +134,10 @@ void vprintf(const char* fmt, va_list ap)
 			case 'x':
 			case 'X':
 				base = 16;
+				__attribute__((fallthrough));
 			case 'u':
 				sign = false;
+				__attribute__((fallthrough));
 			case 'd':
 #define format_signed(type) format_snum(width, leading_zero, va_arg(ap, type))
 #define format_unsigned(type) format_num(width, leading_zero, base, show_base, va_arg(ap, type))

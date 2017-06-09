@@ -121,8 +121,10 @@ void xvfprintf(FILE* file, const char* fmt, va_list ap)
 				if (false)
 			case 'x':
 				base = 16;
+				[[fallthrough]];
 			case 'u':
 				sign = false;
+				[[fallthrough]];
 			case 'd':
 #if 0
 			case 'i':

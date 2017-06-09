@@ -1,10 +1,11 @@
 #!/bin/bash
 # Get binutils
 
-BINUTILSVER=binutils-2.26.1
-GCCVER=gcc-6.1.0
+BINUTILSVER=binutils-2.28
+GCCVERNUM=7.1.0
+GCCVER=gcc-${GCCVERNUM}
 TARGET=x86_64-elf
-PREFIX=`pwd`/cross
+PREFIX=`pwd`/cross-$GCCVERNUM
 LOGDIR=`pwd`/logs
 PATH="$PATH:$PREFIX/bin"
 MAKE="$(which make) -j$(nproc)"
@@ -63,8 +64,8 @@ cd src
 
 # The keys used to sign binutils and gcc (in this release)
 (gpg --list-key 4AE55E93 && gpg --list-key C3C45C06) &>/dev/null || gpg --recv-keys 4AE55E93 C3C45C06
-GET ftp://ftp.nluug.nl/mirror/gnu/binutils "${BINUTILSVER}.tar.bz2" 39c346c87aa4fb14b2f786560aec1d29411b6ec34dce3fe7309fe3dd56949fd8
-GET ftp://ftp.nluug.nl/mirror/languages/gcc/releases/$GCCVER "${GCCVER}.tar.bz2" 09c4c85cabebb971b1de732a0219609f93fc0af5f86f6e437fd8d7f832f1a351
+GET ftp://ftp.nluug.nl/mirror/gnu/binutils "${BINUTILSVER}.tar.bz2" 6297433ee120b11b4b0a1c8f3512d7d73501753142ab9e2daa13c5a3edd32a72
+GET ftp://ftp.nluug.nl/mirror/languages/gcc/releases/$GCCVER "${GCCVER}.tar.bz2" 8a8136c235f64c6fef69cac0d73a46a1a09bb250776a050aec8f9fc880bebc17
 
 unpack "$BINUTILSVER"
 unpack "$GCCVER"

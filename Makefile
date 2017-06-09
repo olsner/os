@@ -16,7 +16,8 @@ CP=cp
 CCACHE ?= ccache
 ifneq ($(USE_CROSS),NO)
 CROSS := x86_64-elf-
-export PATH := $(PATH):$(CURDIR)/toolchain/cross/bin
+CROSSDIR := $(CURDIR)/toolchain/cross-7.1.0
+export PATH := $(PATH):$(CROSSDIR)/bin
 else
 CROSS :=
 endif
@@ -302,6 +303,7 @@ ifeq ($(filter clang,$(CC)), clang)
 # Triggers a lot on the ACPI_MODULE_NAME construct, when the name is not used.
 ACPI_CFLAGS += -Wno-unused-const-variable
 endif
+ACPI_CFLAGS += -Wno-implicit-fallthrough
 # ACPICA doesn't claim to support strict aliasing at all. It has worked fine,
 # but it does produce some annoying -Wstrict-aliasing warnings.
 ACPI_CFLAGS += -fno-strict-aliasing
