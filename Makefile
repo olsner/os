@@ -2,16 +2,8 @@
 
 .PHONY: all clean install commit
 
-# Set JOBS to NO to disable this code (e.g. when making recursively), set JOBS
-# to another value to pass it to -j$(JOBS), or leave unset to default to the
-# number of processors.
-ifneq (NO,$(JOBS))
-NPROC := $(shell nproc)
-JOBS ?= $(NPROC)
-MAKEFLAGS += -j$(JOBS)
-endif
-
-CP=cp
+include build/common.mk
+include build/makejobs.mk
 
 CCACHE ?= ccache
 ifneq ($(USE_CROSS),NO)
@@ -32,8 +24,6 @@ export AS := $(CROSS)as
 export CC := $(CCACHE) $(CC)
 export CXX := $(CCACHE) $(CXX)
 
-SYSTEM := $(shell uname -s)
-
 YASM ?= yasm/yasm
 ifeq (yasm, $(YASM))
 YASMDEP := $(shell which $(YASM))
@@ -41,21 +31,6 @@ else
 YASMDEP := $(YASM)
 endif
 YASMFLAGS = -Werror -i $(ASMDIR) -i include
-
-ifeq ($(VERBOSE),YES)
-CP=cp -v
-else
-HUSH_ASM=@echo ' [ASM]\t'$@;
-#HUSH_ASM_DEP=@echo ' [DEP]\t'$@;
-HUSH_ASM_DEP=@
-HUSH_CC= @echo ' [CC]\t'$@;
-HUSH_CXX=@echo ' [CXX]\t'$@;
-HUSH_LD= @echo ' [LD]\t'$@;
-HUSH_OBJCOPY= @echo ' [OBJCOPY]\t'$@;
-SIZE_ASM=@echo ' [ASM]\t'$@: `stat -c %s $@` bytes
-SIZE_LD= @echo ' [LD]\t'$@: `stat -c %s $@` bytes
-SIZE_OBJCOPY= @echo ' [OBJCOPY]\t'$@: `stat -c %s $@` bytes
-endif
 
 OUTDIR       := out
 # Interesting experiment though it currently doesn't work :)
@@ -207,14 +182,17 @@ $(GRUB_CFG): build/mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
 	bash $< $(MOD_ASMFILES:%.asm=%) $(MOD_CFILES:%.c=%) > $@
 
-GRUBLIBDIR := /usr/lib/grub/i386-pc/
 KERNELS = $(GRUBDIR)/kstart.b $(GRUBDIR)/kcpp
+# TODO Autodetect and/or require cross-compiled grub
+GRUB_PREFIX = /usr
+GRUBLIBDIR := $(GRUB_PREFIX)/lib/grub/i386-pc/
+GRUB_MKRESCUE = $(GRUB_PREFIX)/bin/grub-mkrescue
 
 # TODO We should change this so that out/grub/ is removed and regenerated each
 # build, and put all other output products outside out/grub/
 $(OUTDIR)/grub.iso: $(GRUB_CFG) $(KERNELS) $(MODFILES)
 	@echo Creating grub boot image $@ from $^
-	grub-mkrescue $(GRUB_MODULES) -d $(GRUBLIBDIR) -o $@ $(GRUBDIR) >/dev/null
+	$(GRUB_MKRESCUE) $(GRUB_MODULES) -d $(GRUBLIBDIR) -o $@ $(GRUBDIR) >/dev/null
 	@echo '$@: \\' > $@.d
 	@find $(GRUBDIR) | sed 's/$$/ \\/' >> $@.d
 	@echo >> $@.d
