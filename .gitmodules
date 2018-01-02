@@ -1,6 +1,7 @@
 [submodule "yasm"]
 	path = yasm
 	url = git://github.com/olsner/yasm.git
+	ignore = untracked
 [submodule "acpica"]
 	path = acpica
 	url = git://github.com/olsner/acpica.git
