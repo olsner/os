@@ -25,8 +25,10 @@ export CC := $(CCACHE) $(CC)
 export CXX := $(CCACHE) $(CXX)
 
 YASM ?= yasm/yasm
+# Dependency to add to targets that need yasm - if using the in-tree yasm make
+# sure it's built before using it for build products.
 ifeq (yasm, $(YASM))
-YASMDEP := $(shell which $(YASM))
+YASMDEP :=
 else
 YASMDEP := $(YASM)
 endif
