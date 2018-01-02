@@ -16,6 +16,7 @@ typedef uint16_t u16;
 typedef uint8_t u8;
 typedef uintptr_t size_t;
 typedef unsigned int uint;
+// TODO(x32): Introduce types for IPC dest/src (uintptr_t) and arguments (u64)
 
 // FIXME This causes 'start' to follow various silly calling conventions - such
 // as saving callee-save registers. Find some way to get rid of that...
@@ -460,7 +461,13 @@ enum prot {
 	PROT_NO_CACHE = 32,
 };
 // Maximum end-address of user mappings.
+#if __INTPTR_WIDTH__ == 32
+// TODO For x32, we might keep two limits - one "practical" (32-bit pointer
+// max) and one theoretical that could be accessed from 64-bit code.
+static const uintptr_t USER_MAP_MAX = UINTPTR_MAX;
+#else
 static const uintptr_t USER_MAP_MAX = 0x800000000000;
+#endif
 static void* map(uintptr_t handle, enum prot prot, const volatile void *local_addr, uintptr_t offset, uintptr_t size) {
 	if (size < 0x1000) { size = 0x1000; }
 	return (void*)syscall5(MSG_MAP,
