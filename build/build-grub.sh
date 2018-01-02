@@ -10,6 +10,11 @@
 # $ g++ -o objconv -O2 src/*.cpp
 # Then put the compiled objconv in path
 
+die() {
+    echo >&2 "$@"
+    exit 1
+}
+
 set -e
 
 SYSTEM=`uname -s`
@@ -20,15 +25,27 @@ else
 fi
 
 cd ../grub
-export PATH="$PATH":"$(realpath ../toolchain/cross-7.1.0/bin)"
+toolchainBin=../toolchain/cross-7.1.0/bin
+target=x86_64-elf
+
+[ -d "$toolchainBin" -a -x "$toolchainBin/$target-gcc" ] ||
+    die "$toolchainBin/$target-gcc not found or not executable - build cross toolchain first?"
+
+export PATH="$PATH:$(realpath "$toolchainBin")"
 
 mkdir -p prefix
-absPrefix="$(realpath prefix)"
-target=x86_64-elf
+absPrefix=$(realpath prefix)
+
+configureArgs=(
+    -C
+    --disable-werror
+    --target=$target
+    --prefix="$absPrefix"
+)
 
 mkdir -p build
 cd build
-../src/configure --disable-werror TARGET_CC=$target-gcc TARGET_OBJCOPY=$target-objcopy TARGET_STRIP=$target-strip TARGET_NM=$target-nm TARGET_RANLIB=$target-ranlib --target=$target --prefix="$absPrefix" -C
+../src/configure "${configureArgs[@]}"
 make -j$NPROC
 make install
 
