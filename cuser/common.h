@@ -16,7 +16,14 @@ typedef uint16_t u16;
 typedef uint8_t u8;
 typedef uintptr_t size_t;
 typedef unsigned int uint;
-// TODO(x32): Introduce types for IPC dest/src (uintptr_t) and arguments (u64)
+
+typedef int64_t off_t;
+
+typedef uintptr_t ipc_dest_t;
+typedef u64 ipc_arg_t;
+// Only 10-bit or so, really, since the "kind" is bit 8 and 9
+// But also used for return values (errors, presumably)
+typedef intptr_t ipc_msg_t;
 
 // FIXME This causes 'start' to follow various silly calling conventions - such
 // as saving callee-save registers. Find some way to get rid of that...
@@ -187,19 +194,19 @@ enum msg_masks {
 	MSG_KIND_SHIFT = 8
 };
 
-static uintptr_t msg_set_kind(uintptr_t msg, enum msg_kind kind) {
+static ipc_msg_t msg_set_kind(ipc_msg_t msg, enum msg_kind kind) {
 	return msg | (kind << 8);
 }
-static uintptr_t msg_send(uintptr_t msg) {
+static ipc_msg_t msg_send(ipc_msg_t msg) {
 	return msg_set_kind(msg, MSG_KIND_SEND);
 }
-static uintptr_t msg_call(uintptr_t msg) {
+static ipc_msg_t msg_call(ipc_msg_t msg) {
 	return msg_set_kind(msg, MSG_KIND_CALL);
 }
-static u8 msg_code(uintptr_t msg) {
+static u8 msg_code(ipc_msg_t msg) {
 	return msg & MSG_CODE_MASK;
 }
-static enum msg_kind msg_get_kind(uintptr_t msg) {
+static enum msg_kind msg_get_kind(ipc_msg_t msg) {
 	return (msg & MSG_KIND_MASK) >> MSG_KIND_SHIFT;
 }
 
@@ -227,9 +234,10 @@ static enum msg_kind msg_get_kind(uintptr_t msg) {
 // must come from the same process we sent to. Returns the reply message like
 // recv.
 
+// TODO Generate these with a script or something :)
 
-static inline uintptr_t syscall1(uintptr_t msg, uintptr_t dest) {
-	uintptr_t res;
+static inline int64_t syscall1(uint64_t msg, uint64_t dest) {
+	uint64_t res;
 	__asm__ __volatile__ ("syscall"
 		: "=a" (res),
 		  /* clobbered inputs */
@@ -239,7 +247,7 @@ static inline uintptr_t syscall1(uintptr_t msg, uintptr_t dest) {
 	return res;
 }
 
-static inline uintptr_t syscall2(uintptr_t msg, uintptr_t arg1, uintptr_t arg2) {
+static inline int64_t syscall2(uint64_t msg, uint64_t arg1, uint64_t arg2) {
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -250,7 +258,7 @@ static inline uintptr_t syscall2(uintptr_t msg, uintptr_t arg1, uintptr_t arg2) 
 	return msg;
 }
 
-static inline uintptr_t syscall3(uintptr_t msg, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3) {
+static inline int64_t syscall3(uint64_t msg, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -261,7 +269,7 @@ static inline uintptr_t syscall3(uintptr_t msg, uintptr_t arg1, uintptr_t arg2, 
 	return msg;
 }
 
-static inline uintptr_t syscall4(uintptr_t msg, uintptr_t dest, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3) {
+static inline int64_t syscall4(uint64_t msg, uint64_t dest, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
 	register long r8 __asm__("r8") = arg3;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
@@ -273,9 +281,9 @@ static inline uintptr_t syscall4(uintptr_t msg, uintptr_t dest, uintptr_t arg1, 
 	return msg;
 }
 
-static inline uintptr_t syscall5(uintptr_t msg, uintptr_t dest, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4) {
-	register long r8 __asm__("r8") = arg3;
-	register long r9 __asm__("r9") = arg4;
+static inline int64_t syscall5(uint64_t msg, uint64_t dest, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
+	register int64_t r8 __asm__("r8") = arg3;
+	register int64_t r9 __asm__("r9") = arg4;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -287,8 +295,8 @@ static inline uintptr_t syscall5(uintptr_t msg, uintptr_t dest, uintptr_t arg1, 
 }
 
 // Send 3, receive 3, ignore r9 and r10
-static inline uintptr_t ipc3(uintptr_t msg, uintptr_t* destSrc, uintptr_t* arg1, uintptr_t* arg2, uintptr_t* arg3) {
-	register long r8 __asm__("r8") = *arg3;
+static inline ipc_msg_t ipc3(ipc_msg_t msg, ipc_dest_t* destSrc, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3) {
+	register int64_t r8 __asm__("r8") = *arg3;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -300,7 +308,7 @@ static inline uintptr_t ipc3(uintptr_t msg, uintptr_t* destSrc, uintptr_t* arg1,
 	return msg;
 }
 
-static inline uintptr_t ipc2(uintptr_t msg, uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)
+static inline ipc_msg_t ipc2(ipc_msg_t msg, ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2)
 {
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
@@ -312,19 +320,19 @@ static inline uintptr_t ipc2(uintptr_t msg, uintptr_t* src, uintptr_t* arg1, uin
 	return msg;
 }
 
-static inline uintptr_t sendrcv3(uintptr_t msg, uintptr_t dst, uintptr_t* arg1, uintptr_t* arg2, uintptr_t* arg3)
+static inline uintptr_t sendrcv3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
 {
 	return ipc3(msg_call(msg), &dst, arg1, arg2, arg3);
 }
 
-static inline uintptr_t sendrcv2(uintptr_t msg, uintptr_t dst, uintptr_t* arg1, uintptr_t* arg2)
+static inline ipc_msg_t sendrcv2(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2)
 {
 	return ipc2(msg_call(msg), &dst, arg1, arg2);
 }
 
-static inline uintptr_t recv3(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2, uintptr_t* arg3)
+static inline ipc_msg_t recv3(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
 {
-	register long r8 __asm__("r8");
+	register int64_t r8 __asm__("r8");
 	uintptr_t msg;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
@@ -337,7 +345,7 @@ static inline uintptr_t recv3(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2, 
 	return msg;
 }
 
-static inline uintptr_t recv2(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)
+static inline uintptr_t recv2(uintptr_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2)
 {
 	uintptr_t msg;
 	__asm__ __volatile__ ("syscall"
@@ -350,7 +358,7 @@ static inline uintptr_t recv2(uintptr_t* src, uintptr_t* arg1, uintptr_t* arg2)
 	return msg;
 }
 
-static inline uintptr_t ipc1(uintptr_t msg, uintptr_t* src, uintptr_t* arg1)
+static inline uintptr_t ipc1(uintptr_t msg, ipc_dest_t* src, ipc_arg_t* arg1)
 {
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
@@ -362,7 +370,7 @@ static inline uintptr_t ipc1(uintptr_t msg, uintptr_t* src, uintptr_t* arg1)
 	return msg;
 }
 
-static inline uintptr_t recv1(uintptr_t* src, uintptr_t* arg1)
+static inline uintptr_t recv1(uintptr_t* src, ipc_arg_t* arg1)
 {
 	uintptr_t msg;
 	__asm__ __volatile__ ("syscall"
@@ -380,30 +388,30 @@ static inline uintptr_t recv0(uintptr_t src)
 	return syscall1(0, src);
 }
 
-static inline uintptr_t send3(uintptr_t msg, uintptr_t dst, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3)
+static inline uintptr_t send3(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2, ipc_arg_t arg3)
 {
 	return ipc3(msg_send(msg), &dst, &arg1, &arg2, &arg3);
 }
 
-static inline uintptr_t send2(uintptr_t msg, uintptr_t dst, uintptr_t arg1, uintptr_t arg2)
+static inline uintptr_t send2(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2)
 {
 	return ipc2(msg_send(msg), &dst, &arg1, &arg2);
 }
 
-static inline uintptr_t send1(uintptr_t msg, uintptr_t dst, uintptr_t arg1)
+static inline uintptr_t send1(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1)
 {
 	return syscall2(msg_send(msg), dst, arg1);
 }
-static inline uintptr_t send0(uintptr_t msg, uintptr_t dst)
+static inline uintptr_t send0(uintptr_t msg, ipc_dest_t dst)
 {
 	return syscall1(msg_send(msg), dst);
 }
 
-static inline uintptr_t sendrcv1(uintptr_t msg, uintptr_t dst, uintptr_t* arg1)
+static inline uintptr_t sendrcv1(uintptr_t msg, ipc_dest_t dst, ipc_arg_t* arg1)
 {
 	return ipc1(msg_call(msg), &dst, arg1);
 }
-static inline uintptr_t sendrcv0(uintptr_t msg, uintptr_t dst)
+static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
 {
 	return syscall1(msg_call(msg), dst);
 }
@@ -416,7 +424,7 @@ static void putchar(char c) {
 }
 
 static char getchar(void) {
-	uintptr_t c = 0;
+	ipc_arg_t c = 0;
 	sendrcv1(MSG_CON_READ, CONSOLE_HANDLE, &c);
 	return c;
 }
@@ -460,6 +468,11 @@ enum prot {
 	MAP_DMA = MAP_PHYS | MAP_ANON,
 	PROT_NO_CACHE = 32,
 };
+
+static int64_t map_raw(ipc_dest_t handle, int prot, u64 addr, u64 offset, u64 size) {
+	return syscall5(MSG_MAP, handle, prot, addr, offset, size);
+}
+
 // Maximum end-address of user mappings.
 #if __INTPTR_WIDTH__ == 32
 // TODO For x32, we might keep two limits - one "practical" (32-bit pointer
@@ -468,10 +481,9 @@ static const uintptr_t USER_MAP_MAX = UINTPTR_MAX;
 #else
 static const uintptr_t USER_MAP_MAX = 0x800000000000;
 #endif
-static void* map(uintptr_t handle, enum prot prot, const volatile void *local_addr, uintptr_t offset, uintptr_t size) {
+static void* map(ipc_dest_t handle, enum prot prot, const volatile void *local_addr, off_t offset, size_t size) {
 	if (size < 0x1000) { size = 0x1000; }
-	return (void*)syscall5(MSG_MAP,
-		handle, prot, (uintptr_t)local_addr, offset, size);
+	return (void*)(intptr_t)map_raw(handle, prot, (uintptr_t)local_addr, offset, size);
 }
 
 static void map_anon(int prot, void *local_addr, uintptr_t size) {
@@ -480,11 +492,16 @@ static void map_anon(int prot, void *local_addr, uintptr_t size) {
 	}
 }
 
+static u64 map_dma(int prot, const volatile void *local_addr, size_t size) {
+	if (size) {
+		return map_raw(0, MAP_DMA | prot, (uintptr_t)local_addr, 0, size);
+	} else {
+		return (u64)-1;
+	}
+}
+
 static void prefault(const volatile void* addr, int prot) {
-	uintptr_t arg1 = (uintptr_t)addr;
-	uintptr_t arg2 = prot;
-	uintptr_t rcpt = 0;
-	(void)ipc2(MSG_PFAULT, &rcpt, &arg1, &arg2);
+	syscall3(MSG_PFAULT, 0, (uintptr_t)addr, prot);
 }
 
 static void prefault_range(void* start, size_t size, int prot) {
@@ -496,10 +513,8 @@ static void prefault_range(void* start, size_t size, int prot) {
 	}
 }
 
-static void grant(uintptr_t rcpt, void* addr, int prot) {
-	uintptr_t arg1 = (uintptr_t)addr;
-	uintptr_t arg2 = prot;
-	(void)ipc2(MSG_GRANT, &rcpt, &arg1, &arg2);
+static int grant(uintptr_t rcpt, const volatile void* addr, int prot) {
+	return syscall3(MSG_GRANT, rcpt, (uintptr_t)addr, prot);
 }
 
 #define STRING_INL_LINKAGE static

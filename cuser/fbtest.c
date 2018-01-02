@@ -47,8 +47,8 @@ static u8 frame_buffer[W*H*BPP/8] PLACEHOLDER_SECTION ALIGN(4096);
 void start() {
 	__default_section_init();
 	log("fbtest: starting...\n");
-	uintptr_t arg1 = W << 32 | H;
-	uintptr_t arg2 = BPP;
+	ipc_arg_t arg1 = ((u64)W) << 32 | H;
+	ipc_arg_t arg2 = BPP;
 	sendrcv2(MSG_SET_VIDMODE, fbhandle, &arg1, &arg2);
 
 	map(fbhandle, PROT_READ | PROT_WRITE, &frame_buffer, 0, sizeof(frame_buffer));
@@ -84,8 +84,9 @@ void start() {
 	set_palette(palette);
 
 	for(;;) {
-		uintptr_t rcpt = 0, arg, arg2;
-		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
+		ipc_dest_t rcpt = 0;
+		ipc_arg_t arg, arg2;
+		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		if ((msg & 0xff) == MSG_PULSE) {
 			// && rcpt == apic_handle
 			set_palette(++palette);

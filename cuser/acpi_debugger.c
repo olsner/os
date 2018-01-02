@@ -8,13 +8,13 @@
 #define debug(...) (void)0
 #endif
 
-static const uintptr_t acpi_handle = 6;
+static const ipc_dest_t acpi_handle = 6;
 
 static void prompt(void) {
 	puts("Enter debugger command: (Esc cancels)\n");
 	for (;;) {
-		uintptr_t c = getchar();
-		uintptr_t msg;
+		ipc_arg_t c = getchar();
+		ipc_msg_t msg;
 		switch (c) {
 		case '\n': msg = MSG_ACPI_DEBUGGER_CMD; break;
 		case 27: c = '\n'; msg = MSG_ACPI_DEBUGGER_CLR_BUFFER; break;

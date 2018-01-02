@@ -89,7 +89,7 @@ static u64 read_redirect(struct apic* a, u8 pin)
 	return (hi << 32) | lo;
 }
 
-static void register_rawirq(uintptr_t irq, uintptr_t handle)
+static void register_rawirq(ipc_arg_t irq, ipc_dest_t handle)
 {
 	hmod_copy(rawIRQ, handle);
 	sendrcv1(MSG_REG_IRQ, handle, &irq);
@@ -225,10 +225,10 @@ void start() {
 	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		(void*)lapic, apic_pbase, sizeof(lapic));
 
-	uintptr_t rcpt, arg1, arg2, arg3;
 	for (;;) {
-		rcpt = fresh;
-		uintptr_t msg = recv3(&rcpt, &arg1, &arg2, &arg3);
+		ipc_arg_t arg1, arg2, arg3;
+		ipc_dest_t rcpt = fresh;
+		ipc_msg_t msg = recv3(&rcpt, &arg1, &arg2, &arg3);
 		switch (msg & 0xff)
 		{
 		case MSG_PULSE:

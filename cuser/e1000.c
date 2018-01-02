@@ -241,7 +241,7 @@ static size_t free_protocol;
 u32 readpci32(u32 addr, u8 reg)
 {
 	assert(!(reg & 3));
-	uintptr_t arg = addr << 8 | reg;
+	ipc_arg_t arg = addr << 8 | reg;
 	sendrcv1(MSG_ACPI_READ_PCI, acpi_handle, &arg);
 	return arg;
 }
@@ -619,7 +619,7 @@ static const u16 pci_dev_ids[] = {
 void start() {
 	__default_section_init();
 
-	uintptr_t arg;
+	ipc_arg_t arg;
 	log("e1000: looking for PCI device...\n");
 	for (size_t i = 0; i < ARRAY_SIZE(pci_dev_ids); i++) {
 		arg = 0x80860000 | pci_dev_ids[i];
@@ -635,7 +635,7 @@ void start() {
 	log("e1000: found %x\n", arg);
 	// bus << 8 | dev << 3 | func
 	const uintptr_t pci_id = arg;
-	uintptr_t arg2 = ACPI_PCI_CLAIM_MASTER | 1; // Just claim pin 0
+	ipc_arg_t arg2 = ACPI_PCI_CLAIM_MASTER | 1; // Just claim pin 0
 	sendrcv2(MSG_ACPI_CLAIM_PCI, acpi_handle, &arg, &arg2);
 	if (!arg) {
 		log("e1000: failed :(\n");
@@ -659,10 +659,10 @@ void start() {
 		(bar0 >> 1) & 3 ? "64-bit" : "32-bit",
 		(bar0 >> 3) & 1 ? "prefetchable" : "non-prefetchable",
 		bar0 & ~0xf);
-	uintptr_t mmiobase = bar0 & ~0xf;
+	u64 mmiobase = bar0 & ~0xf;
 	if (((bar0 >> 1) & 3) == 2) // 64-bit
 	{
-		uintptr_t bar1 = readpci32(pci_id, PCI_BAR_1);
+		u64 bar1 = readpci32(pci_id, PCI_BAR_1);
 		debug("BAR0 was 64-bit, adding %x:%x.\n", bar1, mmiobase);
 		mmiobase |= bar1 << 32;
 	}
@@ -688,9 +688,9 @@ void start() {
 	hwaddr0 &= 0xffffffffffff;
 
 	// Allocate receive descriptors and buffers
-	uintptr_t descriptorPhysAddr =
-		(uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE, (void*)&descriptors,
-			0, sizeof(descriptors));
+	u64 descriptorPhysAddr =
+		map_dma(PROT_READ | PROT_WRITE,
+				(void*)&descriptors, sizeof(descriptors));
 
 	for (size_t i = 0; i < N_DESC; i++) {
 		// Note: DMA memory must still be allocated page by page
@@ -705,15 +705,14 @@ void start() {
 	for (size_t i = 0; i < NBUFS; i++) {
 		// Note: DMA memory must still be allocated page by page
 		// TODO Should the buffers be uncachable too?
-		uintptr_t physAddr = (uintptr_t)map(0, MAP_DMA | PROT_READ | PROT_WRITE,
-				(void*)buffers[i], 0, sizeof(buffers[i]));
+		u64 physAddr = map_dma(PROT_READ | PROT_WRITE, buffers[i], sizeof(buffers[i]));
 		// Just to fault the pages in so we can forward them later.
 		memset(buffers[i], 0, sizeof(buffers[i]));
 		buffer_addr[i] = physAddr;
 		debug("transmit_buffer %u: %p -> phys %p\n", i, buffers[i], physAddr);
 	}
 
-	uintptr_t physAddr = descriptorPhysAddr + offsetof(struct descriptors, receive);
+	u64 physAddr = descriptorPhysAddr + offsetof(struct descriptors, receive);
 	debug("RX descriptor ring space at %p phys\n", physAddr);
 	mmiospace[RDBAL] = physAddr;
 	mmiospace[RDBAH] = physAddr >> 32;
@@ -769,7 +768,7 @@ void start() {
 		uintptr_t rcpt = fresh;
 		arg = 0;
 		arg2 = 0;
-		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
+		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("e1000: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
 			// Disable all interrupts, then ACK receipt to PIC
@@ -804,17 +803,16 @@ void start() {
 		case MSG_PFAULT: {
 			protocol* proto = find_proto(rcpt);
 			if (proto) {
+				void *addr = NULL;
+				int prot = 0;
 				arg >>= 12;
 				debug("e1000: fault for protocol %x buffer %d\n", proto->ethertype, arg);
 				if (arg < PROTO_NBUFS) {
-					arg = (uintptr_t)allocate_buffer(proto->buffers + arg);
-					arg2 &= PROT_READ | PROT_WRITE;
-				} else {
-					arg = 0;
-					arg2 = 0;
+					addr = allocate_buffer(proto->buffers + arg);
+					prot = arg2 & (PROT_READ | PROT_WRITE);
 				}
-				debug("e1000: granting %p (%x) to protocol %x\n", arg, arg2, proto->ethertype);
-				ipc2(MSG_GRANT, &rcpt, &arg, &arg2);
+				debug("e1000: granting %p (%x) to protocol %x\n", addr, prot, proto->ethertype);
+				grant(rcpt, addr, prot);
 			} else {
 				debug("e1000: fault for unknown protocol (rcpt %#lx)\n", rcpt);
 				assert(proto);
