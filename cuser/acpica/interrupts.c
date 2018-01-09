@@ -123,6 +123,7 @@ void RegIRQ(uintptr_t rcpt, uintptr_t int_spec)
 	assert(!GSI_OUTPUTS[gsi]);
 
 	GSI_OUTPUTS[gsi] = 1;
+	// FIXME (if IOAPIC) Send flags with polarity and edge/level trigger
 	send1(MSG_REG_IRQ, rcpt, gsi);
 	hmod_rename(rcpt, (uintptr_t)&GSI_OUTPUTS[gsi]);
 
