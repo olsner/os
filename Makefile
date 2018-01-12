@@ -185,8 +185,8 @@ $(GRUB_CFG): build/mkgrubcfg.sh Makefile $(MODFILES)
 	bash $< $(MOD_ASMFILES:%.asm=%) $(MOD_CFILES:%.c=%) > $@
 
 KERNELS = $(GRUBDIR)/kstart.b $(GRUBDIR)/kcpp
-# TODO Autodetect and/or require cross-compiled grub
-GRUB_PREFIX = /usr
+GRUBVER = grub-2.02
+GRUB_PREFIX = grub/prefix-$(GRUBVER)
 GRUBLIBDIR := $(GRUB_PREFIX)/lib/grub/i386-pc/
 GRUB_MKRESCUE = $(GRUB_PREFIX)/bin/grub-mkrescue
 
