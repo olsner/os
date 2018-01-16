@@ -1,4 +1,12 @@
-#include "sb1.h"
+#ifndef __STDIO_H
+#define __STDIO_H
+
+#include <__decls.h>
+#include <sb1.h>
+
+#include <stdarg.h>
+
+__BEGIN_DECLS
 
 #ifndef RAW_STDIO
 static const ipc_dest_t CONSOLE_HANDLE = 3; /* Hardcode galore */
@@ -24,3 +32,7 @@ static void puts(const char* str) {
 
 extern void printf(const char* fmt, ...);
 extern void vprintf(const char* fmt, va_list ap);
+
+__END_DECLS
+
+#endif /* __STDIO_H */

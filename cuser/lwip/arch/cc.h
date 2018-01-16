@@ -3,6 +3,7 @@
 #ifndef __ARCH_CC_H__
 #define __ARCH_CC_H__
 
+// TODO Stop including common.h here, just include necessary "official" headers
 #include "common.h"
 #include <stdint.h>
 

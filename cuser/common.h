@@ -1,17 +1,16 @@
 #ifndef __COMMON_H
 #define __COMMON_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdarg.h>
+#include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <sb1.h>
-#include <stdio.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+__BEGIN_DECLS
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -48,6 +47,7 @@ static void prefault_range(void* start, size_t size, int prot) {
 	}
 }
 
+// TODO Clean this up so there's a string.h
 #define STRING_INL_LINKAGE static
 #include "string.c"
 
@@ -55,26 +55,6 @@ static void __default_section_init(void) {
 	map_anon(PROT_READ | PROT_WRITE, __bss_start, __bss_end - __bss_start);
 	memcpy(__data_vma, __data_lma, (uintptr_t)&__data_size);
 }
-
-/* Not all of these are implemented, depending on what you link against. */
-// stdlib.h: malloc, free, abort
-extern void* malloc(size_t size);
-extern void free(void* p);
-
-static void abort(void) __attribute__((noreturn));
-static void abort(void)
-{
-	for (;;) recv0(-1);
-}
-
-// assert.h
-static void assert_failed(const char* file, int line, const char* msg) __attribute__((noreturn));
-static void assert_failed(const char* file, int line, const char* msg) {
-	printf("%s:%d: ASSERT FAILED (%s)\n", file, line, msg);
-	abort();
-}
-#define assert(X) \
-	do { if (!(X)) assert_failed(__FILE__, __LINE__, #X); } while (0)
 
 static void hexdump(char* data, size_t length) {
 	size_t pos = 0;
@@ -125,8 +105,6 @@ static void __barrier(void) {
 	__asm__ __volatile__ ("":::"memory");
 }
 
-#ifdef __cplusplus
-}
-#endif
+__END_DECLS
 
 #endif // __COMMON_H
