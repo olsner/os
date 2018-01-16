@@ -18,7 +18,7 @@
 #define ACPI_GET_FUNCTION_NAME ""
 #endif
 
-static const uintptr_t ACPI_PHYS_BASE = 0x1000000;
+static const uint64_t ACPI_PHYS_BASE = 0x100000000;
 
 #define AcpiOsPrintf printf
 #define AcpiOsVprintf vprintf
