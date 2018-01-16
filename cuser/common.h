@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <sb1.h>
 
@@ -46,10 +47,6 @@ static void prefault_range(void* start, size_t size, int prot) {
 		p += 4096;
 	}
 }
-
-// TODO Clean this up so there's a string.h
-#define STRING_INL_LINKAGE static
-#include "string.c"
 
 static void __default_section_init(void) {
 	map_anon(PROT_READ | PROT_WRITE, __bss_start, __bss_end - __bss_start);

@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <string.h>
+
 #include "common.h"
 #include "acpi.h"
 #include "acpica.h"

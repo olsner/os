@@ -1,3 +1,5 @@
+#include <sb1.h> // TODO msg_irq.h
+
 enum msg_acpi {
 	/* Wrappers around PCI IRQ routing (to PIC or I/O APIC) */
 	MSG_ACPI_REG_IRQ = MSG_REG_IRQ,

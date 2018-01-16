@@ -17,7 +17,7 @@ ACPI_STATUS PrintAcpiDevice(ACPI_HANDLE Device);
 UINT32 PciReadWord(UINT32 Addr);
 UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register);
 
-ACPI_STATUS FindPCIDevByVendor(u16 vendor, u16 device, ACPI_PCI_ID* id);
+ACPI_STATUS FindPCIDevByVendor(UINT16 vendor, UINT16 device, ACPI_PCI_ID* id);
 
 void init_heap(void);
 

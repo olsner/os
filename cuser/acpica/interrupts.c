@@ -1,3 +1,6 @@
+#include <assert.h>
+#include <stdlib.h>
+
 #include "common.h"
 #include "acpi.h"
 #include "acpica.h"

@@ -6,9 +6,6 @@
 #include <assert.h> // for assert_failed, non-standard function but we assume it's in assert.h
 #include <stdint.h>
 #include <string.h>
-// FIXME string.h instead
-#define STRING_INL_LINKAGE static
-#include "string.c"
 
 #define BYTE_ORDER  LITTLE_ENDIAN
 

@@ -1,4 +1,7 @@
-#include "common.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
 #include "acpi.h"
 
 #define fputc_unlocked(x, file) putchar(x)

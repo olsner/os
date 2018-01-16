@@ -1,5 +1,5 @@
-#include "common.h"
-#include "acpica.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 static char heap[1048576];
 static char* heap_end = heap;

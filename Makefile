@@ -171,7 +171,7 @@ WANT_PRINTF = test_maps zeropage
 WANT_PRINTF += timer_test
 WANT_REAL_PRINTF = e1000 apic bochsvga fbtest ioapic
 
-WANT_STRING =
+WANT_STRING = acpi_debugger
 
 $(WANT_PRINTF:%=$(OUTDIR)/cuser/%.elf): $(OUTDIR)/cuser/printf.o
 $(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
