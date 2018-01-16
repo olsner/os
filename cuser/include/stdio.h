@@ -3,6 +3,7 @@
 
 #include <__decls.h>
 #include <sb1.h>
+#include <msg_con.h>
 
 #include <stdarg.h>
 

@@ -1,5 +1,8 @@
 #include "common.h"
 
+#include "msg_fb.h"
+#include "msg_timer.h"
+
 #define log printf
 #if 0
 #define debug log

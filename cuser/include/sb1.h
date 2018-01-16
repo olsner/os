@@ -12,144 +12,6 @@ typedef intptr_t ipc_msg_t;
 
 typedef int64_t off_t; // -> sys/types.h
 
-enum syscalls_builtins {
-	MSG_NONE = 0,
-	SYSCALL_RECV = MSG_NONE,
-	MSG_MAP,
-	MSG_PFAULT,
-	MSG_UNMAP,
-	MSG_HMOD,
-	SYSCALL_WRITE = 6,
-	// arg0 (dst) = port
-	// arg1 = flags (i/o) and data size:
-	//  0x10 = write (or with data size)
-	//  0x01 = byte
-	//  0x02 = word
-	//  0x04 = dword
-	// arg2 (if applicable) = data for output
-	SYSCALL_IO = 7, // Backdoor!
-	MSG_GRANT = 8,
-	MSG_PULSE = 9,
-	MSG_USER = 16,
-};
-
-// TODO Extract message definitions somewhere else. Back to common.h maybe?
-enum msg_con {
-	MSG_CON_WRITE = MSG_USER,
-	MSG_CON_READ,
-};
-
-enum msg_irq {
-	/**
-	 * Takes one argument, the IRQ number (GSI in the case of I/O APICs).
-	 * (Or does it take a number local to the interrupt controller?)
-	 */
-	MSG_REG_IRQ = MSG_USER,
-	/**
-	 * Acknowledge receipt of the interrupt.
-	 *
-	 * arg1: IRQ number to acknowledge
-	 */
-	MSG_IRQ_ACK,
-};
-
-enum msg_ethernet {
-	/**
-	 * Register an ethernet protocol. Use with a fresh handle, memory map pages
-	 * to read incoming packets and store outgoing packets.
-	 * The special protocol number 0 can be used to match all protocols.
-	 *
-	 * The number of buffers to use is decided by the protocol through sending
-	 * receive messages for each buffer it wants to use for reception. All
-	 * buffers start out owned by the protocol until given to ethernet for
-	 * sending or receiving.
-	 *
-	 * arg1: protocol number
-	 * Returns:
-	 * arg1: MAC address of card
-	 */
-	MSG_ETHERNET_REG_PROTO = MSG_USER,
-	/**
-	 * protocol -> ethernet: allocate a buffer to reception, handing over
-	 * ownership to the ethernet driver. Can only be sent without sendrcv. The
-	 * reply comes by pulse afterwards.
-	 *
-	 * The buffer contains the whole ethernet frame including headers, as it
-	 * came from the network. It may contain any type of frame, with or without
-	 * a VLAN header.
-	 *
-	 * arg1: page number of the buffer to receive into
-	 */
-	MSG_ETHERNET_RECV,
-	/**
-	 * protocol -> ethernet: Send a packet. The given page number is owned by
-	 * the ethernet driver until delivered over the wire and the
-	 * pulse reply is sent.
-	 *
-	 * arg1: page number of buffer that contains data to send.
-	 * arg2: datagram length
-	 * Returns:
-	 * arg1: page number of delivered packet - the page is no longer owned by
-	 * the driver.
-	 */
-	MSG_ETHERNET_SEND,
-};
-enum
-{
-	ETHERTYPE_ANY = 0,
-};
-
-enum msg_timer
-{
-	/**
-	 * Register a timer to trigger in approximately N nanoseconds.
-	 *
-	 * arg1: timeout.
-	 */
-	MSG_REG_TIMER = MSG_USER,
-	/**
-	 * A registered timer has triggered. The timer will not be triggered again
-	 * unless you re-register a new timeout.
-	 */
-	MSG_TIMER_T,
-	/**
-	 * Two-argument sendrcv.
-	 *
-	 * returns:
-	 * arg1: milliseconds
-	 * arg2: ticks
-	 */
-	MSG_TIMER_GETTIME,
-};
-
-enum msg_fb
-{
-	/**
-	 * Set video mode (size and bpp).
-	 *
-	 * arg1: width << 32 | height
-	 * arg2: bits per pixel
-	 *
-	 * The user should map the handle, as much memory as needed for the given
-	 * resolution. (Or more, to support use of MSG_PRESENT.)
-	 */
-	MSG_SET_VIDMODE = MSG_USER,
-	/**
-	 * For 4- or 8-bit modes, update a palette entry.
-	 *
-	 * arg1: index << 24 | r << 16 | g << 8 | b
-	 */
-	MSG_SET_PALETTE,
-	/**
-	 * Placeholder for future (window manager driven) api - present a frame.
-	 *
-	 * arg1: origin of frame to present, relative mapped memory area.
-	 * (an id? some way for the client to know when this has been presented and
-	 * the previous frame will not be used by the window manager again)
-	 */
-	MSG_PRESENT,
-};
-
 enum msg_kind {
 	MSG_KIND_SEND = 0,
 	MSG_KIND_CALL = 1,
@@ -388,6 +250,27 @@ static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
 /*****************************************************************************/
 /* Syscall wrappers. */
 /*****************************************************************************/
+
+enum syscalls_builtins {
+	MSG_NONE = 0,
+	SYSCALL_RECV = MSG_NONE,
+	MSG_MAP,
+	MSG_PFAULT,
+	MSG_UNMAP,
+	MSG_HMOD,
+	SYSCALL_WRITE = 6,
+	// arg0 (dst) = port
+	// arg1 = flags (i/o) and data size:
+	//  0x10 = write (or with data size)
+	//  0x01 = byte
+	//  0x02 = word
+	//  0x04 = dword
+	// arg2 (if applicable) = data for output
+	SYSCALL_IO = 7, // Backdoor!
+	MSG_GRANT = 8,
+	MSG_PULSE = 9,
+	MSG_USER = 16,
+};
 
 static void hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
 	syscall3(MSG_HMOD, h, rename, copy);

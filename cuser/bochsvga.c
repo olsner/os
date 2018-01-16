@@ -1,5 +1,6 @@
 #include "common.h"
 #include "msg_acpi.h"
+#include "msg_fb.h"
 
 #define log printf
 #if 0

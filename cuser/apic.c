@@ -1,4 +1,6 @@
 #include "common.h"
+#include "msg_irq.h"
+#include "msg_timer.h"
 
 #define printf(...) (void)0
 

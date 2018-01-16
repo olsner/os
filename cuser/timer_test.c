@@ -1,4 +1,5 @@
 #include "common.h"
+#include "msg_timer.h"
 
 static const ipc_dest_t apic_handle = 4;
 static const ipc_arg_t start_delay = 1000;

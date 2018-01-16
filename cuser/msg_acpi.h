@@ -1,4 +1,4 @@
-#include <sb1.h> // TODO msg_irq.h
+#include <msg_irq.h>
 
 enum msg_acpi {
 	/* Wrappers around PCI IRQ routing (to PIC or I/O APIC) */

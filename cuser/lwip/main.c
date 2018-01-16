@@ -7,6 +7,8 @@
 #include "netif/etharp.h"
 
 #include "common.h"
+#include "msg_ethernet.h"
+#include "msg_timer.h"
 
 #define log printf
 #if 0
