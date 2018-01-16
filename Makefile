@@ -128,6 +128,8 @@ USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter -Wstrict-prototypes
 USER_CFLAGS += -ffunction-sections -fdata-sections
 USER_CFLAGS += -Werror
 
+USER_CFLAGS += -Icuser/include
+
 LDFLAGS := --check-sections
 LDFLAGS += --gc-sections
 USER_LDFLAGS = $(LDFLAGS)
