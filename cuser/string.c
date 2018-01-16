@@ -1,3 +1,8 @@
+// FIXME This is just a workaround to make lwip's cc.h and common.h to work
+// together...
+#ifndef STRING_C_DEFINED
+#define STRING_C_DEFINED
+
 #include <stddef.h>
 
 #ifndef STRING_INL_LINKAGE
@@ -56,3 +61,5 @@ STRING_INL_LINKAGE char* strchr(const char* s, int c) {
 	while (*s && *s != c) s++;
 	return *s ? (char*)s : NULL;
 }
+
+#endif /* STRING_C_DEFINED */
