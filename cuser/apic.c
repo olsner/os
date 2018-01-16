@@ -233,7 +233,7 @@ void start() {
 	// Register irq 48 with irq driver
 	// Note we don't use the PIC driver here - APIC interrupts have their own
 	// EOI etc.
-	uintptr_t arg = apic_timer_irq;
+	ipc_arg_t arg = apic_timer_irq;
 	sendrcv1(MSG_REG_IRQ, irq_driver, &arg);
 
 	printf("apic: irq registered, enabling APIC and EOI:ing\n");
@@ -276,10 +276,10 @@ void start() {
 			}
 		}
 
-		uintptr_t rcpt = fresh_handle;
-		uintptr_t arg1, arg2;
+		ipc_dest_t rcpt = fresh_handle;
+		ipc_arg_t arg1, arg2;
 		printf("apic: receiving\n");
-		const uintptr_t msg = recv2(&rcpt, &arg1, &arg2);
+		const ipc_msg_t msg = recv2(&rcpt, &arg1, &arg2);
 
 		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
 

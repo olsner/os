@@ -35,8 +35,12 @@ endif
 YASMFLAGS = -Werror -i $(ASMDIR) -i include
 
 OUTDIR       := out
-# Interesting experiment though it currently doesn't work :)
-# (The modules are in total about 10kB smaller in X32 mode.)
+# Interesting experiment, but not very useful :) Makes modules slightly smaller
+# (except for lwip), but ACPI actually relies on 64-bit pointers to allow it to
+# access high physical memory more conveniently.
+# Maybe something to revive if we can set different flags per cuser program,
+# e.g. 64-bit ACPICA but 32-bit everything else since they don't need a lot of
+# memory anyway.
 ifeq ($(X32), YES)
 OUTDIR       := out/x32
 endif

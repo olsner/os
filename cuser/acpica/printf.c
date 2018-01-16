@@ -1,6 +1,5 @@
 #include "common.h"
 #include "acpi.h"
-#include "accommon.h"
 
 #define fputc_unlocked(x, file) putchar(x)
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
@@ -16,6 +15,8 @@ static void putchars(const char* buf, size_t n) {
 		putchar(*buf++);
 	}
 }
+
+unsigned long strtoul(const char *, char **, int);
 
 static long int strtol(const char* p, char** end, int base) {
 	// FIXME This is the last of the ACPICA dependencies. plzfix.

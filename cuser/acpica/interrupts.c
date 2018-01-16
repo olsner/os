@@ -133,9 +133,9 @@ void RegIRQ(uintptr_t rcpt, uintptr_t int_spec)
 		return;
 	}
 
-	uintptr_t h = (uintptr_t)&GSI_INPUTS[gsi];
+	ipc_dest_t h = (ipc_dest_t)&GSI_INPUTS[gsi];
 	hmod_copy(p->handle, h);
-	uintptr_t arg = int_spec;
+	ipc_arg_t arg = int_spec;
 	sendrcv1(MSG_REG_IRQ, h, &arg);
 	printf("acpica: Registered GSI %d through %#x\n", gsi, p->handle);
 }
@@ -156,7 +156,7 @@ static void add_irq_controller(uintptr_t handle, u32 gsi_base, u32 count)
 
 void AddIOAPIC(ACPI_MADT_IO_APIC *apic)
 {
-	uintptr_t arg1 = apic->Id, arg2 = apic->Address, arg3 = apic->GlobalIrqBase;
+	ipc_arg_t arg1 = apic->Id, arg2 = apic->Address, arg3 = apic->GlobalIrqBase;
 	sendrcv3(MSG_ACPI_ADD_IOAPIC, ioapic_handle, &arg1, &arg2, &arg3);
 	if (!arg1) {
 		printf("IOAPIC Initialization failed!\n");

@@ -74,7 +74,7 @@ static void write_reg(enum Index i, u16 data) {
 
 static u32 readpci32(u32 addr, u8 reg)
 {
-	uintptr_t arg = addr << 8 | (reg & 0xfc);
+	ipc_arg_t arg = addr << 8 | (reg & 0xfc);
 	sendrcv1(MSG_ACPI_READ_PCI, acpi_handle, &arg);
 	return arg;
 }
@@ -82,7 +82,7 @@ static u32 readpci32(u32 addr, u8 reg)
 void start() {
 	__default_section_init();
 
-	uintptr_t arg = 0x12341111; // Silly PCI ID of Bochs VGA 1234:1111
+	ipc_arg_t arg = 0x12341111; // Silly PCI ID of Bochs VGA 1234:1111
 	log("bochsvga: looking for PCI device...\n");
 	sendrcv1(MSG_ACPI_FIND_PCI, acpi_handle, &arg);
 	if (arg == ACPI_PCI_NOT_FOUND)
@@ -93,7 +93,7 @@ void start() {
 	log("bochsvga: found %x\n", arg);
 	// bus << 8 | dev << 3 | func
 	const uintptr_t pci_id = arg;
-	uintptr_t arg2 = 0; // No interrupts to claim.
+	ipc_arg_t arg2 = 0; // No interrupts to claim.
 	sendrcv2(MSG_ACPI_CLAIM_PCI, acpi_handle, &arg, &arg2);
 	if (!arg)
 	{
@@ -107,11 +107,11 @@ void start() {
 		(bar0 >> 1) & 3 ? "64-bit" : "32-bit",
 		(bar0 >> 3) & 1 ? "prefetchable" : "non-prefetchable",
 		bar0 & ~0xf);
-	uintptr_t mmiobase = bar0 & ~0xf;
+	u64 mmiobase = bar0 & ~0xf;
 	if (((bar0 >> 1) & 3) == 2) // 64-bit
 	{
-		uintptr_t bar1 = readpci32(pci_id, PCI_BAR_1);
-		debug("BAR0 was 64-bit, adding %x:%x.\n", bar1, mmiobase);
+		u64 bar1 = readpci32(pci_id, PCI_BAR_1);
+		debug("BAR0 was 64-bit, adding %lx:%lx.\n", bar1, mmiobase);
 		mmiobase |= bar1 << 32;
 	}
 	debug("Mapping mmiospace %p to BAR %p\n", (void*)mmiospace, mmiobase);
@@ -125,10 +125,10 @@ void start() {
 	assert(bochs_id >= VBE_DISPI_ID0 && bochs_id <= VBE_DISPI_ID5);
 
 	for(;;) {
-		uintptr_t rcpt = fresh;
+		ipc_dest_t rcpt = fresh;
 		arg = 0;
 		arg2 = 0;
-		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
+		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("bochsvga: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 
 		switch (msg & 0xff) {
@@ -165,10 +165,10 @@ void start() {
 		case MSG_PFAULT: {
 			assert(arg < LFB_SIZE && rcpt == the_client);
 			if (arg < LFB_SIZE) {
-				arg += (uintptr_t)&mmiospace;
-				arg2 &= PROT_READ | PROT_WRITE;
-				debug("bochsvga: granting %p (%x) to client %x\n", arg, arg2, rcpt);
-				ipc2(MSG_GRANT, &rcpt, &arg, &arg2);
+				void *addr = (char*)&mmiospace + arg;
+				int prot = arg2 & (PROT_READ | PROT_WRITE);
+				debug("bochsvga: granting %p (%x) to client %x\n", addr, prot, rcpt);
+				grant(rcpt, addr, prot);
 			}
 			break;
 		}

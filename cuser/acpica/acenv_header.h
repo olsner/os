@@ -1,4 +1,9 @@
-#define ACPI_MACHINE_WIDTH 64
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#define ACPI_MACHINE_WIDTH __INTPTR_WIDTH__
 #define ACPI_SINGLE_THREADED
 #define ACPI_USE_LOCAL_CACHE
 #define ACPI_USE_NATIVE_DIVIDE
@@ -13,10 +18,8 @@
 #define ACPI_GET_FUNCTION_NAME ""
 #endif
 
-#define ACPI_PHYS_BASE 0x100000000
+static const uint64_t ACPI_PHYS_BASE = 0x100000000;
 
-#include <stdint.h>
-#include <stdarg.h>
 #define AcpiOsPrintf printf
 #define AcpiOsVprintf vprintf
 

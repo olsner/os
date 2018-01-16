@@ -111,9 +111,9 @@ void AcpiOsFree(void *mem)
 
 ACPI_PHYSICAL_ADDRESS AcpiOsGetRootPointer()
 {
-	ACPI_SIZE res = 0;
+	ACPI_PHYSICAL_ADDRESS res = 0;
 	if (AcpiFindRootPointer(&res) == AE_OK) {
-		return (ACPI_PHYSICAL_ADDRESS)res;
+		return res;
 	} else {
 		return 0;
 	}
@@ -465,7 +465,7 @@ AcpiOsPredefinedOverride (
 
 uint32_t AcpiOsReleaseGlobalLock(ACPI_TABLE_FACS* facs)
 {
-	uint32_t* lock = ACPI_CAST32(ACPI_PHYS_BASE + facs->GlobalLock);
+	uint32_t* lock = (uint32_t*)(ACPI_PHYS_BASE + facs->GlobalLock);
 	uint32_t new, old;
 	do {
 		old = *lock;
@@ -477,7 +477,7 @@ uint32_t AcpiOsReleaseGlobalLock(ACPI_TABLE_FACS* facs)
 
 uint32_t AcpiOsAcquireGlobalLock(ACPI_TABLE_FACS* facs)
 {
-	uint32_t* lock = ACPI_CAST32(ACPI_PHYS_BASE + facs->GlobalLock);
+	uint32_t* lock = (uint32_t*)(ACPI_PHYS_BASE + facs->GlobalLock);
 	uint32_t new, old;
 	do
 	{

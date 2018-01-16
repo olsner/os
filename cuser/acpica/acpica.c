@@ -130,7 +130,7 @@ static ACPI_STATUS ExecuteOSI(int pic_mode)
     Arg[0].Type = ACPI_TYPE_INTEGER;
     Arg[0].Integer.Value = pic_mode;
 
-    ACPI_INFO(("Executing _PIC(%ld)", Arg[0].Integer.Value));
+    ACPI_INFO(("Executing _PIC(%d)", pic_mode));
 
     /* Ask ACPICA to allocate space for the return object */
 
@@ -638,10 +638,10 @@ void start() {
 
 	printf("Waiting for SCI interrupts...\n");
 	for (;;) {
-		uintptr_t rcpt = 0x100;
-		uintptr_t arg = 0;
-		uintptr_t arg2 = 0;
-		uintptr_t msg = recv2(&rcpt, &arg, &arg2);
+		ipc_dest_t rcpt = 0x100;
+		ipc_arg_t arg = 0;
+		ipc_arg_t arg2 = 0;
+		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		//printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
 		if (msg == MSG_PULSE) {
 			if (AcpiOsCheckInterrupt(rcpt, arg)) {
