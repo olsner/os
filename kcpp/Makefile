@@ -1,4 +1,8 @@
-SHELL = /bin/bash
+# NB! This make file depends on cross-toolchain setup in toplevel makefile, so
+# it's not actually independently buildable anymore.
+
+include ../build/common.mk
+include ../build/makejobs.mk
 
 .PHONY: all clean
 
@@ -17,21 +21,6 @@ COPTFLAGS = -fno-unroll-loops -funit-at-a-time
 CXXFLAGS = $(CFLAGS) -std=gnu++14
 LDFLAGS = --check-sections --gc-sections
 
-CP = @cp
-ifeq ($(VERBOSE),YES)
-CP = @cp -v
-else
-# Why doesn't asmos/Makefile need any -e flags?
-HUSH_AS = @echo -e      ' [AS]\t'$@;
-HUSH_ASM = @echo -e     ' [ASM]\t'$@;
-HUSH_ASM_DEP = @echo    ' [DEP]\t'$@;
-HUSH_ASM_DEP = @
-HUSH_CC = @echo -e     ' [CC]\t'$@;
-HUSH_CXX = @echo -e     ' [CXX]\t'$@;
-HUSH_LD  = @echo -e     ' [LD]\t'$@;
-hush = @echo -e       ' [$1]\t'$@;
-endif
-
 all: $(GRUBDIR)/kcpp
 
 clean:
@@ -46,10 +35,10 @@ KERNEL_DEPS = $(KERNEL_OBJS:.o=.d)
 
 $(OUT)/kernel.elf: linker.ld $(KERNEL_OBJS)
 	$(HUSH_LD) $(LD) $(LDFLAGS) --oformat=elf64-x86-64 -o $@ -T $^ -Map $(@:.elf=.map)
-	@echo $@: `grep fill $(@:.elf=.map) | tr -s ' ' | cut -d' ' -f4 | while read REPLY; do echo $$[$$REPLY]; done | paste -sd+ | bc` bytes wasted on alignment
+	@echo $@: `awk '/fill/ { sum += $$3 } END { print sum } ' <$(@:.elf=.map)` bytes wasted on alignment
 $(OUT)/kernel: $(OUT)/kernel.elf
-	$(call hush,OBJCOPY) objcopy -O binary $< $@
-	@echo $@: `stat -c%s $@` bytes
+	$(HUSH_OBJCOPY) $(OBJCOPY) -O binary $< $@
+	@echo $@: `$(FILE_SIZE) $@` bytes
 
 -include $(OUT)/syscall.d
 
