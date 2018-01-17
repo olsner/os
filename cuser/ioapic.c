@@ -1,4 +1,6 @@
 #define RAW_STDIO
+#include <assert.h>
+
 #include "common.h"
 #include "msg_acpi.h"
 

@@ -1,3 +1,6 @@
+#include <assert.h>
+#include <stdbool.h>
+
 #include "common.h"
 #include "msg_irq.h"
 #include "msg_timer.h"

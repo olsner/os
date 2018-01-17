@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #define ACPI_MACHINE_WIDTH __INTPTR_WIDTH__
 #define ACPI_SINGLE_THREADED
@@ -20,6 +21,10 @@
 
 static const uint64_t ACPI_PHYS_BASE = 0x100000000;
 
+// Prevent ACPI from redeclaring printf
+// (without -ffreestanding, that will trigger -Wbuiltin-declaration-mismatch)
+#define ACPI_USE_ALTERNATE_PROTOTYPE_AcpiOsPrintf
+#define ACPI_USE_ALTERNATE_PROTOTYPE_AcpiOsVprintf
 #define AcpiOsPrintf printf
 #define AcpiOsVprintf vprintf
 

@@ -6,6 +6,9 @@
 #include "lwip/timeouts.h"
 #include "netif/etharp.h"
 
+#include <assert.h>
+#include <stdbool.h>
+
 #include "common.h"
 #include "msg_ethernet.h"
 #include "msg_timer.h"

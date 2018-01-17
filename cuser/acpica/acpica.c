@@ -1,3 +1,7 @@
+#include <assert.h>
+#include <stdlib.h>
+#include <sb1.h>
+
 #include "common.h"
 #include "acpica.h"
 

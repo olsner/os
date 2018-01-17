@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include "common.h"
 #include "msg_acpi.h"
 #include "msg_fb.h"
