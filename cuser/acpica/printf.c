@@ -8,11 +8,6 @@
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
 #define flockfile(file) (void)0
 
-#undef isdigit
-static int isdigit(int c) {
-	return c >= '0' && c <= '9';
-}
-
 static void putchars(const char* buf, size_t n) {
 	while (n--) {
 		putchar(*buf++);

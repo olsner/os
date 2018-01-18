@@ -17,6 +17,8 @@ static void abort(void)
 	for (;;) recv0(-1);
 }
 
+unsigned long int strtoul(const char *nptr, char **endptr, int base);
+
 __END_DECLS
 
 #endif /* __STDLIB_H */

@@ -167,29 +167,18 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
-# Basic printf: dependency-free assembly printf, small but doesn't handle all
-# formats you'd want.
-# Real printf: unfortunate ACPICA dependency (just for strtoul), but implements
-# most stuff.
-WANT_BASIC_PRINTF = test_maps zeropage timer_test
-WANT_REAL_PRINTF = e1000 apic bochsvga fbtest ioapic
+LIBC_SRCS = ctype.c string.c stdio.c acpi_strtoul.c
 
-# "libc" so far is just strings
-WANT_LIBC = acpi_debugger
+LIBC_OBJS := $(LIBC_SRCS:%.c=$(OUTDIR)/cuser/libc/%.o)
+LIBC_OBJS += $(OUTDIR)/cuser/acpica/printf.o
 
-$(WANT_BASIC_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
-	$(OUTDIR)/cuser/libc/printf.o
-
-$(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
-	$(OUTDIR)/cuser/acpica/printf.o \
-	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
-
-$(WANT_LIBC:%=$(OUTDIR)/cuser/%.elf): \
-	$(OUTDIR)/cuser/libc/string.o
-
-$(OUTDIR)/cuser/%.o: cuser/%.asm $(YASMDEP)
-	@mkdir -p $(@D)
-	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
+# TODO This is a bit stupid, we should just build a libc.a and make sure our
+# GCC uses it.
+ELFS_WANT_LIBC = \
+	$(MOD_CFILES:%.c=$(OUTDIR)/%.elf) \
+	$(OUTDIR)/cuser/lwip.elf \
+	$(OUTDIR)/cuser/acpica.elf
+$(ELFS_WANT_LIBC): $(LIBC_OBJS)
 
 $(GRUB_CFG): build/mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
@@ -301,7 +290,7 @@ ACPI_CFLAGS += -fno-strict-aliasing
 
 $(ACPI_OBJS): USER_CFLAGS += $(ACPI_CFLAGS)
 
-$(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
+$(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS) $(LIBC_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
@@ -341,8 +330,7 @@ $(LWIP_OBJS): USER_CFLAGS += $(LWIP_CFLAGS)
 
 LWIP_DEP_OBJS := \
 	$(LWIP_OBJS) \
-	$(OUTDIR)/cuser/acpica/printf.o \
-	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
+	$(LIBC_OBJS)
 
 $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)

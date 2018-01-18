@@ -41,14 +41,45 @@ size_t strlen(const char* s) {
 	return res;
 }
 
-char *strcat(char* dest, const char* src) {
-	char *p = dest + strlen(dest);
-	size_t n = strlen(src);
-	memcpy(p, src, n + 1);
-	return p + n;
-}
-
 char* strchr(const char* s, int c) {
 	while (*s && *s != c) s++;
 	return *s ? (char*)s : NULL;
 }
+
+char* strstr(const char* haystack, const char *needle) {
+    const size_t nlen = strlen(needle);
+    const size_t hlen = strlen(haystack);
+    for (size_t i = 0; i < hlen; i++)
+    {
+        if (memcmp(haystack + i, needle, nlen) == 0) {
+            return (char*)haystack + i;
+        }
+    }
+    return NULL;
+}
+
+char* strcpy(char* d, const char *s) {
+    return memcpy(d, s, strlen(s) + 1);
+}
+
+char* strcat(char* d, const char *s) {
+    strcpy(d + strlen(d), s);
+    return d;
+}
+
+char* strncpy(char* d, const char *s, size_t n) {
+    size_t copy = strlen(s) + 1;
+    size_t fill = 0;
+    if (copy > n)
+    {
+        copy = n;
+    }
+    else
+    {
+        fill = n - copy;
+    }
+    memcpy(d, s, copy);
+    memset(d + copy, 0, fill);
+    return d;
+}
+

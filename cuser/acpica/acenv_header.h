@@ -3,11 +3,15 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 
 #define ACPI_MACHINE_WIDTH __INTPTR_WIDTH__
 #define ACPI_SINGLE_THREADED
 #define ACPI_USE_LOCAL_CACHE
 #define ACPI_USE_NATIVE_DIVIDE
+#define ACPI_USE_SYSTEM_CLIBRARY
 
 #define DEBUGGER_THREADING DEBUGGER_SINGLE_THREADED
 
