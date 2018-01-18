@@ -32,7 +32,7 @@ int strncmp(const char* a, const char* b, size_t n) {
 	while (n-- && *a && *b && *a == *b) {
 		a++, b++;
 	}
-	return *a - *b;
+	return n + 1 ? *a - *b : 0;
 }
 
 size_t strlen(const char* s) {
