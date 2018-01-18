@@ -123,7 +123,7 @@ GRUB_MODULES = --modules="boot multiboot"
 
 GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
-USER_CFLAGS := -ffreestanding -g -Os -W -Wall -Wextra -march=sandybridge -mno-avx -std=gnu99
+USER_CFLAGS := -g -Os -W -Wall -Wextra -march=sandybridge -mno-avx -std=gnu99
 USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter -Wstrict-prototypes
 USER_CFLAGS += -ffunction-sections -fdata-sections
 USER_CFLAGS += -Werror
@@ -167,22 +167,27 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
-WANT_PRINTF = test_maps zeropage
-WANT_PRINTF += timer_test
+# Basic printf: dependency-free assembly printf, small but doesn't handle all
+# formats you'd want.
+# Real printf: unfortunate ACPICA dependency (just for strtoul), but implements
+# most stuff.
+WANT_BASIC_PRINTF = test_maps zeropage timer_test
 WANT_REAL_PRINTF = e1000 apic bochsvga fbtest ioapic
 
-WANT_STRING = acpi_debugger
+# "libc" so far is just strings
+WANT_LIBC = acpi_debugger
 
-$(WANT_PRINTF:%=$(OUTDIR)/cuser/%.elf): $(OUTDIR)/cuser/printf.o
+$(WANT_BASIC_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
+	$(OUTDIR)/cuser/libc/printf.o
+
 $(WANT_REAL_PRINTF:%=$(OUTDIR)/cuser/%.elf): \
 	$(OUTDIR)/cuser/acpica/printf.o \
 	$(OUTDIR)/cuser/acpica/source/components/utilities/utclib.o
 
-$(WANT_STRING:%=$(OUTDIR)/cuser/%.elf): \
-	$(OUTDIR)/cuser/string.o
+$(WANT_LIBC:%=$(OUTDIR)/cuser/%.elf): \
+	$(OUTDIR)/cuser/libc/string.o
 
-# TODO This is here because printf.c still depends on AcpiUtStrtoul
-$(OUTDIR)/cuser/printf.o: cuser/printf.asm $(YASMDEP)
+$(OUTDIR)/cuser/%.o: cuser/%.asm $(YASMDEP)
 	@mkdir -p $(@D)
 	$(HUSH_ASM) $(YASM) $(YASMFLAGS) -f $(YASM_ELF_FORMAT) $< -o $@ -L nasm
 
