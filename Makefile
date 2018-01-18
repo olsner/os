@@ -271,7 +271,7 @@ ACPI_SRCS := \
 
 ACPI_OBJS := $(ACPI_SRCS:$(ACPICA)/%.c=$(ACPICA_OUT)/%.o)
 ACPI_OBJS += $(addprefix $(OUTDIR)/cuser/acpica/, \
-	acpica.o interrupts.o osl.o malloc.o pci.o printf.o)
+	acpica.o interrupts.o osl.o malloc.o pci.o)
 
 -include $(ACPI_OBJS:.o=.d)
 

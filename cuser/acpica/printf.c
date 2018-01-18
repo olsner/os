@@ -1,9 +1,12 @@
+#define RAW_STDIO
+
 #include <assert.h>
+#include <ctype.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "acpi.h"
 
 #define fputc_unlocked(x, file) putchar(x)
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))

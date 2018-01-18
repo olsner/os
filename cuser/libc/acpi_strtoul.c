@@ -33,6 +33,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdlib.h>
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -46,35 +48,13 @@ enum signum
     ACPI_SIGN_NEGATIVE,
 };
 
-/*******************************************************************************
- *
- * FUNCTION:    strtoul
- *
- * PARAMETERS:  String          - Null terminated string
- *              Terminater      - Where a pointer to the terminating byte is
- *                                returned
- *              Base            - Radix of the string
- *
- * RETURN:      Converted value
- *
- * DESCRIPTION: Convert a string into a 32-bit unsigned value.
- *              Note: use strtoul64 for 64-bit integers.
- *
- ******************************************************************************/
-
-uint32_t
-strtoul (
-    const char              *String,
-    char                    **Terminator,
-    uint32_t                  Base)
+unsigned long strtoul(const char *String, char **Terminator, int Base)
 {
     uint32_t                  converted = 0;
-    uint32_t                  index;
     uint32_t                  sign;
     const char              *StringStart;
     uint32_t                  ReturnValue = 0;
-    bool error;
-
+    bool error = false;
 
     /*
      * Save the value of the pointer to the buffer's first
@@ -82,7 +62,7 @@ strtoul (
      * skip over any white space in the buffer:
      */
     StringStart = String;
-    while (isspace (*String) || *String == '\t')
+    while (isspace (*String))
     {
         ++String;
     }
@@ -159,14 +139,15 @@ strtoul (
      */
     while (*String)
     {
+        int index;
         if (isdigit (*String))
         {
-            index = (uint32_t) ((uint8_t) *String - '0');
+            index = ((uint8_t) *String - '0');
         }
         else
         {
-            index = (uint32_t) toupper (*String);
-            if (isupper (index))
+            index = toupper(*String);
+            if (isupper(*String))
             {
                 index = index - 'A' + 10;
             }
@@ -185,8 +166,7 @@ strtoul (
          * Check to see if value is out of range:
          */
 
-        if (ReturnValue > ((UINT32_MAX - (uint32_t) index) /
-                            (uint32_t) Base))
+        if (ReturnValue > ((ULONG_MAX - index) / (unsigned long) Base))
         {
             error = true;
             ReturnValue = 0;           /* reset */
@@ -220,7 +200,7 @@ done:
 
     if (error)
     {
-        ReturnValue = UINT32_MAX;
+        ReturnValue = ULONG_MAX;
     }
 
     /*
@@ -228,7 +208,7 @@ done:
      */
     if (sign == ACPI_SIGN_NEGATIVE)
     {
-        ReturnValue = (UINT32_MAX - ReturnValue) + 1;
+        ReturnValue = (ULONG_MAX - ReturnValue) + 1;
     }
 
     return (ReturnValue);
