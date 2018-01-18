@@ -2,22 +2,19 @@
 #define __STDLIB_H
 
 #include <__decls.h>
-/* for recv0 */
-#include <sb1.h>
+#include <stddef.h>
 
 __BEGIN_DECLS
 
 /* malloc/free might not be implemented, depending on what you link against. */
-extern void* malloc(size_t size);
-extern void free(void* p);
+void* malloc(size_t size);
+void free(void* p);
 
-static void abort(void) __attribute__((noreturn));
-static void abort(void)
-{
-	for (;;) recv0(-1);
-}
+void abort(void) __attribute__((noreturn));
 
 unsigned long int strtoul(const char *nptr, char **endptr, int base);
+long int strtol(const char* p, char** end, int base);
+
 
 __END_DECLS
 

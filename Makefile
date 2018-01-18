@@ -167,7 +167,7 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
-LIBC_SRCS = ctype.c string.c stdio.c acpi_strtoul.c
+LIBC_SRCS = ctype.c string.c stdio.c stdlib.c acpi_strtoul.c
 
 LIBC_OBJS := $(LIBC_SRCS:%.c=$(OUTDIR)/cuser/libc/%.o)
 LIBC_OBJS += $(OUTDIR)/cuser/acpica/printf.o

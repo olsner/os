@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "acpi.h"
@@ -12,13 +13,6 @@ static void putchars(const char* buf, size_t n) {
 	while (n--) {
 		putchar(*buf++);
 	}
-}
-
-unsigned long strtoul(const char *, char **, int);
-
-static long int strtol(const char* p, char** end, int base) {
-	// FIXME This is the last of the ACPICA dependencies. plzfix.
-	return strtoul(p, end, base);
 }
 
 static void format_num(int width, bool leading_zero, int base, bool show_base, uintmax_t num)
