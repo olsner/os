@@ -50,10 +50,10 @@ enum signum
 
 unsigned long strtoul(const char *String, char **Terminator, int Base)
 {
-    uint32_t                  converted = 0;
-    uint32_t                  sign;
-    const char              *StringStart;
-    uint32_t                  ReturnValue = 0;
+    const char *StringStart;
+    unsigned long converted = 0;
+    enum signum sign;
+    unsigned long ReturnValue = 0;
     bool error = false;
 
     /*
