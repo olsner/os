@@ -1,6 +1,8 @@
 #ifndef __MSG_IRQ_H
 #define __MSG_IRQ_H
 
+#include "msg_syscalls.h"
+
 enum msg_irq {
 	/**
 	 * Takes one argument, the IRQ number (GSI in the case of I/O APICs).

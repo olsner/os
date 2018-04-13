@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <stdlib.h>
 
+#include <sb1.h>
+
 #include "acpi.h"
 #include "acpica.h"
 

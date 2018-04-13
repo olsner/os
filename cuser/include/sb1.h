@@ -251,26 +251,7 @@ static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
 /* Syscall wrappers. */
 /*****************************************************************************/
 
-enum syscalls_builtins {
-	MSG_NONE = 0,
-	SYSCALL_RECV = MSG_NONE,
-	MSG_MAP,
-	MSG_PFAULT,
-	MSG_UNMAP,
-	MSG_HMOD,
-	SYSCALL_WRITE = 6,
-	// arg0 (dst) = port
-	// arg1 = flags (i/o) and data size:
-	//  0x10 = write (or with data size)
-	//  0x01 = byte
-	//  0x02 = word
-	//  0x04 = dword
-	// arg2 (if applicable) = data for output
-	SYSCALL_IO = 7, // Backdoor!
-	MSG_GRANT = 8,
-	MSG_PULSE = 9,
-	MSG_USER = 16,
-};
+#include "msg_syscalls.h"
 
 static void hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
 	syscall3(MSG_HMOD, h, rename, copy);

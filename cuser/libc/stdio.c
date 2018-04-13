@@ -1,7 +1,4 @@
 #include <stdio.h>
-// FIXME This shouldn't expose these things when included (since that obscures
-// the real dependencies in client code) - move the implementations to a source
-// file instead.
 #include <sb1.h>
 #include <msg_con.h>
 

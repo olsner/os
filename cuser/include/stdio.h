@@ -12,19 +12,13 @@
 __BEGIN_DECLS
 
 #ifdef RAW_STDIO
-#include <sb1.h>
-
-static void putchar(char c) {
-	syscall1(SYSCALL_WRITE, c);
-}
-static void puts(const char* str) {
-	while (*str) putchar(*str++);
-}
+#define puts RAW_puts
+#define putchar RAW_putchar
 #else
-void putchar(char c);
 char getchar(void);
-void puts(const char* str);
 #endif
+void putchar(char c);
+void puts(const char* str);
 
 void printf(const char* fmt, ...);
 void vprintf(const char* fmt, va_list ap);
