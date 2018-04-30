@@ -167,18 +167,28 @@ $(OUTDIR)/%.elf: cuser/linker.ld $(OUTDIR)/%.o
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
-LIBC_SRCS = ctype.c string.c stdio.c stdlib.c acpi_strtoul.c
+LIBC_SRCS = ctype.c string.c stdlib.c acpi_strtoul.c
 
 LIBC_OBJS := $(LIBC_SRCS:%.c=$(OUTDIR)/cuser/libc/%.o)
 LIBC_OBJS += $(OUTDIR)/cuser/acpica/printf.o
+LIBC_OBJS_RAW := $(LIBC_OBJS) $(OUTDIR)/cuser/libc/stdio_raw.o
+LIBC_OBJS += $(OUTDIR)/cuser/libc/stdio.o
 
-# TODO This is a bit stupid, we should just build a libc.a and make sure our
-# GCC uses it.
-ELFS_WANT_LIBC = \
+ALL_ELFS := \
 	$(MOD_CFILES:%.c=$(OUTDIR)/%.elf) \
 	$(OUTDIR)/cuser/lwip.elf \
 	$(OUTDIR)/cuser/acpica.elf
+# Anything involved in interrupt processing that could end up affecting the
+# console driver has to use raw output for any log printouts to avoid
+# deadlocks.
+ELFS_WANT_LIBC_RAW := \
+	$(OUTDIR)/apic.elf \
+	$(OUTDIR)/ioapic.elf \
+	$(OUTDIR)/cuser/acpica.elf
+ELFS_WANT_LIBC = $(filter-out $(ELFS_WANT_LIBC_RAW), $(ALL_ELFS))
+
 $(ELFS_WANT_LIBC): $(LIBC_OBJS)
+$(ELFS_WANT_LIBC_RAW): $(LIBC_OBJS_RAW)
 
 $(GRUB_CFG): build/mkgrubcfg.sh Makefile $(MODFILES)
 	@mkdir -p $(@D)
@@ -278,7 +288,6 @@ ACPI_OBJS += $(addprefix $(OUTDIR)/cuser/acpica/, \
 ACPI_CFLAGS := -Icuser -Icuser/acpica -I$(ACPICA_INCLUDE)
 ACPI_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
 ACPI_CFLAGS += -DACPI_FULL_DEBUG
-ACPI_CFLAGS += -DRAW_STDIO
 ifeq ($(filter clang,$(CC)), clang)
 # Triggers a lot on the ACPI_MODULE_NAME construct, when the name is not used.
 ACPI_CFLAGS += -Wno-unused-const-variable
@@ -290,7 +299,7 @@ ACPI_CFLAGS += -fno-strict-aliasing
 
 $(ACPI_OBJS): USER_CFLAGS += $(ACPI_CFLAGS)
 
-$(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS) $(LIBC_OBJS)
+$(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 

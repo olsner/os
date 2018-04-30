@@ -11,12 +11,7 @@
 
 __BEGIN_DECLS
 
-#ifdef RAW_STDIO
-#define puts RAW_puts
-#define putchar RAW_putchar
-#else
 char getchar(void);
-#endif
 void putchar(char c);
 void puts(const char* str);
 

@@ -193,51 +193,6 @@ AcpiOsSleep (
 	printf("AcpiOsSleep: %lu ms\n", milliseconds);
 }
 
-#ifdef RAW_STDIO
-ACPI_STATUS AcpiOsGetLine(char *Buffer, UINT32 BufferLength, UINT32 *BytesRead)
-{
-	abort();
-}
-#else
-ACPI_STATUS
-AcpiOsGetLine (
-    char                    *Buffer,
-    UINT32                  BufferLength,
-    UINT32                  *BytesRead)
-{
-    UINT32                  i = 0;
-
-    for (i = 0; ; i++)
-    {
-        if (i >= BufferLength)
-        {
-            return (AE_BUFFER_OVERFLOW);
-        }
-
-        int Temp = getchar ();
-		putchar(Temp);
-        if (!Temp || Temp == '\n')
-        {
-            break;
-        }
-
-        Buffer [i] = (char) Temp;
-    }
-
-    /* Null terminate the buffer */
-
-    Buffer [i] = 0;
-
-    /* Return the number of bytes in the string */
-
-    if (BytesRead)
-    {
-        *BytesRead = i;
-    }
-    return (AE_OK);
-}
-#endif
-
 /******************************************************************************
  *
  * FUNCTION:    AcpiOsTableOverride

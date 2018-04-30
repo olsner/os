@@ -1,5 +1,3 @@
-#define RAW_STDIO
-
 #include <assert.h>
 #include <ctype.h>
 #include <stdbool.h>
@@ -13,13 +11,6 @@
 #define fputc_unlocked(x, file) putchar(x)
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
 #define flockfile(file) (void)0
-
-void putchar(char c) {
-	syscall1(SYSCALL_WRITE, c);
-}
-void puts(const char* str) {
-	while (*str) putchar(*str++);
-}
 
 static void putchars(const char* buf, size_t n) {
 	while (n--) {
