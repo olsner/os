@@ -4,8 +4,8 @@ set -e
 
 . ../build/buildfuncs.sh
 
-BINUTILSVER=binutils-2.28
-GCCVERNUM=7.1.0
+BINUTILSVER=binutils-2.30
+GCCVERNUM=7.3.0
 GCCVER=gcc-${GCCVERNUM}
 PREFIX=`pwd`/cross-$GCCVERNUM
 LOGDIR=`pwd`/logs
@@ -14,11 +14,12 @@ PATH="$PATH:$PREFIX/bin"
 mkdir -p src "$PREFIX" "$LOGDIR"
 cd src
 
-# The keys used to sign binutils and gcc (in this release)
-recv_keys 4AE55E93 C3C45C06
-# TODO Get the .xz versions instead :)
-GET ftp://ftp.nluug.nl/mirror/gnu/binutils "${BINUTILSVER}.tar.bz2" 6297433ee120b11b4b0a1c8f3512d7d73501753142ab9e2daa13c5a3edd32a72
-GET ftp://ftp.nluug.nl/mirror/languages/gcc/releases/$GCCVER "${GCCVER}.tar.bz2" 8a8136c235f64c6fef69cac0d73a46a1a09bb250776a050aec8f9fc880bebc17
+# binutils key
+recv_keys DD9E3C4F
+# GCC key (richard guenther)
+recv_keys FC26A641
+GET ftp://ftp.nluug.nl/mirror/gnu/binutils "${BINUTILSVER}.tar.xz" 6e46b8aeae2f727a36f0bd9505e405768a72218f1796f0d09757d45209871ae6
+GET ftp://ftp.nluug.nl/mirror/languages/gcc/releases/$GCCVER "${GCCVER}.tar.xz" 832ca6ae04636adbb430e865a1451adf6979ab44ca1c8374f61fba65645ce15c
 
 unpack "$BINUTILSVER"
 unpack "$GCCVER"

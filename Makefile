@@ -8,7 +8,7 @@ include build/makejobs.mk
 CCACHE ?= ccache
 ifneq ($(USE_CROSS),NO)
 CROSS := x86_64-elf-
-CROSSDIR := $(CURDIR)/toolchain/cross-7.1.0
+CROSSDIR := $(CURDIR)/toolchain/cross-7.3.0
 export PATH := $(PATH):$(CROSSDIR)/bin
 else
 CROSS :=

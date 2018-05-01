@@ -1,7 +1,0 @@
------BEGIN PGP SIGNATURE-----
-Version: GnuPG v1.4.9 (Darwin)
-
-iEYEABECAAYFAli35AIACgkQwxJtO0rlXpOQHwCgz/Djzy9u6S45Gvp3XF11x7zC
-rH0AoOvwMu76PQI91Z/x0vGA8twWOP8j
-=Wb4r
------END PGP SIGNATURE-----
