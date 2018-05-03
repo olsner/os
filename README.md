@@ -65,7 +65,8 @@ runs make and starts qemu.
 
 See notes/bochs.txt for build instructions for bochs 2.6.
 
-Build everything as above, then start bochs using `bochs -f .bochsrc-2.6`.
+Build everything as above, then start bochs using `bochs` from the repo root. A
+.bochsrc with most of the necessary settings is provided.
 
 ## Known issues ##
 
