@@ -13,12 +13,21 @@ Scripts for building a cross compiler can be found in `toolchain/`. Running
 `./build.sh` in that directory will download the tarballs (if necessary),
 verify the signatures, unpack, configure and build.
 
+## Cross-compiling grub ##
+
+On Linux systems, using the system grub is usually fine, but to support more
+esoteric operating systems (e.g. macOS), grub needs to be cross-compiled with
+an ELF toolchain. Use the `./build.sh` script in `grub/` to build one after
+building the toolchain.
+
+`grub-mkrescue` also requires `xorriso`.
+
 ## Building ##
 
-After building the cross-compiler, just run `make` to build the kernel(s) and
-user-space components. ccache is used by default, but can be disabled by
-setting `CCACHE=` on the Make command line. (Just install ccache though.
-Srsly.)
+After building the cross-compiler and cross-grub, just run `make` to build the
+kernel(s) and user-space components. ccache is used by default, but can be
+disabled by setting `CCACHE=` on the Make command line. (Just install ccache
+though. Srsly.)
 
 ## Setting up tun/tap networking ##
 
