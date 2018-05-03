@@ -17,3 +17,40 @@ Optimization flags:
 
 Whole shebang:
 ./configure  -C --prefix=/opt/bochs --enable-debugger --enable-x86-debugger --enable-x86-64 --enable-all-optimizations --enable-pci --enable-readline --enable-clgd54xx --enable-disasm --enable-idle-hack --enable-ne2000 --enable-e1000 --enable-avx
+
+
+Mac OS using homebrew:
+
+The e1000 module is not enabled by default, so do a brew edit bochs to add
+--enable-e1000 option to configure, and insert the following patch to disable
+the "socket" netmod (which has some portability issues):
+
+
+diff --git a/configure b/configure
+index 3979ae3..2257c45 100755
+--- a/configure
++++ b/configure
+@@ -23637,7 +23637,7 @@ fi
+ 
+     NETLOW_OBJS="$NETLOW_OBJS eth_socket.o"
+     ethernet_modules="$ethernet_modules socket"
+-    $as_echo "#define BX_NETMOD_SOCKET 1" >>confdefs.h
++    $as_echo "#define BX_NETMOD_SOCKET 0" >>confdefs.h
+ 
+   fi
+   if test "$MSVC_TARGET" = 0; then
+diff --git a/misc/bxhub.cc b/misc/bxhub.cc
+index 71438b0..ece9e77 100644
+--- a/misc/bxhub.cc
++++ b/misc/bxhub.cc
+@@ -53,6 +53,9 @@ typedef int SOCKET;
+ #define MSG_NOSIGNAL 0
+ #define MSG_DONTWAIT 0
+ #endif
++#ifdef __APPLE__
++#define MSG_NOSIGNAL 0
++#endif
+ 
+ #include "misc/bxcompat.h"
+ #include "osdep.h"
+
