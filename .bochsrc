@@ -46,4 +46,4 @@ com3: enabled=0
 com4: enabled=0
 # Uncomment to use tun/tap networking (and comment out the next line)
 # e1000: enabled=1, mac=fe:fd:de:ad:be:ef, ethmod=tuntap, ethdev="/dev/net/tun:tap0", script=none, bootrom=none
-e1000: enabled=1, mac=fe:fd:de:ad:be:ef, ethmod=slirp
+e1000: enabled=1, mac=fe:fd:de:ad:be:ef, ethmod=slirp, script="notes/slirp.conf"
