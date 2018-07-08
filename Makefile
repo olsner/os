@@ -130,6 +130,7 @@ USER_CFLAGS += -ffunction-sections -fdata-sections
 USER_CFLAGS += -W -Wall -Wextra -Werror
 # Enable useful warnings
 USER_CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
+USER_CFLAGS += -Wmissing-include-dirs
 # Disable some less-than-useful warnings enabled by -Wall etc
 USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
 
