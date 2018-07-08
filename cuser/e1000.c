@@ -242,7 +242,7 @@ typedef struct protocol
 static protocol protocols[MAX_PROTO];
 static size_t free_protocol;
 
-u32 readpci32(u32 addr, u8 reg)
+static u32 readpci32(u32 addr, u8 reg)
 {
 	assert(!(reg & 3));
 	ipc_arg_t arg = addr << 8 | reg;
@@ -250,7 +250,7 @@ u32 readpci32(u32 addr, u8 reg)
 	return arg;
 }
 
-u16 readpci16(u32 addr, u8 reg)
+static u16 readpci16(u32 addr, u8 reg)
 {
 	assert(!(reg & 1));
 	u32 val = readpci32(addr, reg & 0xfc);
@@ -260,23 +260,23 @@ u16 readpci16(u32 addr, u8 reg)
 	return val;
 }
 
-void init_descriptor(union desc* desc, uintptr_t physAddr)
+static void init_descriptor(union desc* desc, uintptr_t physAddr)
 {
 	memset(desc, 0, sizeof(union desc));
 	desc->buffer = physAddr;
 }
 
-int get_descriptor_status(int index)
+static int get_descriptor_status(int index)
 {
 	return ((volatile struct rdesc*)receive_descriptors + index)->status;
 }
 
-int get_tdesc_status(int index)
+static int get_tdesc_status(int index)
 {
 	return ((volatile struct tdesc*)transmit_descriptors + index)->status;
 }
 
-buffer* get_buffer_from_tdesc(int index)
+static buffer* get_buffer_from_tdesc(int index)
 {
 	return tdesc_owners[index];
 }
@@ -361,7 +361,7 @@ static void incoming_packet(int start, int end) {
 	}
 }
 
-void print_dev_state(void) {
+static void print_dev_state(void) {
 	static const int link_speed[] = { 10, 100, 1000, 1000 };
 	static u32 last_status;
 
@@ -446,7 +446,7 @@ static void tx_done(void) {
 
 // Handle all interrupt causes set in ICR. Since reading ICR clears the
 // register, we have to handle all of them.
-void handle_icr(u32 icr) {
+static void handle_icr(u32 icr) {
 	debug("ICR: %#x\n", icr);
 	if (icr & IM_RXT0) {
 		// Receive timer timeout. Receive some messages.
@@ -466,7 +466,7 @@ void handle_icr(u32 icr) {
 	}
 }
 
-void handle_irq(void) {
+static void handle_irq(void) {
 	u32 icr;
 	unsigned n = 0;
 	if /*while*/ ((icr = mmiospace[ICR])) {
@@ -509,23 +509,23 @@ static protocol* find_proto_ethtype(u16 ethertype) {
 	return NULL;
 }
 
-static protocol* get_proto_from_buffer(buffer* buf) {
+static __attribute__((pure)) protocol* get_proto_from_buffer(buffer* buf) {
 	size_t protoIx = ((char*)buf - (char*)protocols) / sizeof(protocol);
 	protocol* proto = protocols + protoIx;
 	assert(proto->buffers <= buf && buf < proto->buffers + PROTO_NBUFS);
 	return proto;
 }
 
-static char* allocate_buffer(buffer* buffer) {
+static char* allocate_buffer(buffer* buf) {
 	// Already allocated
-	if (buffer->data) {
-		return buffer->data;
+	if (buf->data) {
+		return buf->data;
 	}
 	for (size_t i = 0; i < NBUFS; i++) {
 		if (!buffer_owners[i]) {
-			buffer_owners[i] = buffer;
-			buffer->data = buffers[i];
-			return buffer->data;
+			buffer_owners[i] = buf;
+			buf->data = buffers[i];
+			return buf->data;
 		}
 	}
 	assert(!"ran out of buffers");
@@ -634,7 +634,7 @@ void start() {
 	}
 	if (arg == ACPI_PCI_NOT_FOUND) {
 		log("e1000: No devices found\n");
-		goto fail;
+		abort();
 	}
 	log("e1000: found %x\n", arg);
 	// bus << 8 | dev << 3 | func
@@ -643,7 +643,7 @@ void start() {
 	sendrcv2(MSG_ACPI_CLAIM_PCI, acpi_handle, &arg, &arg2);
 	if (!arg) {
 		log("e1000: failed :(\n");
-		goto fail;
+		abort();
 	}
 	arg2 &= 0xffff;
 	const u8 irq = arg2 & 0xff;
@@ -672,7 +672,7 @@ void start() {
 	}
 	debug("Mapping mmiospace %p to BAR %p\n", (void*)mmiospace, mmiobase);
 	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
-		(void*)mmiospace, mmiobase, sizeof(mmiospace));
+		mmiospace, mmiobase, sizeof(mmiospace));
 
 	debug("Status: %x\n", mmiospace[STATUS]);
 
@@ -799,9 +799,9 @@ void start() {
 			proto_recv(find_proto(rcpt), arg);
 			break;
 		case MSG_ETHERNET_SEND: {
-			u8 buffer = arg;
+			u8 buf = arg;
 			u16 length = arg2;
-			proto_send(find_proto(rcpt), buffer, length);
+			proto_send(find_proto(rcpt), buf, length);
 			break;
 		}
 		case MSG_PFAULT: {
@@ -823,8 +823,8 @@ void start() {
 			}
 			break;
 		}
+		default:
+			abort();
 		}
 	}
-fail:
-	abort();
 }

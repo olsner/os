@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdlib.h>
 
 void* memcpy(void* dest, const void* src, size_t n) {
 	asm("rep movsb": "+D"(dest), "+S"(src), "+c"(n), "=m"(dest) : : "memory");
@@ -83,3 +84,7 @@ char* strncpy(char* d, const char *s, size_t n) {
     return d;
 }
 
+char *strdup(const char *src) {
+    size_t n = strlen(src) + 1;
+    return memcpy(malloc(n), src, n);
+}

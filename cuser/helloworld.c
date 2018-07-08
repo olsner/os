@@ -1,6 +1,6 @@
 #include "common.h"
 
-void start() {
+void start(void) {
 	for(;;)
 		puts("hello world\n");
 }

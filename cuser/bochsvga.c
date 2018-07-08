@@ -91,7 +91,7 @@ void start() {
 	if (arg == ACPI_PCI_NOT_FOUND)
 	{
 		log("bochsvga: No devices found\n");
-		goto fail;
+		abort();
 	}
 	log("bochsvga: found %x\n", arg);
 	// bus << 8 | dev << 3 | func
@@ -101,7 +101,7 @@ void start() {
 	if (!arg)
 	{
 		log("bochsvga: failed :(\n");
-		goto fail;
+		abort();
 	}
 
 	u32 bar0 = readpci32(pci_id, PCI_BAR_0);
@@ -135,7 +135,8 @@ void start() {
 		debug("bochsvga: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
 
 		switch (msg & 0xff) {
-		case MSG_SET_VIDMODE: {
+		case MSG_SET_VIDMODE:
+		{
 			u32 w = arg >> 32;
 			u32 h = arg;
 			u32 bpp = arg2;
@@ -153,7 +154,8 @@ void start() {
 			hmod_rename(rcpt, the_client);
 			break;
 		}
-		case MSG_SET_PALETTE: {
+		case MSG_SET_PALETTE:
+		{
 			u8 c = arg >> 24;
 			u8 r = arg >> 16;
 			u8 g = arg >> 8;
@@ -165,7 +167,8 @@ void start() {
 			debug("bochsvga: palette %x := (%x,%x,%x)\n", c, r, g, b);
 			break;
 		}
-		case MSG_PFAULT: {
+		case MSG_PFAULT:
+		{
 			assert(arg < LFB_SIZE && rcpt == the_client);
 			if (arg < LFB_SIZE) {
 				void *addr = (char*)&mmiospace + arg;
@@ -175,8 +178,8 @@ void start() {
 			}
 			break;
 		}
+		default:
+			abort();
 		}
 	}
-fail:
-	abort();
 }

@@ -374,7 +374,7 @@ AcpiOsSignal (
     UINT32                  Function,
     void                    *Info)
 {
-	ACPI_SIGNAL_FATAL_INFO* FatalInfo = (ACPI_SIGNAL_FATAL_INFO*)Info;
+	const ACPI_SIGNAL_FATAL_INFO* FatalInfo = (const ACPI_SIGNAL_FATAL_INFO*)Info;
 
     switch (Function)
     {

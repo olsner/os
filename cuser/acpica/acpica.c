@@ -575,7 +575,7 @@ static void debugger_pre_cmd(void) {
 	AcpiDbSetOutputDestination(ACPI_DB_CONSOLE_OUTPUT);
 }
 
-void GlobalEventHandler(UINT32 EventType, ACPI_HANDLE Device,
+static void GlobalEventHandler(UINT32 EventType, ACPI_HANDLE Device,
 		UINT32 EventNumber, void *Context) {
 	if (EventType == ACPI_EVENT_TYPE_FIXED &&
 		EventNumber == ACPI_EVENT_POWER_BUTTON) {

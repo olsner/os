@@ -70,7 +70,7 @@ struct timer {
 	u8 pulse;
 };
 
-timer* ph_merge(timer* l, timer* r) {
+static timer* ph_merge(timer* l, timer* r) {
 	if (!l) {
 		assert(!r->right);
 		return r;
@@ -92,7 +92,7 @@ timer* ph_merge(timer* l, timer* r) {
 	l->down = r;
 	return l;
 }
-timer* ph_mergepairs(timer* l) {
+static timer* ph_mergepairs(timer* l) {
 	if (!l || !l->right) return l;
 
 	timer* r = l->right;
@@ -107,7 +107,7 @@ timer* ph_mergepairs(timer* l) {
 	hs = ph_mergepairs(hs);
 	return ph_merge(l,hs);
 }
-timer* timer_pop(timer** head) {
+static timer* timer_pop(timer** head) {
 	timer* res = *head;
 	if (!res) return NULL;
 
@@ -117,10 +117,10 @@ timer* timer_pop(timer** head) {
 	*head = ph_mergepairs(l);
 	return res;
 }
-timer* timer_add(timer** head, timer* timer) {
-	*head = ph_merge(*head, timer);
+static timer* timer_add(timer** head, timer* x) {
+	*head = ph_merge(*head, x);
 	assert(!(*head)->right);
-	return timer;
+	return x;
 }
 
 static volatile u32 apic[1024] PLACEHOLDER_SECTION ALIGN(4096);
@@ -147,7 +147,7 @@ static u64 ticks_to_nanos(u64 ticks) {
 	return 500 * ticks / (apic_ticks / 2000000);
 }
 
-u64 get_tick_counter(void) {
+static u64 get_tick_counter(void) {
 	// Since this is a count*down* timer, the elapsed count is the initial count
 	// minus the current count.
 	u32 tcc = apic[APICTCC];
@@ -159,7 +159,7 @@ u64 get_tick_counter(void) {
 }
 #define MIN(x,y) ((x) > (y) ? (y) : (x))
 #define MAX_U32(x) MIN(x, (u32)-1)
-void setTIC(u64 ticks) {
+static void setTIC(u64 ticks) {
 	ticks = MAX_U32(ticks);
 	// When we reset TIC we lose track of how much time passed between TIC..TCC
 	get_tick_counter();
@@ -168,24 +168,24 @@ void setTIC(u64 ticks) {
 	printf("apic: setTIC %u\n", ticks);
 }
 
-timer* timer_alloc(void) {
+static timer* timer_alloc(void) {
 	if (free_timers) {
 		return timer_pop(&free_timers);
 	} else {
 		return &timer_heap[timer_heap_limit++];
 	}
 }
-timer* timer_new(u64 timeout, u8 pulse) {
+static timer* timer_new(u64 timeout, u8 pulse) {
 	timer* t = timer_alloc();
 	t->timeout = timeout;
 	t->pulse = pulse;
 	return t;
 }
-void timer_free(timer* t) {
+static void timer_free(timer* t) {
 	t->timeout = (uintptr_t)t;
 	timer_add(&free_timers, t);
 }
-timer* reg_timer(u64 ns, u8 pulse) {
+static timer* reg_timer(u64 ns, u8 pulse) {
 	u64 ticks = (ns / 1000) * apic_ticks / 1000000;
 	printf("apic: %lu ns -> %lu ticks\n", ns, ticks);
 	u64 tick_counter = get_tick_counter();
@@ -223,7 +223,7 @@ void start() {
 	// Perhaps we should use ACPI information to tell us if/that there's an
 	// APIC and where we can find it.
 	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
-		(void*)apic, apic_pbase, sizeof(apic));
+		apic, apic_pbase, sizeof(apic));
 
 	apic[TIMER_DIV] = TIMER_DIV_128;
 	apic[APICTIC] = 0;
@@ -318,6 +318,9 @@ void start() {
 		case MSG_PFAULT:
 			*(volatile u64*)&static_data;
 			grant(rcpt, &static_data, PROT_READ);
+			break;
+		default:
+			printf("apic: unknown request %x\n", msg);
 			break;
 		}
 	}

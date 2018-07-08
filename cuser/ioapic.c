@@ -25,7 +25,7 @@ static apic_page apic_pages[256] PLACEHOLDER_SECTION ALIGN(4096);
 static void map_mmio(volatile void *p, uintptr_t physAddr, size_t size)
 {
 	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
-		(void*)p, physAddr, size);
+		p, physAddr, size);
 }
 
 struct apic
@@ -224,7 +224,7 @@ void start() {
 	__default_section_init();
 
 	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
-		(void*)lapic, apic_pbase, sizeof(lapic));
+		lapic, apic_pbase, sizeof(lapic));
 
 	for (;;) {
 		ipc_arg_t arg1, arg2, arg3;

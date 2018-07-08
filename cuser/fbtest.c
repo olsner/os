@@ -20,7 +20,7 @@
 static const uintptr_t fbhandle = 6;
 static const uintptr_t apic_handle = 4;
 
-static u16 usqrt(u32 x) {
+static __attribute__((const)) u16 usqrt(u32 x) {
 	u32 res = x;
 	while (res * res < x) res++;
 	return res;
@@ -50,9 +50,11 @@ static u8 frame_buffer[W*H*BPP/8] PLACEHOLDER_SECTION ALIGN(4096);
 void start() {
 	__default_section_init();
 	log("fbtest: starting...\n");
-	ipc_arg_t arg1 = ((u64)W) << 32 | H;
-	ipc_arg_t arg2 = BPP;
-	sendrcv2(MSG_SET_VIDMODE, fbhandle, &arg1, &arg2);
+	{
+		ipc_arg_t arg1 = ((u64)W) << 32 | H;
+		ipc_arg_t arg2 = BPP;
+		sendrcv2(MSG_SET_VIDMODE, fbhandle, &arg1, &arg2);
+	}
 
 	map(fbhandle, PROT_READ | PROT_WRITE, &frame_buffer, 0, sizeof(frame_buffer));
 	prefault_range(frame_buffer, sizeof(frame_buffer), PROT_READ | PROT_WRITE);

@@ -17,7 +17,7 @@ void start() {
 	 * the backdoor... */
 
 	printf("zeropage: page at %p\n", (void*)&zeropage);
-	if (*(volatile char*)zeropage) {
+	if (*(const volatile char*)zeropage) {
 		puts("zeropage: nonzero value in zero page!?\n");
 	} else {
 		puts("zeropage: zero page is indeed zero\n");
@@ -38,6 +38,9 @@ void start() {
 			grant(rcpt, zeropage, arg2 & ALLOWED_FLAGS);
 			break;
 		}
+		default:
+			printf("zeropage: unknown message %x from %x: %x %x\n", msg, rcpt, arg1, arg2);
+			break;
 		}
 		if (rcpt == fresh) {
 			hmod(rcpt, 0, 0);

@@ -4,11 +4,11 @@
 
 static const uintptr_t zeropage = 4;
 
-void inspect(const char* start, const char* end) {
+static void inspect(const char* start, const char* end) {
 	printf("Inspecting %x..%x\n", start, end);
-	const u64* p = (u64*)start;
+	const u64* p = (const u64*)start;
 	size_t n = 0;
-	while (p < (u64*)end) {
+	while (p < (const u64*)end) {
 		uint64_t b = *p;
 		if (b) {
 			printf("%x: %p\n", p, b);
