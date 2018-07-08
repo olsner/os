@@ -123,10 +123,15 @@ GRUB_MODULES = --modules="boot multiboot"
 
 GRUB_CFG = $(GRUBDIR)/boot/grub/grub.cfg
 
-USER_CFLAGS := -g -Os -W -Wall -Wextra -march=sandybridge -mno-avx -std=gnu99
-USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter -Wstrict-prototypes
+USER_CFLAGS := -std=gnu11
+USER_CFLAGS += -g -Os -march=sandybridge -mno-avx
 USER_CFLAGS += -ffunction-sections -fdata-sections
-USER_CFLAGS += -Werror
+
+USER_CFLAGS += -W -Wall -Wextra -Werror
+# Enable useful warnings
+USER_CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
+# Disable some less-than-useful warnings enabled by -Wall etc
+USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
 
 USER_CFLAGS += -Icuser/include
 

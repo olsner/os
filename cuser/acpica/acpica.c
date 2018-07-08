@@ -600,7 +600,6 @@ void start() {
 	printf("Testing physical memory access: %p (0x100000): %x\n", p, *(u32*)p);
 
 	__default_section_init();
-	init_heap();
 
     ACPI_DEBUG_INITIALIZE (); /* For debug version only */
 	status = InitializeFullAcpi ();

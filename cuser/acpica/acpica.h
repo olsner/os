@@ -19,6 +19,4 @@ UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register);
 
 ACPI_STATUS FindPCIDevByVendor(UINT16 vendor, UINT16 device, ACPI_PCI_ID* id);
 
-void init_heap(void);
-
 #include "msg_acpi.h"

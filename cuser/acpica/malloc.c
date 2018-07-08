@@ -4,10 +4,6 @@
 static char heap[1048576];
 static char* heap_end = heap;
 
-void init_heap(void) {
-	printf("init_heap: %x..%x\n", heap, heap + sizeof(heap));
-}
-
 #if 0
 #define xprintf printf
 #else

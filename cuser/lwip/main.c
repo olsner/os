@@ -9,6 +9,8 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#include "http.h"
+
 #include "common.h"
 #include "msg_ethernet.h"
 #include "msg_timer.h"
@@ -21,8 +23,6 @@
 #endif
 
 #define HEXDUMP 0
-
-err_t http_start(void);
 
 static const uintptr_t eth_handle = 7;
 static const uintptr_t apic_handle = 4;

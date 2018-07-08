@@ -1,5 +1,6 @@
 #include "lwip/ip.h"
 #include "lwip/tcp.h"
+#include "http.h"
 
 #define log_enabled 0
 #define log(...) do { if (log_enabled) printf(__VA_ARGS__); } while (0)
