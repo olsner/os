@@ -41,3 +41,9 @@ uint32_t AcpiOsAcquireGlobalLock(struct acpi_table_facs* facs);
 
 #define COMPILER_DEPENDENT_UINT64 uint64_t
 #define COMPILER_DEPENDENT_UINT32 uint32_t
+
+// ACPICA by default defines this to void*, so define this to the proper type.
+// Note that using uintptr_t instead of void* actually hides a lot of constness
+// issues in ACPICA code. So arguably it'd be better to leave this defined to
+// the wrong type...
+#define ACPI_UINTPTR_T uintptr_t
