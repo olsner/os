@@ -16,7 +16,6 @@ die() {
 
 GET() {
 	wget -nc -c "$1/$2"
-	gpg --verify ../${2}.sig $2
 	sha256sum -c <<<"$3  $2"
 }
 
