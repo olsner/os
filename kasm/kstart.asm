@@ -284,14 +284,12 @@ E820_ACPI_RCL	equ 3
 ; There is also 4, which is some ACPI thingy that we shouldn't touch
 
 fpu_initstate:
+	; TODO Fetch cpuid, check for xsave/xsaves/xsaveopt support and switch
+	; implementation of FPU save/restore...
+
 	call	allocate_frame
 	o64 fxsave [rax]
 	mov	[rel globals.initial_fpstate], rax
-
-	; Make the first use of fpu/multimedia instructions cause an exception
-	mov	rax,cr0
-	bts	rax,CR0_TS_BIT
-	mov	cr0,rax
 
 %if log_mbi
 show_mbi_info:
@@ -747,8 +745,8 @@ new_proc:
 	; Copy initial FPU/Media state to process struct
 	mov	rsi, [rel globals.initial_fpstate]
 	lea	rdi, [rbx + proc.fxsave]
-	mov	ecx, 512 / 8
-	rep	movsq
+	mov	ecx, 512 / 4
+	rep	movsd
 
 	mov	rax, rbx
 	pop	rbx
@@ -1086,6 +1084,11 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 	mov	rbx, [rbp + gseg.process]
 	test	rbx, rbx
 	jz	.no_prev_proc
+
+	; This isn't done in the same place as normal registers are saved,
+	; which is a bit risky.
+	o64 fxsave [rbx+proc.fxsave]
+
 	; Require that previous/current process is already null? We should not
 	; surprise-switch until we've e.g. saved all registers...
 	and	[rbx + proc.flags], byte ~PROC_RUNNING
@@ -1093,14 +1096,7 @@ lodstr	rdi, 'Switching to %p (%x, cr3=%x, rip=%x) from %p', 10
 	mov	[rbp + gseg.process], rax
 	or	[rax + proc.flags], byte PROC_RUNNING
 
-	; If switching back before anything else uses the FPU, don't set TS
-	cmp	rax, [rbp + gseg.fpu_process]
-	je	.no_set_ts
-	mov	rbx, cr0
-	bts	ebx, CR0_TS_BIT
-	jc	.no_set_ts
-	mov	cr0, rbx
-.no_set_ts:
+	o64 fxrstor [rax+proc.fxsave]
 
 	; Make sure we don't invalidate the TLB if we don't have to.
 	mov	rcx, [rax + proc.cr3]
@@ -2035,52 +2031,7 @@ save_from_iret:
 	ret
 
 handler_NM: ; Device-not-present, fpu/media being used after a task switch
-	PROBE	entry
-	push	rbp
-	push	rax
-	; FIXME If we get here in kernel mode?
-	swapgs
-
-	clts
-
-	zero	eax
-	mov	rbp, [gs:rax + gseg.self]
-%if log_fpu_switch
-	; FIXME printf may clobber more stuff than what we've actually saved.
-	; All caller-save registers must be preserved since we're in an
-	; interrupt handler.
-
-lodstr	rdi,	'FPU-switch: %p to %p', 10
-	mov	rsi,[rbp+gseg.fpu_process]
-	mov	rdx,[rbp+gseg.process]
-	call	printf
-%endif
-
-	; Find the previous process and save fpu/media state to its process struct
-	mov	rax,[rbp+gseg.fpu_process]
-	test	rax,rax
-	; No previous process has unsaved fpu state, just load this process' state
-	jz	.no_save_state
-	; We are already the FPU process, but we might have been switched away
-	; from.
-	cmp	rax, [rbp + gseg.process]
-	je	.no_restore_state
-
-	; Save FPU state in process rax
-	o64 fxsave [rax+proc.fxsave]
-.no_save_state:
-	; Restore FPU stste for current process
-	mov	rax, [rbp+gseg.process]
-	o64 fxrstor [rax+proc.fxsave]
-	; FPU state now owned by current process
-	mov	[rbp+gseg.fpu_process], rax
-
-.no_restore_state:
-	PROBE	no_restore_needed
-	pop	rax
-	pop	rbp
-	swapgs
-	iretq
+	PANIC
 
 ; rdi = aspace
 ; rsi = virtual address
