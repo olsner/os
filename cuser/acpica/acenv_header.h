@@ -1,23 +1,18 @@
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
 
 #define ACPI_MACHINE_WIDTH __INTPTR_WIDTH__
 #define ACPI_SINGLE_THREADED
 #define ACPI_USE_LOCAL_CACHE
 #define ACPI_USE_NATIVE_DIVIDE
 #define ACPI_USE_SYSTEM_CLIBRARY
+#define ACPI_USE_STANDARD_HEADERS
 
 #define DEBUGGER_THREADING DEBUGGER_SINGLE_THREADED
 
 #undef ACPI_GET_FUNCTION_NAME
 #ifdef ACPI_FULL_DEBUG
-//#define ACPI_DBG_TRACK_ALLOCATIONS
+#define ACPI_DBG_TRACK_ALLOCATIONS
 #define ACPI_GET_FUNCTION_NAME __FUNCTION__
 #else
 #define ACPI_GET_FUNCTION_NAME ""
@@ -38,6 +33,9 @@ uint32_t AcpiOsAcquireGlobalLock(struct acpi_table_facs* facs);
 
 #define ACPI_ACQUIRE_GLOBAL_LOCK(GLptr, Acquired) Acquired = AcpiOsAcquireGlobalLock(GLptr)
 #define ACPI_RELEASE_GLOBAL_LOCK(GLptr, Pending) Pending = AcpiOsReleaseGlobalLock(GLptr)
+
+void AcpiOsFlushCache(void);
+#define ACPI_FLUSH_CPU_CACHE AcpiOsFlushCache
 
 #define COMPILER_DEPENDENT_UINT64 uint64_t
 #define COMPILER_DEPENDENT_UINT32 uint32_t

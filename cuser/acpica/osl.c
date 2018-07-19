@@ -398,6 +398,11 @@ AcpiOsSignal (
     return (AE_OK);
 }
 
+void AcpiOsFlushCache()
+{
+    printf("FlushCache\n");
+}
+
 UINT64 AcpiOsGetTimer()
 {
 	printf("GetTimer\n");

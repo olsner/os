@@ -6,7 +6,7 @@
 #include "acpica.h"
 
 static void FreeBuffer(ACPI_BUFFER* buffer) {
-	ACPI_FREE(buffer->Pointer);
+	AcpiOsFree(buffer->Pointer);
 }
 static void ResetBuffer(ACPI_BUFFER* buffer) {
 	FreeBuffer(buffer);
@@ -679,6 +679,7 @@ void start() {
 		case MSG_ACPI_DEBUGGER_CMD:
 			assert(debugger_buffer_pos < ACPI_DB_LINE_BUFFER_SIZE);
 			AcpiGbl_DbLineBuf[debugger_buffer_pos++] = 0;
+			putchar('\n');
 			AcpiDbCommandDispatch(AcpiGbl_DbLineBuf, NULL, NULL);
 			debugger_pre_cmd();
 			send0(MSG_ACPI_DEBUGGER_CMD, rcpt);
