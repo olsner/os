@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sb1.h>
-
 #define fputc_unlocked(x, file) putchar(x)
 #define fwrite_unlocked(buf, n, s, file) putchars(buf, (n) * (s))
 #define flockfile(file) (void)0
@@ -168,6 +166,10 @@ void vprintf(const char* fmt, va_list ap)
 				left_align = true;
 				continue;
 			case '+':
+			case ' ':
+				// TODO Implement this correctly
+				// +: show plus for positive number
+				// space: show space for positive number (e.g. preserve width fro - but don't show the +)
 				continue;
 			default:
 				if (isdigit(fmt[-1]))
