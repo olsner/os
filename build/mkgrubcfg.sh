@@ -106,5 +106,5 @@ EOF
 if [ -f out/grub/kernel ]; then
     mkgrubcfg kernel "Rust kernel" "$@"
 fi
-mkgrubcfg kcpp "C++ kernel" "$@"
 mkgrubcfg kstart.b "Assembly kernel" "$@"
+mkgrubcfg kcpp "C++ kernel" "$@"
