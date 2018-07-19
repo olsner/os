@@ -39,7 +39,6 @@
 ; configuration for pages.inc and start32.inc, use a single 1GB mapping instead
 ; of 512 2MB-pages.
 %define use_1gb_pages 0
-%define smp_kernel 0
 
 %define debug_tcalls 0
 
@@ -3905,9 +3904,7 @@ globals:
 ; media/fpu instructions. Points to a whole page but only 512 bytes is actually
 ; required.
 .initial_fpstate	resq 1
-%if smp_kernel
-.alloc_lock	resb 1
-%endif
+.alloc_lock	reslock 1
 
 %if kernel_vga_console
 .vga_base	resq 1

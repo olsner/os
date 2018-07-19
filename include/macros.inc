@@ -28,15 +28,15 @@ __SECT__
 %endmacro
 
 %macro SPIN_LOCK 1
-%if smp_kernel
 %%spin:
 lock	bts	dword %1, 1
 	jc	%%spin
-%endif
 %endmacro
 
 %macro SPIN_UNLOCK 1
-%if smp_kernel
 	mov	byte %1, 0
-%endif
+%endmacro
+
+%macro reslock 0-1 1
+	resb %1
 %endmacro
