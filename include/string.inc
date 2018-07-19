@@ -1,13 +1,13 @@
 ; vim:filetype=nasm:
-%assign strcounter 0
 %define strsection .rodata
+
 %macro STR 1+
 [section strsection]
-%xdefine _STR .str_ %+ strcounter
-%assign strcounter strcounter+1
+%xdefine _STR %%str
 _STR: db %1, 0
 __SECT__
 %endmacro
+
 %macro lodstr 2+
 STR %2
 %ifidn %1, rdi
