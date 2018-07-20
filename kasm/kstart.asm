@@ -95,7 +95,6 @@ struc	gseg
 	; (also add per-irq counter?)
 	.irq_delayed	resq 4
 
-	.free_frame	resq 1
 	.temp_xmm0	resq 2
 endstruc
 
@@ -1205,8 +1204,10 @@ fastret:
 ; Allocate a frame and return its *virtual* address in the physical-memory
 ; mapping area. Subtract kernel_base (eugh, wrong name) to get the actual
 ; physical address.
+; TODO There could be a CPU-local stack like garbage_frame, avoiding the lock in
+; "many" cases.
 allocate_frame:
-	call	allocate_frame.nopanic
+	call	allocate_global_frame
 
 %if log_alloc
 lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
@@ -1223,47 +1224,29 @@ lodstr	rdi, 'allocate_frame rip=%p val=%p', 10
 .panic:
 	PANIC
 
-.nopanic:
-	mov	rax, [rbp + gseg.free_frame]
-	test	rax, rax
-	; If local stack is out of frames, steal from global stack
-	jz	allocate_global_frame
-
-	mov	rsi, [rax]
-	mov	[rbp + gseg.free_frame], rsi
-	zero	esi
-	mov	[rax], rsi
-	ret
-
+; Allocate a frame without using the CPU-local gseg structure. E.g. during CPU
+; or early system init.
 allocate_global_frame:
+	PROBE	entry
+
 	SPIN_LOCK [globals.alloc_lock]
 
-	mov	rax, [globals.free_frame]
-	test	rax,rax
-	jz	.clear_garbage_frame
-
-	mov	rcx, [rax]
-	mov	[globals.free_frame], rcx
-
-.unlock_ret:
-	SPIN_UNLOCK [globals.alloc_lock]
-	ret
-
-.clear_garbage_frame:
 	mov	rax, [globals.garbage_frame]
 	test	rax,rax
-	jz	.unlock_ret
+	jz	alloc_unlock_ret
 
 	mov	rcx, [rax]
 	mov	[globals.garbage_frame], rcx
 
 	SPIN_UNLOCK [globals.alloc_lock]
 
-	push	rax
 	mov	rdi, rax
-	mov	ecx, 4096/8
+	; fallthrough
+clear_frame:
+	push	rdi
+	mov	ecx, 4096/4
 	zero	eax
-	rep stosq
+	rep stosd
 	pop	rax
 	ret
 
@@ -1281,13 +1264,15 @@ lodstr	rdi,	'free_frame %p', 10
 	pop	rdi
 %endif
 
-	; TODO acquire global-page-structures spinlock
+	SPIN_LOCK [globals.alloc_lock]
 	lea	rax, [rel globals.garbage_frame]
 	mov	rcx, [rax]
 	mov	[rdi], rcx
 	mov	[rax], rdi
-	; TODO release global-page-structures spinlock
+.unlock_ret:
+	SPIN_UNLOCK [globals.alloc_lock]
 .ret	ret
+alloc_unlock_ret equ .unlock_ret
 
 struc dlist
 	.head	resq 1
@@ -3896,9 +3881,7 @@ idt_data:
 
 section .bss
 globals:
-; Pointer to first free page frame..
-.free_frame	resq 1
-; free frames that are tainted and need to be zeroed before use
+; stack of free frames that are tainted and need to be zeroed before use
 .garbage_frame	resq 1
 ; Pointer to initial FPU state, used to fxrstor before a process' first use of
 ; media/fpu instructions. Points to a whole page but only 512 bytes is actually
