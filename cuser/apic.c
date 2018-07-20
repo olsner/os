@@ -5,7 +5,11 @@
 #include "msg_irq.h"
 #include "msg_timer.h"
 
-#define printf(...) (void)0
+#if 0
+#define logf(fmt, ...) printf("apic: " fmt, ## __VA_ARGS__)
+#else
+#define logf(...) (void)0
+#endif
 
 static const uintptr_t irq_driver = 1;
 static const uintptr_t fresh_handle = 100;
@@ -151,7 +155,7 @@ static u64 get_tick_counter(void) {
 	// Since this is a count*down* timer, the elapsed count is the initial count
 	// minus the current count.
 	u32 tcc = apic[APICTCC];
-	printf("apic: from tic %u to tcc %u: %u elapsed\n", prevTIC, tcc, prevTIC - tcc);
+	logf("from tic %u to tcc %u: %u elapsed\n", prevTIC, tcc, prevTIC - tcc);
 	static_data.tick_counter += prevTIC - tcc;
 	static_data.ms_counter = ticks_to_millis(static_data.tick_counter);
 	prevTIC = tcc;
@@ -165,7 +169,7 @@ static void setTIC(u64 ticks) {
 	get_tick_counter();
 	prevTIC = ticks;
 	apic[APICTIC] = ticks;
-	printf("apic: setTIC %u\n", ticks);
+	logf("setTIC %u\n", ticks);
 }
 
 static timer* timer_alloc(void) {
@@ -187,11 +191,11 @@ static void timer_free(timer* t) {
 }
 static timer* reg_timer(u64 ns, u8 pulse) {
 	u64 ticks = (ns / 1000) * apic_ticks / 1000000;
-	printf("apic: %lu ns -> %lu ticks\n", ns, ticks);
+	logf("%lu ns -> %lu ticks\n", ns, ticks);
 	u64 tick_counter = get_tick_counter();
 	u64 tick_timeout = tick_counter + ticks;
 	timer* t = timer_add(&timers_head, timer_new(tick_timeout, pulse));
-	printf("apic: registered %p\n", t);
+	logf("registered %p\n", t);
 	return t;
 }
 
@@ -201,13 +205,13 @@ static void __more_stack(size_t more) {
 	static const size_t MAX = TOP - START;
 	static size_t extra;
 	assert(!(more % 0x1000));
-	printf("Extending stack... had %ld want %ld more\n", extra, more);
+	logf("Extending stack... had %ld want %ld more\n", extra, more);
 	extra += more;
 	assert(extra <= MAX);
 	char* bottom = (char*)TOP - START - extra;
-	printf("Extending stack... adding %p..%p\n", bottom, bottom + more);
+	logf("Extending stack... adding %p..%p\n", bottom, bottom + more);
 	map_anon(PROT_READ | PROT_WRITE, bottom, more);
-	printf("Extending stack... bottom now %p\n", bottom);
+	logf("Extending stack... bottom now %p\n", bottom);
 }
 
 // Fun stuff: APIC is CPU local, user programs generally don't know which CPU
@@ -218,7 +222,7 @@ void start() {
 	// ph_mergepairs has to be made norecursive, or the problem is that a bug
 	// leads it into an infinite loop?
 	__more_stack(0xff000);
-	printf("apic: starting...\n");
+	logf("starting...\n");
 
 	// Perhaps we should use ACPI information to tell us if/that there's an
 	// APIC and where we can find it.
@@ -241,7 +245,7 @@ void start() {
 	ipc_arg_t arg = apic_timer_irq;
 	sendrcv1(MSG_REG_IRQ, irq_driver, &arg);
 
-	printf("apic: irq registered, enabling APIC and EOI:ing\n");
+	logf("irq registered, enabling APIC and EOI:ing\n");
 
 	// Set the mask to listen on. Should depend on CPU number.
 	apic[DFR] = 1 << 24;
@@ -259,46 +263,48 @@ void start() {
 		{
 			u64 tick_counter = get_tick_counter();
 			//send1(MSG_IRQ_ACK, irq_driver, arg1);
-			printf("T: %lu %lums\n", tick_counter, static_data.ms_counter);
+			logf("T: %lu %lums\n", tick_counter, static_data.ms_counter);
 			if (!timers_head) {
-				printf("apic: idle.\n");
-			} else if (timers_head->timeout <= tick_counter) {
-				printf("apic: triggered %p.\n", timers_head);
+				logf("idle.\n");
+			}
+			while (timers_head && timers_head->timeout <= tick_counter) {
+				logf("triggered %p.\n", timers_head);
 				timer* t = timer_pop(&timers_head);
 				pulse((uintptr_t)t, 1 << t->pulse);
 				hmod_delete((uintptr_t)t);
 				timer_free(t);
 			}
 			if (timers_head) {
+				assert(timers_head->timeout > tick_counter);
 				u64 t_next = timers_head->timeout - tick_counter;
-				printf("apic: time to next timeout %lu ticks\n", t_next);
+				logf("time to next timeout %ld ticks\n", t_next);
 				setTIC(t_next);
 			}
 			if (need_eoi) {
 				apic[EOI] = 0;
-				printf("apic: EOI\n");
+				logf("EOI\n");
 				need_eoi = false;
 			}
 		}
 
 		ipc_dest_t rcpt = fresh_handle;
 		ipc_arg_t arg1, arg2;
-		printf("apic: receiving\n");
+		logf("receiving\n");
 		const ipc_msg_t msg = recv2(&rcpt, &arg1, &arg2);
 
-		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
+		logf("received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
 
 		// Note that since we use the raw IRQ driver, we don't need to ACK the
 		// IRQ's we get - it's not listening for that anyway.
 		if (rcpt == irq_driver) {
-			printf("apic: irq\n");
+			logf("irq\n");
 			// Keep the counter counting please. (Switch back to periodic mode?)
 			setTIC((u32)-1);
 			need_eoi = true;
 			continue;
 		}
 
-		printf("apic: received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
+		logf("received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
 		switch (msg & 0xff) {
 		case MSG_REG_TIMER:
 			// FIXME Check if the rcpt is already registered as a timer.
@@ -309,7 +315,7 @@ void start() {
 				u64 ticks = get_tick_counter();
 				send2(msg & 0xff, rcpt, static_data.ms_counter, ticks);
 			} else {
-				printf("apic: gettime must be a sendrcv call\n");
+				logf("gettime must be a sendrcv call\n");
 			}
 			if (rcpt == fresh_handle) {
 				hmod_delete(rcpt);
@@ -320,7 +326,7 @@ void start() {
 			grant(rcpt, &static_data, PROT_READ);
 			break;
 		default:
-			printf("apic: unknown request %x\n", msg);
+			logf("unknown request %x\n", msg);
 			break;
 		}
 	}
