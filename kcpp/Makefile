@@ -21,6 +21,8 @@ COPTFLAGS = -fno-unroll-loops -funit-at-a-time
 CXXFLAGS = $(CFLAGS) -std=gnu++14
 LDFLAGS = --check-sections --gc-sections
 
+HOST_CXXFLAGS = -g -Os -std=gnu++14
+
 all: $(GRUBDIR)/kcpp
 
 clean:
@@ -58,3 +60,10 @@ $(OUT)/%.o: %.asm
 $(GRUBDIR)/kcpp: $(OUT)/kernel
 	@$(CP) $< $@
 
+$(OUT)/xprintf_test: xprintf.cpp
+	$(HUSH_CXX) $(HOST_CXX) $(HOST_CXXFLAGS) -o $@ $< -DXPRINTF_TEST
+
+test-xprintf: $(OUT)/xprintf_test
+	@$<
+
+all: test-xprintf

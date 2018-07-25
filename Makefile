@@ -23,6 +23,8 @@ export OBJCOPY := $(CROSS)objcopy
 export AS := $(CROSS)as
 export CC := $(CCACHE) $(CC)
 export CXX := $(CCACHE) $(CXX)
+export HOST_CC := $(CCACHE) $(HOST_CC)
+export HOST_CXX := $(CCACHE) $(HOST_CXX)
 
 YASM ?= yasm/yasm
 # Dependency to add to targets that need yasm - if using the in-tree yasm make

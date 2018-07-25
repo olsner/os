@@ -121,10 +121,14 @@ void xvfprintf(FILE* file, const char* fmt, va_list ap)
 				if (false)
 			case 'x':
 				base = 16;
+#if __GNUC__ >= 7
 				[[fallthrough]];
+#endif
 			case 'u':
 				sign = false;
+#if __GNUC__ >= 7
 				[[fallthrough]];
+#endif
 			case 'd':
 #if 0
 			case 'i':
@@ -207,7 +211,7 @@ XPRINTF_LINKAGE void xprintf(const char* fmt, ...)
 		snprintf(tmp, sizeof(tmp), fmt, ## __VA_ARGS__); \
 		if (strcmp(memstream_buffer, result) != 0 \
 			|| strcmp(tmp, result) != 0) { \
-			fprintf(stderr, "%s (" fmt "):\n\tactual   \"%s\"\n\texpected \"%s\"\n", \
+			fprintf(stderr, "%s:\n\tlibc     \"" fmt "\"\n\tactual   \"%s\"\n\texpected \"%s\"\n", \
 				fmt, ## __VA_ARGS__, memstream_buffer, result); \
 			fail++; \
 		} else { \
@@ -231,10 +235,23 @@ int main()
 		test("-2147483648", "%ld", LONG_MIN);
 		test("2147483648", "%lu", 1 + (unsigned long)LONG_MAX);
 	}
+	test("-2147483648", "%zd", ssize_t(INT32_MIN));
+	test("2147483648", "%zu", size_t(1) << 31);
+
+	test("    8", "%5d", 8);
+	test("00008", "%05d", 8);
+	// Unimplemented precision/sign/etc bits:
+//	test("    8", "%-5d", 8);
+//	test("   08", "%5.2d", 8);
+//	test("  123", "%5.2d", 123);
+//
+//	test(" 8", "% d", 8);
+//	test("+8", "%+d", 8);
+
 	if (fail) {
-		fprintf(stderr, "FAIL: %d test cases failed\n", fail);
+		fprintf(stderr, "xprintf: FAIL: %d test cases failed\n", fail);
 	} else {
-		fprintf(stdout, "OK: %d test cases passed\n", pass);
+		fprintf(stdout, "xprintf: OK: %d test cases passed\n", pass);
 	}
 	return fail;
 }
