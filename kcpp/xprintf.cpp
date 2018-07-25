@@ -133,7 +133,7 @@ void xvfprintf(FILE* file, const char* fmt, va_list ap)
 					is_long ?
 						(sign ? ARG(long) : ARG(unsigned long))
 					: is_size ?
-						(sign ? ARG(size_t) : ARG(ssize_t))
+						(sign ? ARG(ssize_t) : ARG(size_t))
 					:
 						// Careful here: the int must be sign-extended to the
 						// same width type that format_num takes (at least).
