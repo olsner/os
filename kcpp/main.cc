@@ -362,15 +362,20 @@ namespace idt {
     struct Entry {
         u64 low, high;
 
-        Entry() {}
-        Entry(void (*fn)(void)) {
-            u64 addr = (u64)fn;
+        static u64 lo(u64 addr) {
             u64 low = (addr & 0xffff) | ((u64)seg::code << 16);
             u64 flags = GatePresent | GateTypeInterrupt;
             u64 high = (addr & 0xffff0000) | (flags << 8);
 
-            this->low = low | (high << 32);
-            this->high = addr >> 32;
+            return low | (high << 32);
+        }
+        static u64 hi(u64 addr) {
+            return addr >> 32;
+        }
+        void operator=(void(*fn)(void)) {
+            u64 addr = (u64)fn;
+            low = lo(addr);
+            high = hi(addr);
         }
     };
     const size_t N_IRQ_STUBS = 32;
@@ -398,13 +403,13 @@ namespace idt {
 
     void init() {
         static Table idt_table;
-        idt_table[7] = Entry(handler_NM_stub);
-        idt_table[8] = Entry(handler_DF_stub);
-        idt_table[14] = Entry(handler_PF_stub);
+        idt_table[7] = handler_NM_stub;
+        idt_table[8] = handler_DF_stub;
+        idt_table[14] = handler_PF_stub;
         for (size_t i = 32; i < N_ENTRIES; i++) {
             // If the first byte is not a push imm8 we know something is wrong.
             assert(*(u8*)&irq_handlers[i - 32] == 0x6a);
-            idt_table[i] = Entry((void(*)())&irq_handlers[i - 32]);
+            idt_table[i] = (void(*)())&irq_handlers[i - 32];
         }
         load(idt_table);
     }
