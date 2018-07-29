@@ -19,9 +19,18 @@ CFLAGS += -fno-threadsafe-statics
 CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
 CXXFLAGS = $(CFLAGS) -std=gnu++14
-LDFLAGS = --check-sections --gc-sections
+LDFLAGS = -Wl,--check-sections -Wl,--gc-sections
+LDFLAGS += -Wl,--oformat=elf64-x86-64
+LDFLAGS += -Wl,-Map,$(@:.elf=.map)
+LDFLAGS += -ffreestanding -nostdlib
 
 HOST_CXXFLAGS = -g -Os -std=gnu++14
+
+ifeq ($(LTO), YES)
+HUSH_LD_LTO = +$(HUSH_LD)
+LDFLAGS += -flto=$(JOBS) -fuse-linker-plugin
+CFLAGS += -flto
+endif
 
 all: $(GRUBDIR)/kcpp
 
@@ -36,7 +45,7 @@ KERNEL_DEPS = $(KERNEL_OBJS:.o=.d)
 -include $(KERNEL_DEPS)
 
 $(OUT)/kernel.elf: linker.ld $(KERNEL_OBJS)
-	$(HUSH_LD) $(LD) $(LDFLAGS) --oformat=elf64-x86-64 -o $@ -T $^ -Map $(@:.elf=.map)
+	$(HUSH_LD_LTO) $(LD) $(LDFLAGS) -o $@ -T $^
 	@echo $@: `awk '/fill/ { sum += $$3 } END { print sum } ' <$(@:.elf=.map)` bytes wasted on alignment
 $(OUT)/kernel: $(OUT)/kernel.elf
 	$(HUSH_OBJCOPY) $(OBJCOPY) -O binary $< $@

@@ -12,5 +12,6 @@ endif
 JOBS ?= $(NPROC)
 MAKEFLAGS += -j$(JOBS)
 export DID_SET_MAKEJOBS=YES
+export JOBS:=$(JOBS)
 endif
 endif

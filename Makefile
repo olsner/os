@@ -4,6 +4,7 @@
 
 include build/common.mk
 include build/makejobs.mk
+include build/makebuffer.mk
 
 CCACHE ?= ccache
 ifneq ($(USE_CROSS),NO)
@@ -18,13 +19,15 @@ CXX := $(CROSS)g++
 HOST_CC := gcc
 HOST_CXX := g++
 
-export LD := $(CROSS)ld
+export LD := $(CXX)
 export OBJCOPY := $(CROSS)objcopy
 export AS := $(CROSS)as
 export CC := $(CCACHE) $(CC)
 export CXX := $(CCACHE) $(CXX)
 export HOST_CC := $(CCACHE) $(HOST_CC)
 export HOST_CXX := $(CCACHE) $(HOST_CXX)
+
+export LTO ?= YES
 
 YASM ?= yasm/yasm
 # Dependency to add to targets that need yasm - if using the in-tree yasm make
@@ -138,9 +141,15 @@ USER_CFLAGS += -Wno-unused-function -Wno-unused-parameter
 
 USER_CFLAGS += -Icuser/include
 
-LDFLAGS := --check-sections
-LDFLAGS += --gc-sections
-USER_LDFLAGS = $(LDFLAGS)
+LDFLAGS := -Wl,--check-sections
+LDFLAGS += -Wl,--gc-sections
+# nostdlib is bad, ought to actually provide standard libs instead :)
+USER_LDFLAGS = $(LDFLAGS) $(USER_CFLAGS) -nostdlib
+
+ifeq ($(LTO), YES)
+USER_LDFLAGS += -flto=$(JOBS) -fuse-linker-plugin
+USER_CFLAGS += -flto
+endif
 
 LD_ELF_FORMAT := elf64-x86-64
 YASM_ELF_FORMAT := elf64
@@ -152,7 +161,7 @@ LD_ELF_FORMAT := elf32-x86-64
 YASM_ELF_FORMAT := elfx32
 endif
 
-USER_LDFLAGS += --oformat $(LD_ELF_FORMAT) -Map $(@:.elf=.map)
+USER_LDFLAGS += -Wl,--oformat,$(LD_ELF_FORMAT) -Wl,-Map,$(@:.elf=.map)
 
 $(OUTDIR)/cuser/%.o: cuser/%.c
 	@mkdir -p $(@D)

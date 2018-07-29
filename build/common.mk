@@ -28,3 +28,9 @@ SIZE_ASM=@echo ' [ASM]\t'$@: `$(FILE_SIZE) $@` bytes
 SIZE_LD= @echo ' [LD]\t'$@: `$(FILE_SIZE) $@` bytes
 SIZE_OBJCOPY= @echo ' [OBJCOPY]\t'$@: `$(FILE_SIZE) $@` bytes
 endif
+
+ifeq ($(LTO), YES)
+HUSH_LD_LTO = +$(HUSH_LD)
+else
+HUSH_LD_LTO = $(HUSH_LD)
+endif
