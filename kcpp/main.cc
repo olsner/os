@@ -378,7 +378,8 @@ namespace idt {
             high = hi(addr);
         }
     };
-    const size_t N_IRQ_STUBS = 32;
+    const size_t N_IRQ_STUBS = 224;
+    const size_t IRQ_STUB_SIZE = 7;
     const size_t N_ENTRIES = 32 + N_IRQ_STUBS;
     typedef Entry Table[N_ENTRIES];
 
@@ -398,19 +399,39 @@ namespace idt {
         extern "C" void handler_PF_stub();
         extern "C" void handler_NM_stub();
         extern "C" void handler_DF_stub();
-        extern "C" u32 irq_handlers[N_IRQ_STUBS];
+        extern "C" void asm_int_entry();
+    }
+
+    u8 *generate_idt(u8 *dst, u8 irq, void (*entry)()) {
+        u8 *const pent = (u8*)entry;
+        u8 *const end = dst + 7;
+
+        // push imm8
+        dst[0] = 0x6a;
+        // Note: this will be sign-extended, but we can adjust for that later.
+        dst[1] = irq;
+
+        // jmp rel32
+        dst[2] = 0xe9;
+        // offset is relative to rip which points to the instruction following
+        // the JMP instruction.
+        *(int32_t *)(dst + 3) = pent - end;
+
+        return end;
     }
 
     void init() {
         static Table idt_table;
+        static u8 idt_code[IRQ_STUB_SIZE * N_IRQ_STUBS];
         idt_table[7] = handler_NM_stub;
         idt_table[8] = handler_DF_stub;
         idt_table[14] = handler_PF_stub;
+        u8 *p = idt_code;
         for (size_t i = 32; i < N_ENTRIES; i++) {
-            // If the first byte is not a push imm8 we know something is wrong.
-            assert(*(u8*)&irq_handlers[i - 32] == 0x6a);
-            idt_table[i] = (void(*)())&irq_handlers[i - 32];
+            idt_table[i] = (void(*)())p;
+            p = generate_idt(p, i, asm_int_entry);
         }
+        assert(p == idt_code + sizeof(idt_code));
         load(idt_table);
     }
 }

@@ -183,8 +183,6 @@ endproc
 endproc
 
 
-section .text.handle_irq_generic, exec
-
 %macro stub 1
 %if %1 >= 128
 	push	byte %1 - 256
@@ -193,38 +191,6 @@ section .text.handle_irq_generic, exec
 %endif
 	jmp	asm_int_entry
 %endmacro
-
-%macro handle_irqN_generic 1
-handle_irq_ %+ %1:
-	stub %1
-%endmacro
-
-align 4
-irq_handlers:
-
-; NB! 32 is the maximum number of stubs we can emit with a fixed size entry
-; Exactly 32 entries is ok since the jump is actually at the end so the maximum
-; offset we need to encode is only 124, with 33 entries the first one needs the
-; offset to be 128 which is too big.
-%assign irq 32
-%rep 32
-handle_irqN_generic irq
-%assign irq irq + 1
-%endrep
-
-gfunc irq_handlers
-
-%macro combine 1-*
- %assign i 0
- %rotate 1
- %rep (%0 - 1)
-  %assign i i | (1 << %1)
-  %rotate 1
- %endrep
- %1 EQU i
-%endmacro
-
-combine EXC_ERR_MASK, 8, 10, 11, 12, 13, 14, 17
 
 %macro cond 2
 	j%-1	%%skip
@@ -244,7 +210,7 @@ combine EXC_ERR_MASK, 8, 10, 11, 12, 13, 14, 17
 ; get gseg
 ; save rip, rflags, rsp to process
 ; save all caller-save regs to process
-proc asm_int_entry, NOSECTION
+proc asm_int_entry
 	push	rsi
 	lea	rsi, [rsp + 8]
 	push	rdi
