@@ -246,13 +246,11 @@ apic_setup:
 
 	inc	ecx ; c000_0082h - LSTAR
 	lea	rax,[rel syscall_entry]
-	mov	rdx,rax
-	mov	eax,eax
-	shr	rdx,32
+	cdq
 	wrmsr
 
 	inc	ecx ; c000_0083h - CSTAR
-	mov	eax,syscall_entry_compat
+	lea	rax,[rel syscall_entry_compat]
 	cdq
 	wrmsr
 
