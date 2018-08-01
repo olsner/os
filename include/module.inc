@@ -8,7 +8,6 @@ jmp	%1
 %endmacro
 
 %include "macros.inc"
-%include "syscalls.inc"
 %include "messages.inc"
 %include "string.inc"
 

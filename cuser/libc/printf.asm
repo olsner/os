@@ -3,7 +3,6 @@ section .text
 global printf
 
 %include "macros.inc"
-%include "syscalls.inc"
 %include "messages.inc"
 
 %include "../user/putchar.inc"

@@ -2835,11 +2835,6 @@ lodstr	rdi, 'newproc %p at %x', 10
 .panic:
 	PANIC
 
-syscall_halt:
-	lodstr	rdi, '<<HALT>>'
-	call	printf
-	hlt
-
 syscall_send:
 	mov	rax, [rbp + gseg.process]
 	save_regs rdi,rsi,rdx,r8,r9,r10

@@ -9,7 +9,6 @@
 %include "string.inc"
 %include "mboot.inc"
 %include "pages.inc"
-%include "syscalls.inc"
 %include "messages.inc"
 %include "pic.inc"
 %include "probes.inc"
