@@ -130,7 +130,10 @@ namespace aspace {
 
 Process *AddressSpace::pop_sender(Handle *target) {
     for (auto p: waiters) {
-        if (p->is(proc::InSend) && (!target || target->other->key() == p->regs.rdi)) {
+        if (p->is(proc::InSend)
+            && (!target
+                || (target->otherspace == p->aspace.get()
+                    && target->other->key() == p->regs.rdi))) {
             remove_waiter(p);
             return p;
         }
