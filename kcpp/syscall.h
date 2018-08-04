@@ -21,6 +21,7 @@ enum syscalls_builtins {
     SYS_IO = 7, // Backdoor!
     SYS_GRANT = 8,
     SYS_PULSE = 9,
+    SYS_YIELD = 10,
 
     MSG_USER = 16,
     MSG_MASK = 0xff,
@@ -364,6 +365,12 @@ NORETURN void syscall_grant(Process *p, uintptr_t handle, uintptr_t vaddr, uintp
     unimpl("grant after page fault");
 }
 
+NORETURN void syscall_yield(Process *p) {
+    auto &cpu = getcpu();
+    cpu.queue(p);
+    cpu.run();
+}
+
 } // namespace
 
 extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
@@ -407,6 +414,9 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
         break;
     case SYS_PULSE:
         syscall_pulse(p, arg0, arg1);
+        break;
+    case SYS_YIELD:
+        syscall_yield(p);
         break;
     default:
         if (nr >= MSG_USER) {

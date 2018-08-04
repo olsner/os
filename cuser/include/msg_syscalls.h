@@ -19,6 +19,7 @@ enum syscalls_builtins {
 	SYSCALL_IO = 7, // Backdoor!
 	MSG_GRANT = 8,
 	MSG_PULSE = 9,
+	SYSCALL_YIELD = 10,
 	MSG_USER = 16,
 };
 

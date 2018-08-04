@@ -21,9 +21,8 @@ lodstr	esi,	'Hello World',0
 	mov	edx,'C'
 	call	printf
 
-	; Delay loop
-	mov	ecx, 100000
-	loop	$
+	mov	eax, MSG_SYSCALL_YIELD
+	syscall
 
 	jmp	.start
 

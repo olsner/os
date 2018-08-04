@@ -42,29 +42,6 @@ MSG_MAP		equ	1
 ; Reply with a MSG_GRANT.
 MSG_PFAULT	equ	2
 
-; MSG_GRANT: Reply to a MSG_PFAULT message.
-;
-; Parameters:
-; * handle (your handle to the mapper process)
-; * offset is replaced with the local vaddr of the unfaulted page
-;   this page will be shared with the receiving process:
-;   * if currently mapped to a physical page, the same frame is reused
-;   * if mapped recursively to another object, we will take a detour to fault
-;     the page in before forwarding the result to the caller.
-;   (but flags may still limit access to that memory)
-; * flags are the actual access the process should receive
-;   * should be, but doesn't have to be, a subset of the flags that were
-;     requested (for example a read access to a page where RW access is
-;     allowed - we can send both to avoid a future page fault)
-;   * all access you hand out must be provided in the backing, this may cause
-;     a detour to e.g. CoW and whatever's needed to give you read/write access.
-;   * that seems to mean that for a potentially CoW page you should only give
-;     exactly the access that was asked for, but for a known backed page give
-;     all the access that is possible.
-;   * the X flag is ignored here: if you give Read access you also give execute
-;     access. It's up to the mapper's mapping whether it should be execute.
-MSG_GRANT	equ	8
-
 ; Unmap a virtual address range
 ; * object handle to unmap memory from (0 = unmap from self)
 ; * vaddr base or offset to unmap
@@ -158,7 +135,30 @@ NEWPROC_PROC	equ	1
 ; backdoor call(s)
 MSG_SYSCALL_WRITE	equ	6
 MSG_SYSCALL_IO		equ	7
-;MSG_GRANT		equ	8
+
+; MSG_GRANT: Reply to a MSG_PFAULT message.
+;
+; Parameters:
+; * handle (your handle to the mapper process)
+; * offset is replaced with the local vaddr of the unfaulted page
+;   this page will be shared with the receiving process:
+;   * if currently mapped to a physical page, the same frame is reused
+;   * if mapped recursively to another object, we will take a detour to fault
+;     the page in before forwarding the result to the caller.
+;   (but flags may still limit access to that memory)
+; * flags are the actual access the process should receive
+;   * should be, but doesn't have to be, a subset of the flags that were
+;     requested (for example a read access to a page where RW access is
+;     allowed - we can send both to avoid a future page fault)
+;   * all access you hand out must be provided in the backing, this may cause
+;     a detour to e.g. CoW and whatever's needed to give you read/write access.
+;   * that seems to mean that for a potentially CoW page you should only give
+;     exactly the access that was asked for, but for a known backed page give
+;     all the access that is possible.
+;   * the X flag is ignored here: if you give Read access you also give execute
+;     access. It's up to the mapper's mapping whether it should be execute.
+MSG_GRANT	equ	8
+
 
 ; Pulse: send one or more pulses to a handle. The handles will be received by
 ; the recipient whenever it receives a message and the handle can match (i.e.
@@ -169,6 +169,10 @@ MSG_SYSCALL_IO		equ	7
 ; rsi (send): bitmask of pulses to add to the handle.
 ; rsi (recv): bitmask of pending pulses for the handle.
 MSG_PULSE		equ	9
+
+; Add current thread at end of run queue, then switch to the next runnable
+; thread.
+MSG_SYSCALL_YIELD	equ	10
 
 ; Start of user-mapped message-type range
 MSG_USER	equ	16

@@ -9,9 +9,8 @@
 
 	paddq	xmm0,xmm1
 
-	; Delay loop
-	mov	ecx, 100000
-	loop	$
+	mov	eax, MSG_SYSCALL_YIELD
+	syscall
 
 	jmp	.loop
 

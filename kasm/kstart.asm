@@ -87,8 +87,6 @@ struc	gseg
 	.process	resq 1
 	.runqueue	restruc dlist
 
-	; Process last in use of the floating point registers
-	.fpu_process	resq 1
 	; Process that should receive IRQ interrupts
 	.irq_process	resq 1
 	; bitmask of irqs that have been delayed
@@ -2488,12 +2486,20 @@ lodstr	rdi, 'Invalid syscall %x! proc=%p', 10
 	sc portio
 	sc grant
 	sc pulse
+	sc yield
 .end_table:
 N_SYSCALLS	equ (.end_table - .table) / 4
 
 syscall_nosys:
 	pop rdi
 	jmp syscall_entry.invalid_syscall
+
+syscall_yield:
+	mov	rdi, [rbp + gseg.process]
+	btr	dword [rdi + proc.flags], PROC_RUNNING_BIT
+	bts	dword [rdi + proc.flags], PROC_FASTRET_BIT
+	call	runqueue_append
+	tcall	switch_next
 
 syscall_write:
 %if kernel_vga_console

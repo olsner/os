@@ -43,7 +43,6 @@ struct Cpu {
     // mem::PerCpu memory
     DList<Process> runqueue;
     Process *irq_process;
-    Process *fpu_process;
     u64 irq_delayed[4];
 
     SavedRegs kernel_reg_save;
@@ -101,8 +100,6 @@ struct Cpu {
         p->set(proc::Running);
         if (process != p) {
             process = p;
-            // TODO check fpu_process too (clear the task switch flag so it
-            // won't fault again)
             x86::set_cr3(p->cr3);
         }
         if (p->is(proc::FastRet)) {
