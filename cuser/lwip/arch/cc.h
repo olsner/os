@@ -27,4 +27,8 @@
 /* Use our assert_failed instead of LWIP's print/flush/abort. */
 #define LWIP_PLATFORM_ASSERT(x) assert_failed(__FILE__, __LINE__, x)
 
+// Saves about a kilobyte over the default out-of-line implementations
+#define lwip_htons __builtin_bswap16
+#define lwip_htonl __builtin_bswap32
+
 #endif /* __ARCH_CC_H__ */

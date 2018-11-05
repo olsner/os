@@ -20,13 +20,20 @@ uint32_t lwip_random(void);
 #define LWIP_RAND lwip_random
 
 #ifdef NDEBUG
+// Kind of good to have asserts, but they're like 20% of the IP stack?
+#define LWIP_NOASSERT
+#endif
+#ifndef NDEBUG
+#define LWIP_DEBUG
+#endif
+
+#ifdef NDEBUG
 #define LWIP_DBG_NDEBUG 0
 #else
 #define LWIP_DBG_NDEBUG LWIP_DBG_ON
 #endif
 #define LWIP_DBG_TYPES_ON (LWIP_DBG_ON | LWIP_DBG_STATE)
 
-#define LWIP_DEBUG
 #define ETHARP_DEBUG LWIP_DBG_NDEBUG
 #define AUTOIP_DEBUG LWIP_DBG_NDEBUG
 #define DHCP_DEBUG LWIP_DBG_NDEBUG

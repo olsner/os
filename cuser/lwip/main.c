@@ -138,7 +138,7 @@ void start() {
 
 	map(apic_handle, PROT_READ, &timer_data, 0, 4096);
 	prefault(&timer_data, PROT_READ);
-	puts("lwip: initialized timer\n");
+	debug("lwip: initialized timer\n");
 
 	hmod(eth_handle, eth_handle, proto_handle);
 	ipc_arg_t arg1 = ETHERTYPE_ANY;
@@ -153,7 +153,7 @@ void start() {
 		send1(MSG_ETHERNET_RECV, proto_handle, i);
 		prefault(send_buffers[i], PROT_READ | PROT_WRITE);
 	}
-	puts("lwip: registered protocol\n");
+	debug("lwip: registered protocol\n");
 	puts("lwip: starting lwIP " LWIP_VERSION_STRING "...\n");
 
 	lwip_init();
