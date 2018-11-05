@@ -1,5 +1,9 @@
 #include <stddef.h>
 
+// FIXME These are all implemented in cuser/string.c too. Should unify that
+// (there might be a klibc and a user libc, but the shared bits should be
+// shared at least...)
+
 #ifndef STRING_INL_LINKAGE
 #define STRING_INL_LINKAGE UNUSED
 #endif
