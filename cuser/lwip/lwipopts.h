@@ -4,8 +4,6 @@
 #define SYS_LIGHTWEIGHT_PROT 0
 
 // options, options, options!
-#define MEMP_OVERFLOW_CHECK 1
-#define MEMP_SANITY_CHECK 1
 #define LWIP_DHCP 1
 #define LWIP_AUTOIP 0
 #define LWIP_DNS 1
@@ -31,10 +29,19 @@ uint32_t lwip_random(void);
 #define LWIP_DEBUG
 #define ETHARP_DEBUG LWIP_DBG_NDEBUG
 #define AUTOIP_DEBUG LWIP_DBG_NDEBUG
-#define DHCP_DEBUG   LWIP_DBG_ON
+#define DHCP_DEBUG LWIP_DBG_NDEBUG
 #define IP_DEBUG LWIP_DBG_NDEBUG
 #define INET_DEBUG LWIP_DBG_NDEBUG
 #define ICMP_DEBUG LWIP_DBG_NDEBUG
 #define TCP_DEBUG LWIP_DBG_NDEBUG
 #define TCP_INPUT_DEBUG LWIP_DBG_NDEBUG
 #define TCP_OUTPUT_DEBUG LWIP_DBG_NDEBUG
+
+#define TIMERS_DEBUG LWIP_DBG_NDEBUG
+#define LWIP_DEBUG_TIMERNAMES (TIMERS_DEBUG & LWIP_DBG_ON)
+
+// Disable to get rid of a timer.
+#define IP_REASSEMBLY 0
+// Also disabled to get rid of timers
+#define LWIP_ACD 0
+#define LWIP_DHCP_DOES_ACD_CHECK 0

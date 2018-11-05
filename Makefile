@@ -311,23 +311,9 @@ $(OUTDIR)/cuser/acpica.elf: cuser/linker.ld $(ACPI_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
-LWIP = lwip
-LWIP_CORE = $(LWIP)/src/core
-LWIP_NETIF = $(LWIP)/src/netif
-LWIP4_CORE = $(LWIP_CORE)/ipv4
-LWIP_API = $(LWIP)/src/api
-
-LWIP_NETIF_SRCS = ethernet.c
-LWIP_CORE_SRCS = def.c dns.c inet_chksum.c init.c ip.c mem.c memp.c netif.c \
-	pbuf.c raw.c stats.c sys.c tcp.c tcp_in.c tcp_out.c timeouts.c udp.c
-LWIP4_CORE_SRCS = \
-	autoip.c dhcp.c etharp.c icmp.c igmp.c ip4_addr.c ip4.c ip4_frag.c
-
-LWIP_SRCS := \
-	$(addprefix $(LWIP_CORE)/, $(LWIP_CORE_SRCS)) \
-	$(addprefix $(LWIP_NETIF)/, $(LWIP_NETIF_SRCS)) \
-	$(addprefix $(LWIP4_CORE)/, $(LWIP4_CORE_SRCS)) \
-	$(addprefix $(LWIP_API)/, api_lib.c api_msg.c err.c netbuf.c netdb.c netifapi.c sockets.c tcpip.c)
+LWIPDIR := lwip/src
+include $(LWIPDIR)/Filelists.mk
+LWIP_SRCS := $(LWIPNOAPPSFILES)
 
 LWIP_OBJS := $(LWIP_SRCS:$(LWIP)/%.c=$(LWIP_OUT)/%.o)
 LWIP_OBJS += $(addprefix $(OUTDIR)/cuser/, \

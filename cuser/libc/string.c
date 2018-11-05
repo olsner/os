@@ -6,6 +6,18 @@ void* memcpy(void* dest, const void* src, size_t n) {
 	return dest;
 }
 
+void* memmove(void* dest, const void* src, size_t n) {
+    // Non-overlapping or overlapping such that a forwards copy works.
+    if (dest < src || (char*)dest > (char*)src + n) {
+        return memcpy(dest, src, n);
+    } else if (dest > src) {
+        while (n--) {
+            ((char *)dest)[n] = ((const char*)src)[n];
+        }
+    }
+    return dest;
+}
+
 void* memset(void* dest, int c, size_t n) {
 	asm("rep stosb": "+D"(dest), "+c"(n), "=m"(dest) : "a"(c) : "memory");
 	return dest;

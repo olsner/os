@@ -154,6 +154,7 @@ void start() {
 		prefault(send_buffers[i], PROT_READ | PROT_WRITE);
 	}
 	puts("lwip: registered protocol\n");
+	puts("lwip: starting lwIP " LWIP_VERSION_STRING "...\n");
 
 	lwip_init();
 	IP4_ADDR(&ipaddr, 192,168,100,3);

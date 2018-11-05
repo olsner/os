@@ -14,6 +14,7 @@ void abort(void) __attribute__((noreturn));
 
 unsigned long int strtoul(const char *nptr, char **endptr, int base);
 long int strtol(const char* p, char** end, int base);
+int atoi(const char *s);
 
 
 __END_DECLS
