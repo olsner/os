@@ -79,16 +79,3 @@ CONFIGURE() {
 		r "../$dir/configure" "$@"
 	fi
 }
-
-recv_keys() {
-	local missing=()
-	for key in "$@"; do
-		if ! gpg --list-keys "$key"; then
-			missing+=( "$key" )
-		fi
-	done
-	echo Fetching keys: "${missing[@]}"
-	# Ignoring failures since gpg seems to be random (maybe list-keys is
-	# actually fetching from a server or something?)
-	gpg --recv-keys "${missing[@]}" || true
-}
