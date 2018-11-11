@@ -1,4 +1,4 @@
-namespace mem {
+namespace {
 
 struct free_page {
     free_page *next;
@@ -6,29 +6,13 @@ struct free_page {
 static free_page* freelist_head;
 static u32 used_pages, total_pages;
 
+}
+
+namespace mem {
+
 template <typename T>
 T *add_byte_offset(T *p, intptr_t offset) {
     return (T*)((char*)p + offset);
-}
-
-// TODO Implement per-cpu cache of page(s).
-void free(void *page) {
-    if (!page) return;
-
-    free_page *free = (free_page *)page;
-    free->next = freelist_head;
-    freelist_head = free;
-    used_pages--;
-}
-
-void *malloc(size_t sz) {
-    assert(sz <= 4096);
-    free_page *res = freelist_head;
-    assert(res);
-    freelist_head = res->next;
-    memset(res, 0, 4096);
-    used_pages++;
-    return res;
 }
 
 uintptr_t allocate_frame() {
@@ -67,3 +51,24 @@ void init(const mboot::Info& info, u32 memory_start, u64 memory_end) {
 }
 
 }
+
+// TODO Implement per-cpu cache of page(s).
+void free(void *page) {
+    if (!page) return;
+
+    free_page *free = (free_page *)page;
+    free->next = freelist_head;
+    freelist_head = free;
+    used_pages--;
+}
+
+void *malloc(size_t sz) {
+    assert(sz <= 4096);
+    free_page *res = freelist_head;
+    assert(res);
+    freelist_head = res->next;
+    memset(res, 0, 4096);
+    used_pages++;
+    return res;
+}
+

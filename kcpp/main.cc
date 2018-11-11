@@ -41,6 +41,9 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
     dst[n] = 0;
 }
 
+void *malloc(size_t);
+void free(void *);
+
 }
 
 #define S_(X) #X
@@ -83,11 +86,6 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
         } \
     } \
 } while (0)
-
-namespace { namespace mem { void *malloc(size_t); void free(void *); } }
-
-using mem::malloc;
-using mem::free;
 
 void *operator new(size_t sz) {
     return malloc(sz);
