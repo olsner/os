@@ -2,10 +2,12 @@
 
 TARGET=x86_64-elf
 SYSTEM=`uname -s`
-if [ "$SYSTEM" = Darwin ]; then
-    NPROC=`sysctl -n hw.activecpu`
-else
-    NPROC=`nproc`
+if [ -z "$NPROC" ]; then
+    if [ "$SYSTEM" = Darwin ]; then
+        NPROC=`sysctl -n hw.activecpu`
+    else
+        NPROC=`nproc`
+    fi
 fi
 MAKE="make -j$NPROC"
 
