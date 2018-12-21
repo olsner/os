@@ -26,7 +26,7 @@ LDFLAGS += -Wl,--oformat=elf64-x86-64
 LDFLAGS += -Wl,-Map,$(@:.elf=.map)
 LDFLAGS += -ffreestanding -nostdlib
 
-HOST_CXXFLAGS = -g -Os -std=gnu++14
+HOST_CXXFLAGS = -g -Os -std=gnu++17
 
 ifeq ($(LTO), YES)
 HUSH_LD_LTO = +$(HUSH_LD)
@@ -39,7 +39,7 @@ all: $(GRUBDIR)/kcpp
 clean:
 	rm -fr out
 
-KERNEL_OBJS = $(addprefix $(OUT)/, runtime.o syscall.o main.o mem.o)
+KERNEL_OBJS = $(addprefix $(OUT)/, runtime.o syscall.o main.o mem.o stdio.o stdlib.o)
 
 # TODO This should be taken from the output directory instead.
 KERNEL_OBJS += start32.o

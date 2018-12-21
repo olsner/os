@@ -3,7 +3,8 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 
 #include <memory>
 template <typename T> using RefCnt = std::shared_ptr<T>;
@@ -27,23 +28,16 @@ typedef unsigned int uint;
 
 extern "C" void start64() NORETURN;
 
-#define DEBUGCON 1
-
-extern "C" void abort() NORETURN;
 extern "C" void printf(const char* fmt, ...);
-extern "C" void *malloc(size_t);
-extern "C" void free(void *);
 
 void unimpl(const char* what) NORETURN;
 
 void strlcpy(char *dst, const char *src, size_t dstsize) {
-    size_t n = strlen(src);
+    size_t n = std::strlen(src);
     if (n > dstsize - 1) n = dstsize = 1;
-    memcpy(dst, src, n);
+    std::memcpy(dst, src, n);
     dst[n] = 0;
 }
-
-void abort(const char *msg) NORETURN;
 
 #define S_(X) #X
 #define S(X) S_(X)
@@ -82,115 +76,25 @@ void abort(const char *msg) NORETURN;
     } \
 } while (0)
 
-void abort() {
-    asm("cli;hlt");
-    __builtin_unreachable();
-}
-
-void assert_failed(const char* file, int line, const char* msg) {
-    printf("%s:%d: ASSERT FAILED: %s\n", file, line, msg);
-    abort();
-}
-
-namespace {
-
-}
-
 #define XPRINTF_NOERRNO
 #define XPRINTF_LINKAGE extern "C" UNUSED
 #define xprintf printf
 #include "xprintf.cpp"
 
-long int strtol(const char *p, char **end, int radix) {
-    assert(radix == 10);
-    if (!memcmp(p, "16l", 3)) {
-        if (end) *end = (char*)p + 2;
-        return 16;
-    }
-    printf("strtol(%s,%p,%d)\n", p, end, radix);
-    unimpl("strtol");
+#include "addr.h"
+
+using std::abort;
+void NORETURN abort(const char *msg) {
+    puts(msg);
+    abort();
 }
-
-namespace {
-
-static const intptr_t kernel_base = -(1 << 30);
-
-template <class T>
-static constexpr T* PhysAddr(uintptr_t phys) {
-    return (T*)(phys + kernel_base);
-}
-template <class T>
-static constexpr T* HighAddr(T* lowptr) {
-    return PhysAddr<T>((uintptr_t)lowptr);
-}
-uintptr_t ToPhysAddr(const volatile void *p) {
-    return (uintptr_t)p - kernel_base;
-}
-
-static void memset16(u16* dest, u16 value, size_t n) {
-    if (/* constant(value) && */ (value >> 8) == (value & 0xff)) {
-        memset(dest, value, n * 2);
-    } else {
-        // rep movsw
-        while (n--) *dest++ = value;
-    }
-}
-
-static void debugcon_putc(char c) {
-#if DEBUGCON
-    asm("outb %0,%1"::"a"(c),"d"((u16)0xe9));
-#endif
-}
-
-namespace Console {
-    static u16* const buffer = PhysAddr<u16>(0xb80a0);
-    static u16 pos;
-    static const u8 width = 80, height = 24;
-
-    UNUSED void clear() {
-        pos = 0;
-        memset16(buffer, 0, width * height);
-    }
-
-    void write(char c) {
-        if (c == '\n') {
-            u8 fill = width - (pos % width);
-            while(fill--) buffer[pos++] = 0;
-        } else {
-            buffer[pos++] = 0x0700 | c;
-        }
-        debugcon_putc(c);
-        if (pos == width * height) {
-            memmove(buffer, buffer + width, sizeof(*buffer) * width * (height - 1));
-            pos -= width;
-            memset16(buffer + pos, 0, width);
-        }
-    }
-
-    void write(const char *s) {
-        while (char c = *s++) write(c);
-    }
-};
-
-using Console::write;
-}
-
-int putchar(int c) {
-    Console::write(c);
-    return 0;
-}
-
-namespace {
 
 void unimpl(const char *what) {
     printf("UNIMPL: %s\n", what);
     abort();
 }
 
-void abort(const char *msg) {
-    write(msg);
-    abort();
-}
+namespace {
 
 template <typename T>
 T latch(T& var, T value = T()) {

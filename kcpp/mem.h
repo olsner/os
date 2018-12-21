@@ -55,7 +55,7 @@ void init(const mboot::Info& info, u32 memory_start, u64 memory_end) {
 }
 
 // TODO Implement per-cpu cache of page(s).
-void free(void *page) {
+void std::free(void *page) {
     if (!page) return;
 
     free_page *free = (free_page *)page;
@@ -64,7 +64,7 @@ void free(void *page) {
     used_pages--;
 }
 
-void *malloc(size_t sz) {
+void *std::malloc(size_t sz) {
     assert(sz <= 4096);
     free_page *res = freelist_head;
     assert(res);

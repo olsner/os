@@ -1,0 +1,8 @@
+// vim:set filetype=cpp:
+#pragma once
+
+namespace std {
+extern "C" {
+#include <string.h>
+}
+}

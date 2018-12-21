@@ -7,11 +7,11 @@
 #ifndef XPRINTF_NOSTDLIB
 #include <ctype.h>
 #ifndef XPRINTF_NOERRNO
-#include <errno.h>
+#include <cerrno>
 #endif
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #endif
 
 #ifdef XPRINTF_MACRO
@@ -22,6 +22,8 @@
 #ifndef XPRINTF_LINKAGE
 #define XPRINTF_LINKAGE
 #endif
+
+using namespace std;
 
 #ifndef XPRINTF_MACRO
 XPRINTF_LINKAGE void xprintf(const char* fmt, ...)

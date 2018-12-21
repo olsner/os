@@ -1,0 +1,5 @@
+namespace std {
+extern "C" {
+#include <stdlib.h>
+}
+}

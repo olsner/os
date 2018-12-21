@@ -1,8 +1,7 @@
-//#include <stdlib.h>
 #include <stddef.h>
+#include <cstdlib>
 
-extern "C" void *malloc(size_t);
-extern "C" void free(void *);
+using namespace std;
 
 void *operator new(size_t sz) {
     return malloc(sz);

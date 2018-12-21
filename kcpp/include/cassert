@@ -6,6 +6,8 @@
 
 #undef assert
 #define assert(X) \
-    do { if (enable_assert && !(X)) { assert_failed(__FILE__, __LINE__, #X); } } while (0)
+    do { if (enable_assert && !(X)) { std::assert_failed(__FILE__, __LINE__, #X); } } while (0)
 
-extern "C" void assert_failed(const char* file, int line, const char* msg) __attribute__((unused)) __attribute__((noreturn));
+namespace std {
+void assert_failed(const char* file, int line, const char* msg) __attribute__((unused)) __attribute__((noreturn));
+}
