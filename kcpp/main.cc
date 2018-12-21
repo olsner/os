@@ -3,6 +3,8 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
+#include <string.h>
+
 #include <memory>
 template <typename T> using RefCnt = std::shared_ptr<T>;
 
@@ -27,15 +29,10 @@ extern "C" void start64() NORETURN;
 
 #define DEBUGCON 1
 
-#define STRING_INL_LINKAGE static UNUSED
-#include "string.c"
-
 extern "C" void abort() NORETURN;
 extern "C" void printf(const char* fmt, ...);
 extern "C" void *malloc(size_t);
 extern "C" void free(void *);
-
-namespace {
 
 void unimpl(const char* what) NORETURN;
 
@@ -46,10 +43,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
     dst[n] = 0;
 }
 
-using ::abort;
 void abort(const char *msg) NORETURN;
-
-}
 
 #define S_(X) #X
 #define S(X) S_(X)
@@ -100,40 +94,12 @@ void assert_failed(const char* file, int line, const char* msg) {
 
 namespace {
 
-namespace Console {
-    void write(char c);
 }
 
-// Might actually want to specialize xprintf for the kernel...
-struct FILE {};
-static FILE* const stdout = NULL;
-static FILE* const stderr = NULL;
-void flockfile(FILE *) {}
-void funlockfile(FILE *) {}
-void fflush(FILE *) {}
-ssize_t fwrite_unlocked(const void* p, size_t sz, size_t n, FILE *) {
-    size_t c = n * sz;
-    const char *str = (char*)p;
-    while (c--) Console::write(*str++);
-    return n;
-}
-void fputc_unlocked(char c, FILE *) {
-    Console::write(c);
-}
-long int strtol(const char *p, char **end, int radix);
-bool isdigit(char c) {
-    return c >= '0' && c <= '9';
-}
-
-}
-
-#define XPRINTF_NOSTDLIB
 #define XPRINTF_NOERRNO
 #define XPRINTF_LINKAGE extern "C" UNUSED
 #define xprintf printf
 #include "xprintf.cpp"
-
-namespace {
 
 long int strtol(const char *p, char **end, int radix) {
     assert(radix == 10);
@@ -144,6 +110,9 @@ long int strtol(const char *p, char **end, int radix) {
     printf("strtol(%s,%p,%d)\n", p, end, radix);
     unimpl("strtol");
 }
+
+namespace {
+
 static const intptr_t kernel_base = -(1 << 30);
 
 template <class T>
@@ -204,6 +173,14 @@ namespace Console {
 };
 
 using Console::write;
+}
+
+int putchar(int c) {
+    Console::write(c);
+    return 0;
+}
+
+namespace {
 
 void unimpl(const char *what) {
     printf("UNIMPL: %s\n", what);

@@ -6,7 +6,9 @@
 
 #ifndef XPRINTF_NOSTDLIB
 #include <ctype.h>
+#ifndef XPRINTF_NOERRNO
 #include <errno.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
