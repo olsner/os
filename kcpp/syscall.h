@@ -52,7 +52,7 @@ u64 portio(u16 port, u8 op, u32 data) {
 
 void hmod(Process *p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
     log(hmod, "%s hmod: id=%lx rename=%lx copy=%lx\n", p->name(), id, rename, copy);
-    AddressSpace* aspace = p->aspace.get();
+    auto aspace = p->aspace;
     if (auto handle = aspace->find_handle(id)) {
         if (copy) {
             aspace->new_handle(copy, handle->otherspace);
@@ -80,8 +80,9 @@ void transfer_set_handle(Process *target, Process *source) {
                 g, rcpt);
         } else {
             // Associate new handle
-            g = target->new_handle(rcpt, source->aspace.get());
-            g->associate(target->aspace.get(), h);
+            auto targetspace = target->aspace;
+            g = targetspace->new_handle(rcpt, source->aspace);
+            g->associate(targetspace, h);
             assert(g->key() == rcpt);
         }
     } else {

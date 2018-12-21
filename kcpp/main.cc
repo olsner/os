@@ -3,6 +3,9 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
+#include <memory>
+template <typename T> using RefCnt = std::shared_ptr<T>;
+
 typedef int64_t i64;
 typedef int32_t i32;
 typedef int16_t i16;
@@ -27,11 +30,13 @@ extern "C" void start64() NORETURN;
 #define STRING_INL_LINKAGE static UNUSED
 #include "string.c"
 
+extern "C" void abort() NORETURN;
+extern "C" void printf(const char* fmt, ...);
+extern "C" void *malloc(size_t);
+extern "C" void free(void *);
+
 namespace {
 
-void assert_failed(const char* file, int line, const char* msg) NORETURN UNUSED;
-extern "C" void abort() NORETURN;
-void abort(const char *msg) NORETURN;
 void unimpl(const char* what) NORETURN;
 
 void strlcpy(char *dst, const char *src, size_t dstsize) {
@@ -41,17 +46,13 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
     dst[n] = 0;
 }
 
-void *malloc(size_t);
-void free(void *);
+using ::abort;
+void abort(const char *msg) NORETURN;
 
 }
 
 #define S_(X) #X
 #define S(X) S_(X)
-#define assert(X) \
-    do { if (enable_assert && !(X)) { assert_failed(__FILE__, __LINE__, #X); } } while (0)
-
-#define enable_assert 1
 #define log_fileline 1
 
 #define log_idle 0
@@ -87,23 +88,14 @@ void free(void *);
     } \
 } while (0)
 
-void *operator new(size_t sz) {
-    return malloc(sz);
+void abort() {
+    asm("cli;hlt");
+    __builtin_unreachable();
 }
-void operator delete(void *p) {
-    free(p);
-}
-void operator delete(void *p, size_t) {
-    free(p);
-}
-void *operator new[](size_t sz) {
-    return malloc(sz);
-}
-void operator delete[](void *p) {
-    free(p);
-}
-void operator delete[](void *p, size_t) {
-    free(p);
+
+void assert_failed(const char* file, int line, const char* msg) {
+    printf("%s:%d: ASSERT FAILED: %s\n", file, line, msg);
+    abort();
 }
 
 namespace {
@@ -133,12 +125,15 @@ bool isdigit(char c) {
     return c >= '0' && c <= '9';
 }
 
+}
+
 #define XPRINTF_NOSTDLIB
 #define XPRINTF_NOERRNO
-#define XPRINTF_LINKAGE static UNUSED
+#define XPRINTF_LINKAGE extern "C" UNUSED
+#define xprintf printf
 #include "xprintf.cpp"
 
-#define printf xprintf
+namespace {
 
 long int strtol(const char *p, char **end, int radix) {
     assert(radix == 10);
@@ -217,16 +212,6 @@ void unimpl(const char *what) {
 
 void abort(const char *msg) {
     write(msg);
-    abort();
-}
-
-void abort() {
-    asm("cli;hlt");
-    __builtin_unreachable();
-}
-
-void assert_failed(const char* file, int line, const char* msg) {
-    printf("%s:%d: ASSERT FAILED: %s\n", file, line, msg);
     abort();
 }
 
@@ -475,8 +460,9 @@ using aspace::AddressSpace;
 
 #include "dict.h"
 #include "dlist.h"
+}
 #include "mem.h"
-#include "refcnt.h"
+namespace {
 #include "handle.h"
 #include "aspace.h"
 #include "proc.h"
@@ -488,7 +474,7 @@ using cpu::getcpu;
 Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     u32 end = (end_unaligned + 0xfff) & ~0xfff;
     u32 start_page = start & ~0xfff;
-    auto aspace = new AddressSpace();
+    auto aspace = std::make_shared<AddressSpace>();
     aspace->set_name(name);
     auto ret = new Process(aspace);
     ret->regs.rsp = 0x100000;
@@ -551,7 +537,7 @@ NORETURN void page_fault(Process *p, u64 error) {
     i64 fault_addr = x86::cr2();
     assert(fault_addr >= 0);
 
-    auto as = p->aspace.get();
+    auto as = p->aspace;
     auto *back = as->find_add_backing(fault_addr & -0x1000);
     if (!back) {
         printf("Fatal page fault in %s. err=%lx cr2=%p\n", p->name(), error, (void*)x86::cr2());

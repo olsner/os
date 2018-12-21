@@ -12,7 +12,7 @@
 #include <string.h>
 #endif
 
-#ifdef STATIC_XPRINTF
+#ifdef XPRINTF_MACRO
 #define xprintf(...) xfprintf(stdout, __VA_ARGS__)
 #define XPRINTF_LINKAGE static
 #endif
@@ -21,7 +21,7 @@
 #define XPRINTF_LINKAGE
 #endif
 
-#ifndef xprintf
+#ifndef XPRINTF_MACRO
 XPRINTF_LINKAGE void xprintf(const char* fmt, ...)
 		__attribute__((format(printf, 1, 2)));
 #endif
@@ -190,7 +190,7 @@ void xfprintf(FILE* fp, const char* fmt, ...)
 	va_end(ap);
 }
 
-#ifndef xprintf
+#ifndef XPRINTF_MACRO
 XPRINTF_LINKAGE void xprintf(const char* fmt, ...)
 {
 	va_list ap;

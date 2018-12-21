@@ -1,3 +1,5 @@
+#include <utility>
+
 namespace proc {
 enum ProcFlags {
 // The process is currently queued on the run queue.
@@ -40,8 +42,8 @@ u64 mask(ProcFlags flag) {
 using x86::Regs;
 using x86::SavedRegs;
 
-struct Process {
-    // First: fields shared with asm code...
+// Process fields shared with assembly code
+struct ProcessAsm {
     union {
         struct {
             Regs regs;
@@ -51,35 +53,35 @@ struct Process {
         };
         SavedRegs saved_regs;
     };
-    // End of assembly-shared fields.
+};
+
+struct Process: ProcessAsm {
     u64 flags;
 
     DListNode<Process> node;
 
-    RefCnt<AddressSpace> aspace;
+    const RefCnt<AddressSpace> aspace;
     AddressSpace *waiting_for;
     uintptr_t fault_addr;
     // TODO FXSave
 
-    Process(AddressSpace *aspace):
-        aspace(aspace)
+    Process(RefCnt<AddressSpace> aspace):
+        aspace(std::move(aspace))
     {
         flags = 1 << FastRet;
         cr3 = aspace->cr3();
         rflags = x86::rflags::IF;
     }
 
+    // TODO static/global make_handle_pair or something
     void assoc_handles(uintptr_t j, Process *other, uintptr_t i) {
-        AddressSpace *otherspace = other->aspace.get();
-        auto x = aspace->new_handle(j, otherspace);
-        auto y = otherspace->new_handle(i, aspace.get());
+        auto otherspace = other->aspace;
+        auto x = aspace->new_handle(j, &*otherspace);
+        auto y = otherspace->new_handle(i, &*aspace);
         x->other = y;
         y->other = x;
     }
 
-    Handle *new_handle(uintptr_t key, AddressSpace *otherspace) {
-        return aspace->new_handle(key, otherspace);
-    }
     Handle *find_handle(uintptr_t key) const {
         return aspace->find_handle(key);
     }
@@ -94,7 +96,7 @@ struct Process {
         otherspace->add_waiter(this);
     }
     void add_waiter(Process *other) {
-        other->wait_for(aspace.get());
+        other->wait_for(&*aspace);
     }
     void remove_waiter(Process *other) {
         aspace->remove_waiter(other);
@@ -132,7 +134,7 @@ Process *AddressSpace::pop_sender(Handle *target) {
     for (auto p: waiters) {
         if (p->is(proc::InSend)
             && (!target
-                || (target->otherspace == p->aspace.get()
+                || (p->aspace == target->otherspace
                     && target->other->key() == p->regs.rdi))) {
             remove_waiter(p);
             return p;

@@ -17,8 +17,10 @@ CFLAGS += -mcmodel=kernel -mno-red-zone -mno-sse -mno-mmx
 CFLAGS += -ffreestanding $(COPTFLAGS)
 CFLAGS += -fno-threadsafe-statics
 CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
+CFLAGS += -Iinclude
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
-CXXFLAGS = $(CFLAGS) -std=gnu++14
+CXXFLAGS = $(CFLAGS) -std=gnu++17
+CXXFLAGS += -fno-exceptions -fno-rtti
 LDFLAGS = -Wl,--check-sections -Wl,--gc-sections
 LDFLAGS += -Wl,--oformat=elf64-x86-64
 LDFLAGS += -Wl,-Map,$(@:.elf=.map)
@@ -37,8 +39,9 @@ all: $(GRUBDIR)/kcpp
 clean:
 	rm -fr out
 
-KERNEL_OBJS = $(addprefix $(OUT)/, runtime.o syscall.o main.o)
+KERNEL_OBJS = $(addprefix $(OUT)/, runtime.o syscall.o main.o mem.o)
 
+# TODO This should be taken from the output directory instead.
 KERNEL_OBJS += start32.o
 
 KERNEL_DEPS = $(KERNEL_OBJS:.o=.d)

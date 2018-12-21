@@ -1,0 +1,125 @@
+// vim: set filetype=cpp:
+
+#include <atomic>
+#include <utility>
+#include <cassert>
+
+namespace std {
+
+template <typename T>
+struct default_delete
+{
+    void operator()(T* ptr) {
+        delete ptr;
+    }
+};
+template <typename T>
+struct default_delete<T[]>
+{
+    void operator()(T* ptr) {
+        delete[] ptr;
+    }
+};
+
+template <typename T>
+struct __refcnt_intrusive {
+    T elem;
+    atomic<int32_t> count;
+
+    template <typename... Args>
+    __refcnt_intrusive(Args&&... args): elem(std::forward<Args>(args)...) {
+    }
+
+    void addref() {
+        count++;
+    }
+    template <class Deleter>
+    static void deref(__refcnt_intrusive*& ptr, Deleter&& deleter) {
+        if (ptr && !--ptr->count) {
+            deleter(ptr);
+        }
+        ptr = nullptr;
+    }
+
+    T* get() {
+        return &elem;
+    }
+};
+
+// Should be as similar as possible to std::shared_ptr, but it's not intended
+// to support separate object and refcount storage at this point. This means
+// construction by raw pointer is not possible, make_shared *must* be used and
+// it's not possible to use custom deleters.
+//
+// Thread safety notes (according to my understanding): a single shared_ptr
+// is not thread safe - accesses must be synchronized externally. But multiple
+// shared_ptr objects pointing to the same object will be safe to manipulate
+// in different threads. Only a single thread will destroy the object, and it
+// will do that after the point that no other thread may have any references to
+// it (barring raw pointers escaping while the underlying shared_ptr is lost).
+template <typename T>
+class shared_ptr
+{
+    using __impl = __refcnt_intrusive<T>;
+    __impl* __ptr = nullptr;
+
+    void __addref() {
+        __ptr->addref();
+    }
+    void __deref() {
+        __impl::deref(__ptr, default_delete<__impl>());
+    }
+
+public:
+    shared_ptr() = default;
+    shared_ptr(nullptr_t) {}
+
+    shared_ptr(shared_ptr&& other): __ptr(other.__ptr) { other.__ptr = nullptr; }
+    shared_ptr(const shared_ptr& other): shared_ptr(other.__ptr) {}
+
+    explicit shared_ptr(__impl* ptr): __ptr(ptr) { __addref(); }
+
+    ~shared_ptr() {
+        __deref();
+    }
+
+    shared_ptr& operator=(shared_ptr&& other) {
+        swap(__ptr, other.__ptr);
+        other.reset();
+    }
+    shared_ptr& operator=(const shared_ptr& other) {
+        __ptr = other.__ptr;
+        __addref();
+    }
+
+    T& operator*() const {
+        assert(get());
+        return *get();
+    }
+    T* operator->() const {
+        assert(get());
+        return get();
+    }
+
+    bool operator==(const shared_ptr& other) const {
+        return get() == other.get();
+    }
+    bool operator==(T *ptr) const {
+        return get() == ptr;
+    }
+    bool operator==(nullptr_t) const {
+        return __ptr == nullptr;
+    }
+    T* get() const {
+        return __ptr ? __ptr->get() : nullptr;
+    }
+};
+
+template <typename T, typename... Args>
+shared_ptr<T> make_shared(Args&&... args)
+{
+    using __impl = __refcnt_intrusive<T>;
+    return shared_ptr<T>(new __impl(std::forward<Args>(args)...));
+}
+
+}

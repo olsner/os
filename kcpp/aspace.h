@@ -137,7 +137,7 @@ PageTable *get_alloc_pt(PageTable table, u64 index, u16 flags) {
     }
 }
 
-class AddressSpace: public RefCounted<AddressSpace> {
+class AddressSpace {
     PML4 *pml4;
 
     Dict<MapCard> mapcards;
@@ -296,6 +296,9 @@ public:
         (*pt)[(vaddr >> 12) & 0x1ff] = pte;
     }
 
+    Handle *new_handle(uintptr_t key, const RefCnt<AddressSpace>& other) {
+        return new_handle(key, other.get());
+    }
     Handle *new_handle(uintptr_t key, AddressSpace *other) {
         if (Handle *old = handles.find_exact(key)) {
             delete_handle(old);
@@ -310,6 +313,7 @@ public:
         handles.rekey(handle, new_key);
     }
     void delete_handle(Handle *handle) {
+        // Move into handle destructor
         handle->dissociate();
         Handle* existing = handles.remove(handle->key());
         assert(existing == handle);
