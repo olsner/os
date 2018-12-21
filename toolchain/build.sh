@@ -28,8 +28,8 @@ cd build-$BINUTILSVER
 setlog binutils_configure
 CONFIGURE "$BINUTILSVER" --target=$TARGET --prefix="$PREFIX" --with-sysroot --disable-nls --disable-werror
 setlog binutils_build
-r $MAKE
-r $MAKE install
+MAKE
+MAKE install
 clearlog
 cd ..
 
@@ -41,7 +41,7 @@ cd build-$GCCVER
 setlog gcc_configure
 CONFIGURE "$GCCVER" --target=$TARGET --prefix="$PREFIX" --disable-nls --enable-languages=c,c++ --without-headers --disable-libstdcxx
 setlog gcc_build
-r $MAKE all-gcc all-target-libgcc
-r $MAKE install-strip-gcc install-strip-target-libgcc
+MAKE all-gcc all-target-libgcc
+MAKE install-strip-gcc install-strip-target-libgcc
 clearlog
 cd ..

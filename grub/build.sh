@@ -3,10 +3,15 @@
 
 . ../build/buildfuncs.sh
 
+CROSSVER=8.1.0
 GRUBVER=grub-2.02
-PREFIX=`pwd`/prefix-$GRUBVER
+PREFIX=`pwd`/prefix-${GRUBVER}-${CROSSVER}
 LOGDIR=`pwd`/logs
 PATH="$PATH:$PREFIX/bin"
+toolchainBin=`pwd`/../toolchain/cross-$CROSSVER/bin
+[ -d "$toolchainBin" -a -x "$toolchainBin/$TARGET-gcc" ] ||
+    die "$toolchainBin/$TARGET-gcc not found or not executable - build cross toolchain first?"
+export PATH="$PATH:$toolchainBin"
 
 set -e
 
@@ -17,21 +22,14 @@ cd src
 GET ftp://ftp.nluug.nl/mirror/gnu/grub/ "${GRUBVER}.tar.xz" 810b3798d316394f94096ec2797909dbf23c858e48f7b3830826b8daa06b7b0f
 unpack "${GRUBVER}"
 
-toolchainBin=`pwd`/../../toolchain/cross-8.1.0/bin
-
-[ -d "$toolchainBin" -a -x "$toolchainBin/$TARGET-gcc" ] ||
-    die "$toolchainBin/$TARGET-gcc not found or not executable - build cross toolchain first?"
-
-export PATH="$PATH:$toolchainBin"
-
-mkdir -p build-$GRUBVER
-cd build-$GRUBVER
+mkdir -p build-$GRUBVER-$CROSSVER
+cd build-$GRUBVER-$CROSSVER
 setlog grub_configure
 # efiemu is disabled because it has -Werror flags not fixed by --disable-werror
 CONFIGURE "$GRUBVER" -C --disable-werror --disable-efiemu --target=$TARGET --prefix="$PREFIX" TARGET_CC="ccache $TARGET-gcc" HOST_CC="ccache gcc"
 setlog grub_build
-r $MAKE
-r $MAKE install
+MAKE
+MAKE install
 clearlog
 cd ..
 

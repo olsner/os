@@ -9,7 +9,8 @@ include build/makebuffer.mk
 CCACHE ?= ccache
 ifneq ($(USE_CROSS),NO)
 CROSS := x86_64-elf-
-CROSSDIR := $(CURDIR)/toolchain/cross-8.1.0
+CROSSVER := 8.1.0
+CROSSDIR := $(CURDIR)/toolchain/cross-$(CROSSVER)
 export PATH := $(PATH):$(CROSSDIR)/bin
 else
 CROSS :=
@@ -213,7 +214,7 @@ $(GRUB_CFG): build/mkgrubcfg.sh Makefile $(MODFILES)
 
 KERNELS = $(GRUBDIR)/kstart.b $(GRUBDIR)/kcpp
 GRUBVER = grub-2.02
-GRUB_PREFIX = grub/prefix-$(GRUBVER)
+GRUB_PREFIX = grub/prefix-$(GRUBVER)-$(CROSSVER)
 GRUBLIBDIR := $(GRUB_PREFIX)/lib/grub/i386-pc/
 GRUB_MKRESCUE = $(GRUB_PREFIX)/bin/grub-mkrescue
 

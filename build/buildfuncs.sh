@@ -9,7 +9,6 @@ if [ -z "$NPROC" ]; then
         NPROC=`nproc`
     fi
 fi
-MAKE="make -j$NPROC"
 
 die() {
     echo >&2 "$@"
@@ -24,12 +23,10 @@ GET() {
 unpack() {
 	if [ ! -d "$1" ]; then
 		echo "Unpacking $1..."
-		for ext in xz bz2 gz; do
-			if [ -f "${1}.tar.${ext}" ]; then
-				break
-			fi
-		done
-		if ! tar -xf "${1}.tar.${ext}"; then
+		if [ ! -f "${1}.tar"* ]; then
+			return 1
+		fi
+		if ! tar -xf "${1}.tar"*; then
 			rm -fr "$1"
 			return 1
 		fi
@@ -38,7 +35,6 @@ unpack() {
 		ln -sfT "$1" "$2"
 	fi
 }
-
 
 log() {
 	echo "$@"
@@ -80,4 +76,7 @@ CONFIGURE() {
 	if [ ! -f Makefile ]; then
 		r "../$dir/configure" "$@"
 	fi
+}
+MAKE() {
+	r make -j$NPROC "$@"
 }
