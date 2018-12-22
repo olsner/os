@@ -18,12 +18,10 @@ long int std::strtol(const char *p, char **end, int radix) {
 }
 
 void std::abort() {
-    asm("cli;hlt");
-    __builtin_unreachable();
+    __builtin_trap();
 }
 
 void std::assert_failed(const char* file, int line, const char* msg) {
     printf("%s:%d: ASSERT FAILED: %s\n", file, line, msg);
     abort();
 }
-

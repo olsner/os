@@ -35,10 +35,12 @@ struct __refcnt_intrusive {
     }
     template <class Deleter>
     static void deref(__refcnt_intrusive*& ptr, Deleter&& deleter) {
-        if (ptr && !--ptr->count) {
-            deleter(ptr);
+        if (ptr) {
+            if (!--ptr->count) {
+                deleter(ptr);
+            }
+            ptr = nullptr;
         }
-        ptr = nullptr;
     }
 
     T* get() {
@@ -92,12 +94,14 @@ public:
         __addref();
     }
 
+    void reset() {
+        __deref();
+    }
+
     T& operator*() const {
-        assert(get());
         return *get();
     }
     T* operator->() const {
-        assert(get());
         return get();
     }
 
@@ -113,6 +117,11 @@ public:
     T* get() const {
         return __ptr ? __ptr->get() : nullptr;
     }
+
+    size_t use_count() const {
+        assert(!__ptr || __ptr->count.load());
+        return __ptr ? __ptr->count.load() : 0;
+    }
 };
 
 template <typename T, typename... Args>
@@ -121,5 +130,46 @@ shared_ptr<T> make_shared(Args&&... args)
     using __impl = __refcnt_intrusive<T>;
     return shared_ptr<T>(new __impl(std::forward<Args>(args)...));
 }
+
+template <typename T, typename Deleter = default_delete<T>>
+class unique_ptr
+{
+    T* __ptr = nullptr;
+
+public:
+    constexpr unique_ptr() = default;
+    constexpr unique_ptr(nullptr_t) {}
+    explicit unique_ptr(T* ptr): __ptr(ptr) {}
+
+    unique_ptr(const unique_ptr& ptr) = delete;
+    unique_ptr(unique_ptr&& ptr): __ptr(ptr.release()) {}
+
+    unique_ptr& operator=(const unique_ptr& ptr) = delete;
+    unique_ptr& operator=(unique_ptr&& ptr) {
+        reset(ptr.release());
+    }
+
+    void reset(T* ptr = nullptr) {
+        Deleter()(__ptr);
+        __ptr = ptr;
+    }
+    T* release() {
+        T* res = __ptr;
+        __ptr = nullptr;
+        return res;
+    }
+
+    T& operator*() const {
+        assert(get());
+        return *get();
+    }
+    T* operator->() const {
+        assert(get());
+        return get();
+    }
+    T* get() const {
+        return __ptr ? __ptr->get() : nullptr;
+    }
+};
 
 }

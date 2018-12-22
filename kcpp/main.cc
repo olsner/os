@@ -357,15 +357,14 @@ Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     u32 start_page = start & ~0xfff;
     auto aspace = std::make_shared<AddressSpace>();
     aspace->set_name(name);
-    auto ret = new Process(aspace);
-    ret->regs.rsp = 0x100000;
-    ret->rip = 0x100000 + (start & 0xfff);
-
     using namespace aspace; // for MAP_*
     aspace->mapcard_set(0x0ff000, 0, 0, MAP_ANON | MAP_RW);
     aspace->mapcard_set(0x100000, 0, start_page - 0x100000, MAP_PHYS | MAP_RX);
     aspace->mapcard_set(0x100000 + (end - start_page), 0, 0, 0);
 
+    auto ret = new Process(std::move(aspace));
+    ret->regs.rsp = 0x100000;
+    ret->rip = 0x100000 + (start & 0xfff);
     return ret;
 }
 
@@ -466,7 +465,8 @@ void int_entry(u8 vec, u64 err, Cpu *cpu) {
             printf("Kernel page fault! %#lx, cr2=%#lx\n", err, x86::cr2());
         }
         cpu->dump_regs();
-        abort();
+        asm("cli;hlt");
+        __builtin_unreachable();
     }
     auto p = cpu->process;
     if (p) {

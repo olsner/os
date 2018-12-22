@@ -65,8 +65,8 @@ struct Process: ProcessAsm {
     uintptr_t fault_addr;
     // TODO FXSave
 
-    Process(RefCnt<AddressSpace> aspace):
-        aspace(std::move(aspace))
+    Process(RefCnt<AddressSpace> aspace_):
+        aspace(std::move(aspace_))
     {
         flags = 1 << FastRet;
         cr3 = aspace->cr3();

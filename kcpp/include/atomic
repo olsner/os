@@ -20,6 +20,10 @@ public:
     T operator--(int) {
         return __atomic_fetch_sub(&__elem, 1, __ATOMIC_SEQ_CST);
     }
+
+    T load(/*std::memory_order*/) const {
+        return __atomic_load_n(&__elem, __ATOMIC_SEQ_CST);
+    }
 };
 
 }
