@@ -192,9 +192,7 @@ public:
         __ptr = ptr;
     }
     T* release() {
-        T* res = __ptr;
-        __ptr = nullptr;
-        return res;
+        return latch(__ptr, nullptr);
     }
 
     T& operator*() const {
