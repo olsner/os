@@ -4,8 +4,8 @@ OUTPUT_FORMAT(binary)
 high_org = 0xffffffffc0000000;
 
 MEMORY {
-    ram : org = 0x100000, l = 20K
-    high : org = 0xffffffffc0100000, l = 20K
+    ram : org = 0x100000, l = 24K
+    high : org = 0xffffffffc0100000, l = 24K
 }
 
 SECTIONS {

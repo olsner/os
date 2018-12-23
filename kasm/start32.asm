@@ -12,7 +12,7 @@ global gdtr
 
 section..text.vstart equ pages.kernel
 kernel_pdp equ pages.kernel_pdp
-%define kernel_pages 5
+%define kernel_pages 6
 
 %define mboot_use_cmdline 1
 %define use_1gb_pages 0
