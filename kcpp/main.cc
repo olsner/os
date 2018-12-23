@@ -11,17 +11,7 @@
 template <typename T> using RefCnt = std::shared_ptr<T>;
 template <typename T> using Ptr = std::unique_ptr<T>;
 
-typedef int64_t i64;
-typedef int32_t i32;
-typedef int16_t i16;
-typedef int8_t i8;
-typedef uint64_t u64;
-typedef uint32_t u32;
-typedef uint16_t u16;
-typedef uint8_t u8;
-typedef uintptr_t size_t;
-typedef intptr_t ssize_t;
-typedef unsigned int uint;
+#include "types.h"
 
 #define PACKED __attribute__((packed))
 #define UNUSED __attribute__((unused))
@@ -85,6 +75,8 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #include "xprintf.cpp"
 
 #include "addr.h"
+#include "mboot.h"
+#include "mem.h"
 
 using std::abort;
 void NORETURN abort(const char *msg) {
@@ -298,8 +290,6 @@ namespace idt {
     }
 }
 
-#include "mboot.h"
-
 // Symbols exported by start32.o
 namespace start32 {
     extern "C" u32 memory_start;
@@ -339,10 +329,7 @@ using aspace::AddressSpace;
 
 #include "dict.h"
 #include "dlist.h"
-}
-#include "mem.h"
 #include "reflist.h"
-namespace {
 #include "handle.h"
 #include "aspace.h"
 #include "proc.h"

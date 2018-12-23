@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 namespace mboot {
 
 struct VBE {

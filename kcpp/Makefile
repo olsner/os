@@ -11,17 +11,15 @@ GRUBDIR ?= ../out/grub
 
 YASM ?= ../yasm/yasm
 
-CFLAGS = -g -Os -ffunction-sections -fdata-sections
+CFLAGS = -g -Os
 CFLAGS += -fvisibility-inlines-hidden -fvisibility=hidden
 CFLAGS += -mcmodel=kernel -mno-red-zone -mno-sse -mno-mmx
-CFLAGS += -ffreestanding $(COPTFLAGS)
+CFLAGS += -ffreestanding -fshort-enums
 CFLAGS += -fno-threadsafe-statics
 CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
 CFLAGS += -Iinclude
-COPTFLAGS = -fno-unroll-loops -funit-at-a-time
 CXXFLAGS = $(CFLAGS) -std=gnu++17
 CXXFLAGS += -fno-exceptions -fno-rtti
-LDFLAGS = -Wl,--check-sections -Wl,--gc-sections
 LDFLAGS += -Wl,--oformat=elf64-x86-64
 LDFLAGS += -Wl,-Map,$(@:.elf=.map)
 LDFLAGS += -ffreestanding -nostdlib
@@ -30,8 +28,10 @@ HOST_CXXFLAGS = -g -Os -std=gnu++17
 
 ifeq ($(LTO), YES)
 HUSH_LD_LTO = +$(HUSH_LD)
-LDFLAGS += -flto=$(JOBS) -fuse-linker-plugin
-CFLAGS += -flto
+CFLAGS += -flto -flto-odr-type-merging
+LDFLAGS += -flto=jobserver
+LDFLAGS += -fuse-linker-plugin
+LDFLAGS += $(CXXFLAGS)
 endif
 
 all: $(GRUBDIR)/kcpp

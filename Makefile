@@ -360,5 +360,7 @@ yasm/configure:
 $(GRUBDIR)/kcpp: out/start32.o force_kcpp
 	$(MAKE) -C kcpp
 
-clean::
+clean:: clean-kcpp
+
+clean-kcpp::
 	$(MAKE) -C kcpp clean

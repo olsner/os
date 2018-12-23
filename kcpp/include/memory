@@ -5,8 +5,10 @@
 #include <atomic>
 #include <utility>
 
+namespace {
 template <typename T> class RefList;
 template <typename T> class RefListIterator;
+}
 
 namespace std {
 
