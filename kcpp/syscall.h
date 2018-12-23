@@ -1,5 +1,7 @@
 namespace syscall {
 
+using std::move;
+
 namespace {
 
 enum syscalls_builtins {
@@ -50,7 +52,7 @@ u64 portio(u16 port, u8 op, u32 data) {
     return res;
 }
 
-void hmod(Process *p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
+void hmod(RefCnt<Process> p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
     log(hmod, "%s hmod: id=%lx rename=%lx copy=%lx\n", p->name(), id, rename, copy);
     auto aspace = p->aspace;
     if (auto handle = aspace->find_handle(id)) {
@@ -65,7 +67,7 @@ void hmod(Process *p, uintptr_t id, uintptr_t rename, uintptr_t copy) {
     }
 }
 
-void transfer_set_handle(Process *target, Process *source) {
+void transfer_set_handle(RefCnt<Process> target, RefCnt<Process> source) {
     auto rcpt = target->regs.rdi;
     auto from = source->regs.rdi;
 
@@ -93,11 +95,11 @@ void transfer_set_handle(Process *target, Process *source) {
     target->regs.rdi = rcpt;
 }
 
-NORETURN void syscall_return(Process *p, u64 res) {
+NORETURN void syscall_return(RefCnt<Process>& p, u64 res) {
     getcpu().syscall_return(p, res);
 }
 
-NORETURN void transfer_message(Process *target, Process *source) {
+NORETURN void transfer_message(RefCnt<Process>& target, RefCnt<Process>& source) {
     transfer_set_handle(target, source);
     log(transfer_message, "transfer_message %s <- %s\n", target->name(), source->name());
 
@@ -121,10 +123,12 @@ NORETURN void transfer_message(Process *target, Process *source) {
     } else {
         target->add_waiter(source);
     }
+    source.reset();
+    target.reset();
     c.run();
 }
 
-NORETURN void transfer_pulse(Process *target, uintptr_t key, uintptr_t events) {
+NORETURN void transfer_pulse(RefCnt<Process>& target, uintptr_t key, uintptr_t events) {
     // Apparently we need the source process for transfer_set_handle, but we
     // already know the key that we should set.
     target->regs.rax = SYS_PULSE;
@@ -137,7 +141,7 @@ NORETURN void transfer_pulse(Process *target, uintptr_t key, uintptr_t events) {
     getcpu().switch_to(target);
 }
 
-void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+void send_or_block(RefCnt<Process> sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     sender->regs.rax = msg;
     sender->regs.rdi = h->key();
     sender->regs.rsi = arg1;
@@ -154,21 +158,22 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
         transfer_message(p, sender);
     } else {
         log(ipc, "send_or_block: no available recipient, %s waits for %s\n", sender->name(), h->otherspace->name());
-        sender->wait_for(h->otherspace);
+        h->otherspace->add_waiter(sender);
     }
 }
 
-NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
+NORETURN void ipc_send(RefCnt<Process>& p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     auto handle = p->find_handle(rcpt);
     log(ipc, "%s ipc_send to %lx (%s)\n", p->name(), rcpt, handle ? handle->otherspace->name() : NULL);
     assert(handle);
     p->set(proc::InSend);
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
+    p.reset();
     log(ipc, "ipc_send: blocked\n");
     getcpu().run();
 }
 
-NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
+NORETURN void ipc_call(RefCnt<Process>& p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     auto handle = p->find_handle(rcpt);
     assert(handle);
     log(ipc, "%s ipc_call to %lx (%s)\n", p->name(), rcpt, handle->otherspace->name());
@@ -176,11 +181,12 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
     p->set(proc::InRecv);
     p->regs.rdi = rcpt;
     send_or_block(p, handle, msg, arg1, arg2, arg3, arg4, arg5);
+    p.reset();
     log(ipc, "ipc_call: blocked\n");
     getcpu().run();
 }
 
-NORETURN void ipc_recv(Process *p, u64 from) {
+NORETURN void ipc_recv(RefCnt<Process>& p, u64 from) {
     auto handle = from ? p->find_handle(from) : nullptr;
     log(recv, "%s recv from %lx (%s)\n", p->name(), from,
             handle ? handle->otherspace->name() : "fresh");
@@ -216,7 +222,7 @@ NORETURN void ipc_recv(Process *p, u64 from) {
     getcpu().run();
 }
 
-NORETURN void syscall_pulse(Process *p, uintptr_t handle, uintptr_t bits) {
+NORETURN void syscall_pulse(RefCnt<Process>& p, uintptr_t handle, uintptr_t bits) {
     auto h = p->find_handle(handle);
     log(pulse, "%s sending pulse %lx to %lx (%s)\n", p->name(), bits, handle,
             h ? h->otherspace->name() : "null");
@@ -240,7 +246,7 @@ NORETURN void syscall_pulse(Process *p, uintptr_t handle, uintptr_t bits) {
     }
 }
 
-NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
+NORETURN void syscall_map(RefCnt<Process>& p, uintptr_t handle, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
     using namespace aspace;
 
     // TODO (also unimpl in asm): remove any previously backed pages.
@@ -279,7 +285,7 @@ NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr
     syscall_return(p, 0);
 }
 
-NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
+NORETURN void syscall_pfault(RefCnt<Process>& p, uintptr_t vaddr, uintptr_t flags) {
     // TODO Error out instead of silently adjusting the values.
     vaddr &= -4096;
     flags &= aspace::MAP_RWX;
@@ -304,7 +310,7 @@ NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
 // Respond to a PFAULT message from a process that's mapped some memory from
 // us. This could be from a "prefault" syscall, or from the page fault
 // exception handler.
-NORETURN void syscall_grant(Process *p, uintptr_t handle, uintptr_t vaddr, uintptr_t flags) {
+NORETURN void syscall_grant(RefCnt<Process>& p, uintptr_t handle, uintptr_t vaddr, uintptr_t flags) {
     using namespace aspace;
 
     // TODO Error out instead of adjusting
@@ -366,9 +372,9 @@ NORETURN void syscall_grant(Process *p, uintptr_t handle, uintptr_t vaddr, uintp
     unimpl("grant after page fault");
 }
 
-NORETURN void syscall_yield(Process *p) {
+NORETURN void syscall_yield(RefCnt<Process>& p) {
     auto &cpu = getcpu();
-    cpu.queue(p);
+    cpu.queue(move(p));
     cpu.run();
 }
 

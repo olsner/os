@@ -3,11 +3,13 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 
 #include <memory>
 template <typename T> using RefCnt = std::shared_ptr<T>;
+template <typename T> using Ptr = std::unique_ptr<T>;
 
 typedef int64_t i64;
 typedef int32_t i32;
@@ -24,6 +26,7 @@ typedef unsigned int uint;
 #define PACKED __attribute__((packed))
 #define UNUSED __attribute__((unused))
 #define NORETURN __attribute__((noreturn))
+#define NOINLINE __attribute__((noinline))
 #define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
 
 extern "C" void start64() NORETURN;
@@ -50,7 +53,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_add_pte 0
 #define log_int_entry 0
 #define log_int_entry_regs 0
-#define log_irq 0
+#define log_irq 1
 #define log_portio 0
 #define log_hmod 0
 #define log_dict_find 0
@@ -94,14 +97,9 @@ void unimpl(const char *what) {
     abort();
 }
 
-namespace {
+using std::latch;
 
-template <typename T>
-T latch(T& var, T value = T()) {
-    T res = var;
-    var = value;
-    return res;
-}
+namespace {
 
 namespace x86 {
     namespace msr {
@@ -343,6 +341,7 @@ using aspace::AddressSpace;
 #include "dlist.h"
 }
 #include "mem.h"
+#include "reflist.h"
 namespace {
 #include "handle.h"
 #include "aspace.h"
@@ -352,7 +351,7 @@ using cpu::Cpu;
 using cpu::getcpu;
 #include "syscall.h"
 
-Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
+RefCnt<Process> new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     u32 end = (end_unaligned + 0xfff) & ~0xfff;
     u32 start_page = start & ~0xfff;
     auto aspace = std::make_shared<AddressSpace>();
@@ -362,14 +361,14 @@ Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     aspace->mapcard_set(0x100000, 0, start_page - 0x100000, MAP_PHYS | MAP_RX);
     aspace->mapcard_set(0x100000 + (end - start_page), 0, 0, 0);
 
-    auto ret = new Process(std::move(aspace));
+    auto ret = std::make_shared<Process>(std::move(aspace));
     ret->regs.rsp = 0x100000;
     ret->rip = 0x100000 + (start & 0xfff);
     return ret;
 }
 
-void assoc_procs(Process *p, uintptr_t i, Process *q, uintptr_t j) {
-    log(assoc_procs, "%p:%lu <-> %lu:%p\n", p, i, j, q);
+void assoc_procs(RefCnt<Process> p, uintptr_t i, RefCnt<Process> q, uintptr_t j) {
+    log(assoc_procs, "%p:%lu <-> %lu:%p\n", p.get(), i, j, q.get());
     p->assoc_handles(j, q, i);
 }
 
@@ -378,7 +377,7 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
     auto mod = PhysAddr<mboot::Module>(info.mods_addr);
     const size_t count = info.mods_count;
     printf("%zu module(s)\n", count);
-    Process **procs = new Process *[count];
+    RefCnt<Process> *procs = new RefCnt<Process>[count];
     for (size_t n = 0; n < count; n++) {
         const char *name = PhysAddr<char>(mod->string);
         printf("Module %#x..%#x: %s\n", mod->start, mod->end, name);
@@ -394,7 +393,7 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
         }
     }
     for (size_t i = 0; i < count; i++) {
-        cpu->queue(procs[i]);
+        cpu->queue(std::move(procs[i]));
     }
     delete[] procs;
 }
@@ -409,7 +408,7 @@ namespace pf {
     };
 };
 
-NORETURN void page_fault(Process *p, u64 error) {
+NOINLINE NORETURN void page_fault(RefCnt<Process>& p, u64 error) {
     log(page_fault, "page fault %lx cr2=%p rip=%p in %s\n",
         error, (void*)x86::cr2(), (void*)p->rip, p->name());
 
@@ -417,7 +416,7 @@ NORETURN void page_fault(Process *p, u64 error) {
     i64 fault_addr = x86::cr2();
     assert(fault_addr >= 0);
 
-    auto as = p->aspace;
+    auto& as = p->aspace;
     auto *back = as->find_add_backing(fault_addr & -0x1000);
     if (!back) {
         printf("Fatal page fault in %s. err=%lx cr2=%p\n", p->name(), error, (void*)x86::cr2());
@@ -432,7 +431,7 @@ NORETURN void page_fault(Process *p, u64 error) {
 void handle_irq_generic(Cpu *cpu, u8 vec) {
     auto p = cpu->irq_process;
     assert(p);
-    log(irq, "IRQ %d triggered, irq process is %s\n", vec, p->name());
+    log(irq, "IRQ %d triggered, irq process is %s (%zu)\n", vec, p->name(), p.use_count());
 
     vec -= 32;
     u8 ix = vec >> 6;
@@ -468,15 +467,16 @@ void int_entry(u8 vec, u64 err, Cpu *cpu) {
         asm("cli;hlt");
         __builtin_unreachable();
     }
-    auto p = cpu->process;
+    RefCnt<Process> p = cpu->process;
     if (p) {
         if (log_int_entry_regs) {
             printf("Process registers (%s)\n", cpu->process->name());
             cpu->process->saved_regs.dump();
         }
+        printf("Leaving process with %zu refs\n", p.use_count());
         cpu->leave(p);
     } else {
-        log(idle, "Got interrupt %u while idle\n", vec);
+        log(irq, "Got interrupt %u while idle\n", vec);
     }
     // TODO Add symbolic constants for all defined exceptions
     switch (vec) {
@@ -487,7 +487,7 @@ void int_entry(u8 vec, u64 err, Cpu *cpu) {
     default:
         if (vec >= 32) {
             if (p) {
-                cpu->queue(p);
+                cpu->queue(std::move(p));
             }
             handle_irq_generic(cpu, vec);
             cpu->run();

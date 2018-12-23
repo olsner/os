@@ -32,30 +32,33 @@ void setup_msrs(u64 gs) {
 
 using x86::SavedRegs;
 
-struct Cpu {
-    // NB: Initial fields shared with assembly code.
-    Cpu *self;
+struct CpuAsm {
+    CpuAsm *self;
     u8 *stack;
-    Process *process;
+    // TODO Remove the process_ptr and don't use it from asm.
+    Process* process_ptr;
     SavedRegs *kernel_reg_save_pointer;
-    // END OF ASSEMBLY-SHARED FIELDS
-
-    // mem::PerCpu memory
-    DList<Process> runqueue;
-    Process *irq_process;
-    u64 irq_delayed[4];
-
-    SavedRegs kernel_reg_save;
 
     // Assume everything else is 0-initialized
     // FIXME There's already a stack allocated by the boot loader, a bit
     // wasteful to allocate a new one. Non-first CPUs might need this code
     // though?
-    Cpu():
+    CpuAsm(SavedRegs *kernel_reg_save):
         self(this),
         stack(new u8[4096]),
-        kernel_reg_save_pointer(&kernel_reg_save) {
+        kernel_reg_save_pointer(kernel_reg_save) {
     }
+};
+
+struct Cpu: CpuAsm {
+    RefList<Process> runqueue;
+    RefCnt<Process> irq_process;
+    RefCnt<Process> process;
+    u64 irq_delayed[4];
+
+    SavedRegs kernel_reg_save;
+
+    Cpu(): CpuAsm(&kernel_reg_save) {}
     Cpu(Cpu&) = delete;
     Cpu& operator=(Cpu&) = delete;
 
@@ -64,7 +67,7 @@ struct Cpu {
     }
 
     NORETURN void run() {
-        if (Process *p = runqueue.pop()) {
+        if (RefCnt<Process> p = runqueue.pop()) {
             log(switch, "run: popped %s\n", p->name());
             assert(p->is_queued());
             p->unset(proc::Queued);
@@ -74,7 +77,7 @@ struct Cpu {
         }
     }
 
-    void queue(Process *p) {
+    void queue(RefCnt<Process> p) {
         log(runqueue, "queue %s. queued=%d flags=%lu\n", p->name(), p->is_queued(), p->flags);
         assert(p->is_runnable());
         if (!p->is_queued()) {
@@ -83,30 +86,36 @@ struct Cpu {
         }
     }
 
-    void leave(Process *p) {
-        assert(p == process);
-        log(runqueue, "leaving %s\n", p->name());
+    void leave(RefCnt<Process> p) {
+        assert(process == p);
+        log(runqueue, "leaving %s (%zu)\n", p->name(), p.use_count());
         p->unset(proc::Running);
-        process = NULL;
+        process.reset();
+        process_ptr = nullptr;
+        log(runqueue, "left %s (%zu)\n", p->name(), p.use_count());
     }
 
-    NORETURN void switch_to(Process *p) {
-        log(switch, "switch_to %s rip=%#lx fastret=%d queued=%d\n",
-                p->name(), p->rip, p->is(proc::FastRet), p->is(proc::Queued));
+    NORETURN void switch_to(RefCnt<Process>& p) {
+        log(switch, "switch_to %s(%zu) rip=%#lx fastret=%d queued=%d\n",
+                p->name(), p.use_count(), p->rip, p->is(proc::FastRet), p->is(proc::Queued));
         assert(this == &getcpu());
         assert(!process);
         assert(!p->is(proc::Running));
         assert(p->is_runnable());
         p->set(proc::Running);
         if (process != p) {
-            process = p;
-            x86::set_cr3(p->cr3);
-        }
-        if (p->is(proc::FastRet)) {
-            p->unset(proc::FastRet);
-            fastret(p, p->regs.rax);
+            process = std::move(p);
+            x86::set_cr3(process->cr3);
         } else {
-            slowret(p);
+            p.reset();
+        }
+        process_ptr = process.get();
+        log(switch, "switch_to %s (%zu)\n", process->name(), process.use_count());
+        if (process->is(proc::FastRet)) {
+            process->unset(proc::FastRet);
+            fastret(process.get(), process->regs.rax);
+        } else {
+            slowret(process.get());
         }
     }
 
@@ -115,7 +124,7 @@ struct Cpu {
     // same process that called (e.g. in IPC cases when the old is blocked and
     // the new is immediately made runnable), so the context switch stuff in
     // switch_to is mostly still necessary.
-    NORETURN void syscall_return(Process *p, u64 rax) {
+    NORETURN void syscall_return(RefCnt<Process>& p, u64 rax) {
         log(switch, "syscall_return %s rax=%lx\n", p->name(), p->regs.rax);
         p->regs.rax = rax;
         switch_to(p);
@@ -137,7 +146,8 @@ struct Cpu {
 
 void idle(Cpu *cpu) {
     log(idle, "idle\n");
-    cpu->process = NULL;
+    cpu->process = nullptr;
+    cpu->process_ptr = nullptr;
     asm volatile("sti; hlt" ::: "memory");
     // We should have entered an interrupt handler which would not "return"
     // here but rather just re-idle.

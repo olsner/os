@@ -58,10 +58,8 @@ struct ProcessAsm {
 struct Process: ProcessAsm {
     u64 flags;
 
-    DListNode<Process> node;
-
     const RefCnt<AddressSpace> aspace;
-    AddressSpace *waiting_for;
+    AddressSpace* waiting_for;
     uintptr_t fault_addr;
     // TODO FXSave
 
@@ -73,8 +71,13 @@ struct Process: ProcessAsm {
         rflags = x86::rflags::IF;
     }
 
+    ~Process() {
+        printf("~Process(%s)\n", name());
+        abort();
+    }
+
     // TODO static/global make_handle_pair or something
-    void assoc_handles(uintptr_t j, Process *other, uintptr_t i) {
+    void assoc_handles(uintptr_t j, RefCnt<Process> other, uintptr_t i) {
         auto otherspace = other->aspace;
         auto x = aspace->new_handle(j, &*otherspace);
         auto y = otherspace->new_handle(i, &*aspace);
@@ -92,13 +95,10 @@ struct Process: ProcessAsm {
         aspace->delete_handle(handle);
     }
 
-    void wait_for(AddressSpace *otherspace) {
-        otherspace->add_waiter(this);
+    void add_waiter(RefCnt<Process> other) {
+        aspace->add_waiter(other);
     }
-    void add_waiter(Process *other) {
-        other->wait_for(&*aspace);
-    }
-    void remove_waiter(Process *other) {
+    void remove_waiter(RefCnt<Process> other) {
         aspace->remove_waiter(other);
     }
 
@@ -130,7 +130,7 @@ struct Process: ProcessAsm {
 
 namespace aspace {
 
-Process *AddressSpace::pop_sender(Handle *target) {
+RefCnt<Process> AddressSpace::pop_sender(Handle *target) {
     for (auto p: waiters) {
         if (p->is(proc::InSend)
             && (!target
@@ -144,13 +144,13 @@ Process *AddressSpace::pop_sender(Handle *target) {
     return nullptr;
 }
 
-Process *AddressSpace::pop_recipient(Handle *source) {
+RefCnt<Process> AddressSpace::pop_recipient(Handle *source) {
     return pop_recipient(source, proc::mask(proc::InRecv));
 }
-Process *AddressSpace::pop_pfault_recipient(Handle *source) {
+RefCnt<Process> AddressSpace::pop_pfault_recipient(Handle *source) {
     return pop_recipient(source, proc::mask(proc::InRecv) | proc::mask(proc::PFault));
 }
-Process *AddressSpace::pop_recipient(Handle *source, uintptr_t ipc_state) {
+RefCnt<Process> AddressSpace::pop_recipient(Handle *source, uintptr_t ipc_state) {
     // Iterate waiters, find a "remote" process that can receive something from
     // source.
     Handle *other = source->other;
@@ -176,7 +176,7 @@ Process *AddressSpace::pop_recipient(Handle *source, uintptr_t ipc_state) {
     return nullptr;
 }
 
-Process *AddressSpace::pop_open_recipient() {
+RefCnt<Process> AddressSpace::pop_open_recipient() {
     for (auto p: blocked) {
         if (p->ipc_state() == proc::mask(proc::InRecv)) {
             log(waiters, "%s get_recipient(): found %s\n", name(), p->name());
@@ -191,7 +191,7 @@ Process *AddressSpace::pop_open_recipient() {
     return nullptr;
 }
 
-void AddressSpace::add_waiter(Process *p)
+void AddressSpace::add_waiter(RefCnt<Process> p)
 {
     log(waiters, "%s adds waiter %s\n", name(), p->name());
     assert(!p->waiting_for);
@@ -199,14 +199,14 @@ void AddressSpace::add_waiter(Process *p)
     waiters.append(p);
     p->waiting_for = this;
 }
-void AddressSpace::remove_waiter(Process *p)
+void AddressSpace::remove_waiter(RefCnt<Process> p)
 {
     log(waiters, "%s removes waiter %s\n", name(), p->name());
     assert(p->waiting_for == this || p->waiting_for == nullptr);
     waiters.remove(p);
     p->waiting_for = nullptr;
 }
-void AddressSpace::add_blocked(Process *p)
+void AddressSpace::add_blocked(RefCnt<Process> p)
 {
     log(waiters, "%s is now blocked on %s\n", p->name(), name());
     assert(!p->waiting_for);
@@ -214,7 +214,7 @@ void AddressSpace::add_blocked(Process *p)
     blocked.append(p);
     p->waiting_for = this;
 }
-void AddressSpace::remove_blocked(Process *p)
+void AddressSpace::remove_blocked(RefCnt<Process> p)
 {
     log(waiters, "%s unblocked\n", p->name());
     assert(p->waiting_for == this);

@@ -148,10 +148,10 @@ class AddressSpace {
     Dict<PendingPulse> pending;
 
     // Processes waiting for this address space to do something.
-    DList<Process> waiters;
+    RefList<Process> waiters;
     // Processes in this address space waiting for something to happen, e.g. in
     // an open-ended receive that could be fulfilled by any other process.
-    DList<Process> blocked;
+    RefList<Process> blocked;
 
     char name_[16];
 
@@ -210,7 +210,7 @@ public:
         // that sets what the parameters starting at end.
         mapcard_set(start, handle, offsetFlags);
 
-        // Find all cards vaddr < key < end and remove them.
+        // Find all cards start < key < end and remove them.
         while (MapCard *p = mapcards.remove_range_exclusive(start, end))
         {
             delete p;
@@ -342,30 +342,30 @@ public:
 
     // Find a process waiting to send a message to 'target' in our address
     // space, and remove it from the waiters list.
-    Process *pop_sender(Handle *target);
+    RefCnt<Process> pop_sender(Handle *target);
 
     // Find a process waiting to receive a message from source (our end),
     // return it or NULL if no match is found. Also removes the process from
     // the relevant wait list.
-    Process *pop_recipient(Handle *source);
-    Process *pop_pfault_recipient(Handle *source);
+    RefCnt<Process> pop_recipient(Handle *source);
+    RefCnt<Process> pop_pfault_recipient(Handle *source);
     // Also accept processes in a specific ipc state (e.g. page fault).
-    Process *pop_recipient(Handle *source, uintptr_t ipc_state);
+    RefCnt<Process> pop_recipient(Handle *source, uintptr_t ipc_state);
 
     // Find a process in this address space waiting to receive any message.
     // Note that as opposed to pop_sender/recipient, the blocked process is in
     // this address space, in other words you want to run this on the target
     // address space when trying to send.
-    Process *pop_open_recipient();
+    RefCnt<Process> pop_open_recipient();
 
     // Add a process (in *another* address space) that is blocked on something
     // in this address space.
-    void add_waiter(Process *p);
-    void remove_waiter(Process *p);
+    void add_waiter(RefCnt<Process> p);
+    void remove_waiter(RefCnt<Process> p);
 
     // Add a process (in this address space) that is blocked on something
     // unspecified.
-    void add_blocked(Process *p);
-    void remove_blocked(Process *p);
+    void add_blocked(RefCnt<Process> p);
+    void remove_blocked(RefCnt<Process> p);
 };
 }
