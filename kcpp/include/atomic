@@ -1,5 +1,7 @@
 // vim: set filetype=cpp:
 
+#define __forceinline __attribute__((always_inline))
+
 namespace std {
 
 template <typename T>
@@ -8,20 +10,20 @@ class atomic
     T __elem;
 
 public:
-    T operator++() {
-        return __atomic_add_fetch(&__elem, 1, __ATOMIC_SEQ_CST);
+    __forceinline void operator++() {
+        __atomic_add_fetch(&__elem, 1, __ATOMIC_SEQ_CST);
     }
-    T operator++(int) {
-        return __atomic_fetch_add(&__elem, 1, __ATOMIC_SEQ_CST);
+    __forceinline void operator++(int) {
+        __atomic_fetch_add(&__elem, 1, __ATOMIC_SEQ_CST);
     }
-    T operator--() {
+    __forceinline T operator--() {
         return __atomic_sub_fetch(&__elem, 1, __ATOMIC_SEQ_CST);
     }
-    T operator--(int) {
+    __forceinline T operator--(int) {
         return __atomic_fetch_sub(&__elem, 1, __ATOMIC_SEQ_CST);
     }
 
-    T load(/*std::memory_order*/) const {
+    __forceinline T load(/*std::memory_order*/) const {
         return __atomic_load_n(&__elem, __ATOMIC_SEQ_CST);
     }
 };
