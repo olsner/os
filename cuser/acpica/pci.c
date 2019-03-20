@@ -1,9 +1,13 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "common.h"
 #include "acpi.h"
 #include "acpica.h"
+
+static const bool log_enum_pci = true;
+static const bool log_find_pci = false;
 
 static UINT32 getPCIConfig(u8 bus, u8 dev, u8 func, u8 offset, UINT32 width)
 {
@@ -46,7 +50,7 @@ static ACPI_STATUS EnumPCIDevice(u8 bus, u8 dev, PCIEnum* cb);
 
 static ACPI_STATUS EnumPCIBus(u8 bus, PCIEnum* cb) {
 	u8 dev = 0;
-	//printf("acpica: Enumerating bus %02x...\n", bus);
+	//log(enum_pci, "acpica: Enumerating bus %02x...\n", bus);
 	for (; dev < 32; dev++) {
 		ACPI_RETURN_IF(EnumPCIDevice(bus, dev, cb));
 	}
@@ -73,14 +77,14 @@ static ACPI_STATUS EnumPCIFunction(u8 bus, u8 dev, u8 func, PCIEnum* cb) {
 	}
 	if (!cb || status == AE_CTRL_TERMINATE)
 	{
-		printf("%02x:%02x.%x: Found device %#04x:%#04x class %#x:%#x\n",
+		log(enum_pci, "%02x:%02x.%x: Found device %#04x:%#04x class %#x:%#x\n",
 			bus, dev, func, vendor, device, baseClass, subClass);
 	}
 	ACPI_RETURN_IF(status);
 	if (baseClass == 6 && subClass == 4)
 	{
 		if ((headerType & 0x7f) != 1) {
-			printf("%02x:%02x.%x: Wrong header type %#x for PCI-to-PCI bridge\n",
+			log(enum_pci, "%02x:%02x.%x: Wrong header type %#x for PCI-to-PCI bridge\n",
 					bus, dev, func, headerType);
 			/* Just ignore this device "successfully". */
 			return AE_OK;
@@ -121,7 +125,7 @@ ACPI_STATUS FindPCIDevByVendor(u16 vendor, u16 device, ACPI_PCI_ID* id) {
 	cb.cb = FindPCIDevCB;
 	cb.in.vendor = vendor;
 	cb.in.device = device;
-	printf("acpica: Looking for %#04x:%#04x devices...\n", vendor, device);
+	log(find_pci, "Looking for %#04x:%#04x devices...\n", vendor, device);
 	ACPI_STATUS status = EnumPCIBus(0, &cb);
 	if (status == AE_OK)
 	{

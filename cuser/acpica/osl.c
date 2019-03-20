@@ -1,10 +1,14 @@
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 #include <sb1.h>
 
 #include "acpi.h"
 #include "acpica.h"
+
+static const bool log_osl = false;
+static const bool log_global_lock = false;
 
 UINT64 AcpiOsGetThreadId()
 {
@@ -131,7 +135,7 @@ void * AcpiOsMapMemory (
     ACPI_PHYSICAL_ADDRESS   Where,
     ACPI_SIZE               Length)
 {
-	//printf("mapping %x size %x => %x\n", Where, Length, ((char*)ACPI_PHYS_BASE) + Where);
+	//log(map_memory, "mapping %x size %x => %x\n", Where, Length, ((char*)ACPI_PHYS_BASE) + Where);
 	return ((char*)ACPI_PHYS_BASE) + Where;
 }
 
@@ -139,7 +143,7 @@ void AcpiOsUnmapMemory (
     void                    *Where,
     ACPI_SIZE               Length)
 {
-	//printf("Unmapping %p\n", Where, Length);
+	//log(map_memory, "Unmapping %p\n", Where, Length);
 }
 
 ACPI_STATUS
@@ -149,7 +153,7 @@ AcpiOsWritePort (
     UINT32                  Width)
 {
 	Width >>= 3;
-//	printf("WritePort %#x value %#lx width %#x\n", Address, (UINT64)Value, Width);
+//	log(io, "WritePort %#x value %#lx width %#x\n", Address, (UINT64)Value, Width);
 	portio(Address, Width | 0x10, Value);
     return (AE_OK);
 }
@@ -162,9 +166,9 @@ AcpiOsReadPort (
 {
 	// Width is in bits! Our APIs expect bytes.
 	Width >>= 3;
-//	printf("ReadPort %x width %x\n", Address, Width);
+//	log(io, "ReadPort %x width %x\n", Address, Width);
 	*Value = portio(Address, Width, 0);
-//	printf("ReadPort %x width %x ==> %x\n", Address, Width, *Value);
+//	log(io, "ReadPort %x width %x ==> %x\n", Address, Width, *Value);
     return (AE_OK);
 }
 
@@ -306,7 +310,6 @@ AcpiOsReadPciConfiguration (
     UINT64                  *Value,
     UINT32                  Width)
 {
-	//printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width);
 	UINT32 Addr = AddrFromPciId(PciId, Register);
 	AcpiOsWritePort(0xcf8, Addr, 32);
 	UINT32 Temp;
@@ -345,7 +348,6 @@ AcpiOsWritePciConfiguration (
     UINT64                  Value,
     UINT32                  Width)
 {
-	//printf("AcpiOsReadPciConfiguration %02x:%02x.%x reg %x w %d := %lx\n", PciId->Bus, PciId->Device, PciId->Function, Register, Width, Value);
 	if (Width == 64) {
 		AcpiOsWritePciConfiguration(PciId, Register + 4, Value >> 32, 32);
 		Width = 32;
@@ -386,13 +388,12 @@ AcpiOsSignal (
 
 void AcpiOsFlushCache()
 {
-    printf("FlushCache\n");
+    log(osl, "FlushCache\n");
 }
 
 UINT64 AcpiOsGetTimer()
 {
-	printf("GetTimer\n");
-	return 0;
+    unimpl("AcpiOsGetTimer");
 }
 
 ACPI_STATUS
@@ -421,7 +422,7 @@ uint32_t AcpiOsReleaseGlobalLock(ACPI_TABLE_FACS* facs)
 		old = *lock;
 		new = old & ~3;
 	} while (!__sync_bool_compare_and_swap(lock, old, new));
-	printf("Released global lock. Pending was %d\n", old & 1);
+	log(global_lock, "Released global lock. Pending was %d\n", old & 1);
 	return old & 1;
 }
 
@@ -438,7 +439,7 @@ uint32_t AcpiOsAcquireGlobalLock(ACPI_TABLE_FACS* facs)
 		new = (old & ~1) | ((old & 2) >> 1) | 2;
 	} while (!__sync_bool_compare_and_swap(lock, old, new));
 	// Return true if acquired. We set the pending-bit if we started waiting.
-	printf("Acquired global lock: pending=%d\n", new&1);
+	log(global_lock, "Acquired global lock: pending=%d\n", new&1);
 	return !(new & 1);
 }
 
