@@ -305,7 +305,6 @@ ACPI_OBJS += $(addprefix $(OUTDIR)/cuser/acpica/, \
 
 ACPI_CFLAGS := -Icuser -Icuser/acpica -I$(ACPICA_INCLUDE)
 ACPI_CFLAGS += -DACENV_HEADER='"acenv_header.h"'
-ACPI_CFLAGS += -DACPI_FULL_DEBUG
 ifeq ($(filter clang,$(CC)), clang)
 # Triggers a lot on the ACPI_MODULE_NAME construct, when the name is not used.
 ACPI_CFLAGS += -Wno-unused-const-variable

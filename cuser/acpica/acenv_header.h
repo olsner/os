@@ -10,6 +10,15 @@
 
 #define DEBUGGER_THREADING DEBUGGER_SINGLE_THREADED
 
+// Doesn't seem to be possible to build without this enabled? Are you supposed
+// to remove the debugger source files when disabling it?
+#define ACPI_FULL_DEBUG
+#ifdef ACPI_FULL_DEBUG
+#define ACPI_DEBUG_OUTPUT
+#define ACPI_DEBUGGER 1
+#define ACPI_DISASSEMBLER 1
+#endif
+
 #undef ACPI_GET_FUNCTION_NAME
 #ifdef ACPI_FULL_DEBUG
 #define ACPI_DBG_TRACK_ALLOCATIONS
