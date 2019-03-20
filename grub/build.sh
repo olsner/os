@@ -3,7 +3,7 @@
 
 . ../build/buildfuncs.sh
 
-CROSSVER=8.1.0
+CROSSVER=8.3.0
 GRUBVER=grub-2.02
 PREFIX=`pwd`/prefix-${GRUBVER}-${CROSSVER}
 LOGDIR=`pwd`/logs

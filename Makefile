@@ -9,7 +9,7 @@ include build/makebuffer.mk
 CCACHE ?= ccache
 ifneq ($(USE_CROSS),NO)
 CROSS := x86_64-elf-
-CROSSVER := 8.1.0
+CROSSVER := 8.3.0
 CROSSDIR := $(CURDIR)/toolchain/cross-$(CROSSVER)
 export PATH := $(PATH):$(CROSSDIR)/bin
 else

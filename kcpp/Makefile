@@ -18,13 +18,13 @@ CFLAGS += -ffreestanding $(COPTFLAGS)
 CFLAGS += -fno-threadsafe-statics
 CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
-CXXFLAGS = $(CFLAGS) -std=gnu++14
+CXXFLAGS = $(CFLAGS) -std=gnu++17
 LDFLAGS = -Wl,--check-sections -Wl,--gc-sections
 LDFLAGS += -Wl,--oformat=elf64-x86-64
 LDFLAGS += -Wl,-Map,$(@:.elf=.map)
 LDFLAGS += -ffreestanding -nostdlib
 
-HOST_CXXFLAGS = -g -Os -std=gnu++14
+HOST_CXXFLAGS = -g -Os -std=gnu++17
 
 ifeq ($(LTO), YES)
 HUSH_LD_LTO = +$(HUSH_LD)
