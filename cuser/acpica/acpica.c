@@ -1,9 +1,16 @@
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <sb1.h>
 
 #include "common.h"
 #include "acpica.h"
+
+static bool log_apic_table = false;
+
+#define log(scope, fmt, ...) \
+	do { if (log_## scope) { printf(fmt, ## __VA_ARGS__); } } while (0)
+
 
 static void FreeBuffer(ACPI_BUFFER* buffer) {
 	AcpiOsFree(buffer->Pointer);
@@ -134,8 +141,6 @@ static ACPI_STATUS ExecuteOSI(int pic_mode)
     Arg[0].Type = ACPI_TYPE_INTEGER;
     Arg[0].Integer.Value = pic_mode;
 
-    ACPI_INFO(("Executing _PIC(%d)", pic_mode));
-
     /* Ask ACPICA to allocate space for the return object */
 
     ReturnValue.Pointer = 0;
@@ -145,7 +150,6 @@ static ACPI_STATUS ExecuteOSI(int pic_mode)
 	FreeBuffer(&ReturnValue);
 	if (Status == AE_NOT_FOUND)
 	{
-		printf("\\_PIC was not found. Assuming that's ok.\n");
 		return AE_OK;
 	}
     if (ACPI_FAILURE (Status))
@@ -154,8 +158,7 @@ static ACPI_STATUS ExecuteOSI(int pic_mode)
         return Status;
     }
 
-    printf("_PIC returned.\n");
-    return Status;
+    return AE_OK;
 }
 
 #define CHECK_STATUS(fmt, ...) do { if (ACPI_FAILURE(status)) { \
@@ -232,9 +235,9 @@ static ACPI_STATUS PrintAPICTable(void) {
 	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
 	CHECK_STATUS("AcpiGetTable");
 
-	printf("Found APIC table: %p\n", table);
-	printf("Address of Local APIC: %#x\n", table->Address);
-	printf("Flags: %#x\n", table->Flags);
+	log(apic_table, "Found APIC table: %p\n", table);
+	log(apic_table, "Address of Local APIC: %#x\n", table->Address);
+	log(apic_table, "Flags: %#x\n", table->Flags);
 	char* endOfTable = (char*)table + table->Header.Length;
 	char* p = (char*)(table + 1);
 	int n = 0;
@@ -245,14 +248,14 @@ static ACPI_STATUS PrintAPICTable(void) {
 		switch (apic->Type)
 		{
 		case ACPI_MADT_TYPE_LOCAL_APIC:
-			printf("%d: Local APIC. Processor ID %#x APIC ID %#x En=%d (%#x)\n", n,
+			log(apic_table, "%d: Local APIC. Processor ID %#x APIC ID %#x En=%d (%#x)\n", n,
 				(int)apic->LocalApic.ProcessorId,
 				(int)apic->LocalApic.Id,
 				apic->LocalApic.LapicFlags & 1,
 				apic->LocalApic.LapicFlags);
 			break;
 		case ACPI_MADT_TYPE_IO_APIC:
-			printf("%d: I/O APIC. ID %#x Addr %#x GSI base %#x\n", n,
+			log(apic_table, "%d: I/O APIC. ID %#x Addr %#x GSI base %#x\n", n,
 				(int)apic->IOApic.Id,
 				apic->IOApic.Address,
 				apic->IOApic.GlobalIrqBase);
@@ -260,7 +263,7 @@ static ACPI_STATUS PrintAPICTable(void) {
 		case ACPI_MADT_TYPE_INTERRUPT_OVERRIDE:
 		{
 			UINT32 flags = apic->InterruptOverride.IntiFlags;
-			printf("%d: Interrupt Override. Source %#x GSI %#x Pol=%s Trigger=%s\n", n,
+			log(apic_table, "%d: Interrupt Override. Source %#x GSI %#x Pol=%s Trigger=%s\n", n,
 				apic->InterruptOverride.SourceIrq,
 				apic->InterruptOverride.GlobalIrq,
 				polarities[flags & 3], triggerings[(flags >> 2) & 3]);
@@ -269,54 +272,20 @@ static ACPI_STATUS PrintAPICTable(void) {
 		case ACPI_MADT_TYPE_LOCAL_APIC_NMI:
 		{
 			UINT32 flags = apic->InterruptOverride.IntiFlags;
-			printf("%d: Local APIC NMI. Processor ID %#x Pol=%s Trigger=%s LINT# %#x\n", n,
+			log(apic_table, "%d: Local APIC NMI. Processor ID %#x Pol=%s Trigger=%s LINT# %#x\n", n,
 				apic->LocalApicNMI.ProcessorId,
 				polarities[flags & 3], triggerings[(flags >> 2) & 3],
 				apic->LocalApicNMI.Lint);
 			break;
 		}
 		default:
-			printf("%d: Unknown APIC type %d\n", n, apic->Type);
+			log(apic_table, "%d: Unknown APIC type %d\n", n, apic->Type);
 			break;
 		}
 	}
 
 failed:
 	return status;
-}
-
-ACPI_STATUS PrintAcpiDevice(ACPI_HANDLE Device)
-{
-	ACPI_DEVICE_INFO* info = NULL;
-	ACPI_STATUS status = AcpiGetObjectInfo(Device, &info);
-	if (ACPI_SUCCESS(status)) {
-		printf("Device %p type %#x\n", Device, info->Type);
-	}
-
-	ACPI_FREE(info);
-	return_ACPI_STATUS(status);
-}
-
-static ACPI_STATUS PrintDeviceCallback(ACPI_HANDLE Device, UINT32 Depth, void *Context, void** ReturnValue)
-{
-	return PrintAcpiDevice(Device);
-}
-
-// PNP0C0F = PCI Interrupt Link Device
-// PNP0A03 = PCI Root Bridge
-static ACPI_STATUS PrintDevices(void) {
-	ACPI_STATUS status = AE_OK;
-
-	printf("Searching for PNP0A03\n");
-	status = AcpiGetDevices("PNP0A03", PrintDeviceCallback, NULL, NULL);
-	CHECK_STATUS("AcpiGetDevices PNP0A03");
-
-	printf("Searching for PNP0C0F\n");
-	status = AcpiGetDevices("PNP0C0F", PrintDeviceCallback, NULL, NULL);
-	CHECK_STATUS("AcpiGetDevices PNP0C0F");
-
-failed:
-	return_ACPI_STATUS(status);
 }
 
 typedef struct IRQRouteData
@@ -596,8 +565,6 @@ void start() {
 	// be anywhere. (Could be handled by AcpiOsMapMemory though.)
 	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		(void*)ACPI_PHYS_BASE, 0, USER_MAP_MAX - ACPI_PHYS_BASE);
-	char* p = ((char*)ACPI_PHYS_BASE) + 0x100000;
-	printf("Testing physical memory access: %p (0x100000): %x\n", p, *(u32*)p);
 
 	__default_section_init();
 
@@ -607,8 +574,8 @@ void start() {
 
     /* Enable debug output, example debug print */
 
-    AcpiDbgLayer = ACPI_EXAMPLE; //ACPI_ALL_COMPONENTS;
-    AcpiDbgLevel = ACPI_LV_ALL_EXCEPTIONS | ACPI_LV_INTERRUPTS;
+    AcpiDbgLayer = 0;
+    AcpiDbgLevel = ACPI_LV_REPAIR | ACPI_LV_INTERRUPTS;
 
 	int pic_mode = 0; // Default is PIC mode if something fails
 	status = FindIOAPICs(&pic_mode);
@@ -629,9 +596,8 @@ void start() {
 //	PrintFACPTable();
 	PrintAPICTable();
 	CHECK_STATUS("PrintAPICTable");
-	// TODO Do something like PrintDevices to disable all pci interrupt link
-	// devices (call _DIS). Then we'll enable them as we go along.
-	PrintDevices();
+	// TODO Iterate through and disable all pci interrupt link devices (call
+	// _DIS). Then we'll enable the ones we actually intend to use.
 	EnumeratePCI();
 
 	AcpiWriteBitRegister(ACPI_BITREG_SCI_ENABLE, 1);
@@ -639,7 +605,6 @@ void start() {
 	AcpiInstallGlobalEventHandler(GlobalEventHandler, NULL);
 	AcpiEnableEvent(ACPI_EVENT_POWER_BUTTON, 0);
 
-	printf("Waiting for SCI interrupts...\n");
 	for (;;) {
 		ipc_dest_t rcpt = 0x100;
 		ipc_arg_t arg = 0;
@@ -701,9 +666,7 @@ void start() {
 			hmod(rcpt, 0, 0);
 		}
 	}
-	status = AcpiTerminate();
-	CHECK_STATUS("AcpiTerminate");
-	printf("Acpi terminated... Halting.\n");
+	__builtin_unreachable();
 
 failed:
 	printf("ACPI failed :( (status %x)\n", status);

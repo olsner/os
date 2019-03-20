@@ -12,6 +12,12 @@ UINT64 AcpiOsGetThreadId()
 	return 1;
 }
 
+__attribute__((noreturn)) static void unimpl(const char *tag)
+{
+    printf("UNIMPL: %s", tag);
+    abort();
+}
+
 #ifdef ACPI_SINGLE_THREADED
 /******************************************************************************
  *
@@ -92,14 +98,12 @@ AcpiOsReleaseLock (
 
 ACPI_STATUS AcpiOsInitialize ( void)
 {
-	printf("AcpiOsInitialize\n");
     return (AE_OK);
 }
 
 
 ACPI_STATUS AcpiOsTerminate ( void)
 {
-	printf("AcpiOsInitialize\n");
     return (AE_OK);
 }
 
@@ -170,27 +174,26 @@ AcpiOsExecute (
     ACPI_OSD_EXEC_CALLBACK  Function,
     void                    *Context)
 {
-	printf("AcpiOsExecute(%x)\n", Type);
-	return AE_NOT_IMPLEMENTED;
+    unimpl("AcpiOsExecute");
 }
 
 void AcpiOsWaitEventsComplete(void)
 {
-	printf("AcpiOsWaitEventsComplete\n");
 	// Wait for all callbacks queued with AcpiOsExecute to finish.
+	unimpl("AcpiOsWaitEventsComplete");
 }
 
 void AcpiOsStall (
     UINT32                  microseconds)
 {
-	printf("AcpiOsStall: %lu us\n", microseconds);
+    unimpl("AcpiOsStall");
 }
 
 void
 AcpiOsSleep (
     UINT64                  milliseconds)
 {
-	printf("AcpiOsSleep: %lu ms\n", milliseconds);
+    unimpl("AcpiOsSleep");
 }
 
 /******************************************************************************
@@ -239,9 +242,7 @@ AcpiOsWriteMemory (
     UINT64                  Value,
     UINT32                  Width)
 {
-	printf("AcpiOsWriteMemory %p := %x (width %x)\n", Address, Value, Width);
-	assert(!"unimpl");
-    return (AE_OK);
+    unimpl("AcpiOsWriteMemory");
 }
 
 BOOLEAN
@@ -266,22 +267,7 @@ AcpiOsReadMemory (
     UINT64                  *Value,
     UINT32                  Width)
 {
-	printf("AcpiOsReadMemory %p width %d\n", Address, Width);
-    switch (Width)
-    {
-    case 8:
-    case 16:
-    case 32:
-    case 64:
-
-        *Value = 0;
-        break;
-
-    default:
-
-        return (AE_BAD_PARAMETER);
-    }
-    return (AE_OK);
+    unimpl("AcpiOsReadMemory");
 }
 
 
