@@ -92,8 +92,8 @@ void transfer_set_handle(Process *target, Process *source) {
     target->regs.rdi = rcpt;
 }
 
-NORETURN void syscall_return(Process *p, u64 res) {
-    getcpu().syscall_return(p, res);
+NORETURN void syscall_return(Process *p, u64 res, u64 arg1 = 0, u64 arg2 = 0, u64 arg3 = 0) {
+    getcpu().syscall_return(p, res, arg1, arg2, arg3);
 }
 
 NORETURN void transfer_message(Process *target, Process *source) {

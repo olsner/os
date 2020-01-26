@@ -60,9 +60,6 @@ struc	proc, -0x80
 
 	.rip	resq 1
 	.rflags	resq 1
-
-	.cr3	resq 1
-
 endstruc
 
 %macro load_regs 1-*
@@ -114,26 +111,34 @@ gfunc %$LAST_PROC
 %pop
 %endmacro
 
+; extern "C" void fastret(u64 arg1, u64 arg2, u64 arg3, Process *p, u64 arg4, u64 arg5, u64 arg6, u64 rax) NORETURN
+;
+; arg1, 2, 3, 4 and 5 are set up to already be in the correct registers for
+; sysret, the process pointer is in rcx which will be clobbered before
+; returning. arg6 and rax will be passed on the stack.
+;
+; SysV syscall ABI: rdi, rsi, rdx, r8, r9, r10
+; User-space ABI:   rdi, rsi, rdx, rcx, r8 and r9
+;
+; This function assumes CR3 is set to the correct value before hand and doesn't
+; validate that.
 proc fastret
-	zero	edx
-	zero	r8
-	zero	r9
-	zero	r10
-.no_clear:
-	sub	rdi, proc
-	mov	rbx, cr3
-	cmp	rbx, [rdi + proc.cr3]
-	jne	.wrong_cr3
-	load_regs rdi,  rbp,rbx,r12,r13,r14,r15
-.fast_fastret:
-	mov	rsp, [rdi + proc.rsp]
-	mov	rcx, [rdi + proc.rip]
-	mov	r11, [rdi + proc.rflags]
-	mov	rax, rsi
+	pop	r10 ; return address: irrelevant since we don't return
+	; The last arguments are pushed right-to-left, so we can just pop them left-to-right.
+	pop	r10
+	pop	rax
+
+	sub	rcx, proc
+
+	; Restore callee-save registers
+	load_regs rcx,  rbp,rbx,r12,r13,r14,r15
+
+	mov	rsp, [rcx + proc.rsp]
+	mov	r11, [rcx + proc.rflags]
+	mov	rcx, [rcx + proc.rip]
+
 	swapgs
 	o64 sysret
-.wrong_cr3:
-	ud2
 endproc
 
 ; section .text.syscall_entry_stub, exec

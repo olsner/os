@@ -47,7 +47,6 @@ struct Process {
             Regs regs;
             u64 rip;
             u64 rflags;
-            u64 cr3;
         };
         SavedRegs saved_regs;
     };
@@ -65,7 +64,6 @@ struct Process {
         aspace(aspace)
     {
         flags = 1 << FastRet;
-        cr3 = aspace->cr3();
         rflags = x86::rflags::IF;
     }
 
@@ -98,6 +96,10 @@ struct Process {
     }
     void remove_waiter(Process *other) {
         aspace->remove_waiter(other);
+    }
+
+    u64 cr3() const {
+        return aspace->cr3();
     }
 
     bool is(ProcFlags flag) const {
