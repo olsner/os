@@ -17,8 +17,10 @@ CFLAGS += -mcmodel=kernel -mno-red-zone -mno-sse -mno-mmx
 CFLAGS += -ffreestanding $(COPTFLAGS)
 CFLAGS += -fno-threadsafe-statics
 CFLAGS += -Wall -Wextra -Werror -Wno-error=unused-parameter
+CFLAGS += -Iinclude -I../cuser/include
 COPTFLAGS = -fno-unroll-loops -funit-at-a-time
 CXXFLAGS = $(CFLAGS) -std=gnu++17
+CXXFLAGS += -fno-exceptions -fno-rtti
 LDFLAGS = -Wl,--check-sections -Wl,--gc-sections
 LDFLAGS += -Wl,--oformat=elf64-x86-64
 LDFLAGS += -Wl,-Map,$(@:.elf=.map)

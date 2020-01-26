@@ -1,3 +1,5 @@
+#include "ftable.h"
+
 namespace aspace {
 enum MapFlags {
     MAP_X = 1 << 0,
@@ -153,6 +155,8 @@ class AddressSpace: public RefCounted<AddressSpace> {
     // an open-ended receive that could be fulfilled by any other process.
     DList<Process> blocked;
 
+    FTable files;
+
     char name_[16];
 
 public:
@@ -294,6 +298,16 @@ public:
         auto pd = get_alloc_pt(*pdp, vaddr >> 30, 7);
         auto pt = get_alloc_pt(*pd, vaddr >> 21, 7);
         (*pt)[(vaddr >> 12) & 0x1ff] = pte;
+    }
+
+    int add_file(RefCnt<File> f) {
+        return files.add_file(std::move(f));
+    }
+    RefCnt<File> get_file(int fd) {
+        return files.get_file(fd);
+    }
+    void replace_file(int fd, RefCnt<File> f) {
+        files.replace_file(fd, f);
     }
 
     Handle *new_handle(uintptr_t key, AddressSpace *other) {

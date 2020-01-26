@@ -144,6 +144,31 @@ public:
         Base::operator=(std::move(new_storage));
     }
 
+    void resize(size_t new_size, T value = T()) {
+        if (new_size == size()) {
+            return;
+        }
+        if (new_size < size()) {
+            const size_t old_size = size();
+            for (size_t i = new_size; i < old_size; i++) {
+                at(i).~T();
+            }
+            set_size(new_size);
+            return;
+        }
+        else {
+            const size_t old_size = size();
+
+            reserve(new_size);
+            set_size(new_size);
+
+            for (size_t i = old_size; i < new_size; i++) {
+                new (&at(i)) T(value);
+            }
+            return;
+        }
+    }
+
     iterator begin() {
         return iterator(Base::at(0));
     }

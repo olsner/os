@@ -33,9 +33,11 @@ static void assert_eq(const char *file, int line, const char* exp_s, uintptr_t e
 
 #define ASSERT_EQ(exp, actual) assert_eq(__FILE__, __LINE__, #exp, exp, #actual, actual)
 
-static void wait_for_master(ipc_dest_t rcpt, ipc_arg_t step) {
+static void wait_for_master(const ipc_dest_t master, const ipc_arg_t step) {
     ipc_arg_t arg0;
+    ipc_dest_t rcpt = master;
     ipc_msg_t msg = recv1(&rcpt, &arg0);
+    ASSERT_EQ(master, rcpt);
     ASSERT_EQ(MSG_STEP, msg);
     ASSERT_EQ(step, arg0);
 }

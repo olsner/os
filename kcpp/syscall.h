@@ -1,37 +1,8 @@
+#include "msg_syscalls.h"
+
 namespace syscall {
 
 namespace {
-
-enum syscalls_builtins {
-    MSG_NONE = 0,
-    SYS_RECV = MSG_NONE,
-    SYS_MAP,
-    SYS_PFAULT,
-    SYS_UNMAP,
-    SYS_HMOD,
-    SYS_NEWPROC, // Not really used, ungood.
-    SYS_WRITE = 6,
-    // arg0 (dst) = port
-    // arg1 = flags (i/o) and data size:
-    //  0x10 = write (or with data size)
-    //  0x01 = byte
-    //  0x02 = word
-    //  0x04 = dword
-    // arg2 (if applicable) = data for output
-    SYS_IO = 7, // Backdoor!
-    SYS_GRANT = 8,
-    SYS_PULSE = 9,
-    SYS_YIELD = 10,
-
-    MSG_USER = 16,
-    MSG_MASK = 0xff,
-};
-
-enum msg_kind {
-    MSG_KIND_MASK = 0x300,
-    MSG_KIND_SEND = 0x000,
-    MSG_KIND_CALL = 0x100,
-};
 
 u64 portio(u16 port, u8 op, u32 data) {
     log(portio, "portio: port=%x op=%x data=%x\n", port, op, data);
@@ -371,6 +342,22 @@ NORETURN void syscall_yield(Process *p) {
     cpu.run();
 }
 
+NORETURN void syscall_socketpair(Process *p) {
+    RefCnt<Socket> server = nullptr;
+    RefCnt<Socket> client = nullptr;
+    Socket::pair(server, client);
+    int serverfd = p->aspace->add_file(std::move(server));
+    int clientfd = p->aspace->add_file(std::move(client));
+    log(socket, "%s: socketpair -> s=%d c=%d\n", p->name(), serverfd, clientfd);
+    syscall_return(p, 0, serverfd, clientfd);
+}
+
+NORETURN void syscall_close(Process *p, int fd) {
+    log(socket, "%s: close(%d)\n", p->name(), fd);
+    p->aspace->replace_file(fd, nullptr);
+    syscall_return(p, 0);
+}
+
 } // namespace
 
 extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
@@ -418,11 +405,17 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     case SYS_YIELD:
         syscall_yield(p);
         break;
+    case SYS_SOCKETPAIR:
+        syscall_socketpair(p);
+        break;
+    case SYS_CLOSE:
+        syscall_close(p, arg0);
+        break;
     default:
         if (nr >= MSG_USER) {
-            if ((nr & MSG_KIND_MASK) == MSG_KIND_SEND) {
+            if (msg_get_kind(nr) == MSG_KIND_SEND) {
                 ipc_send(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
-            } else if ((nr & MSG_KIND_MASK) == MSG_KIND_CALL) {
+            } else if (msg_get_kind(nr) == MSG_KIND_CALL) {
                 ipc_call(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
             } else {
                 abort("unknown IPC kind");

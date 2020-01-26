@@ -8,18 +8,6 @@ import signal
 import subprocess
 import sys
 
-"""
-A: recv(B)
-B: pulse(A, 1)
-A: <(pulse, B, 1)
-
-B: pulse(A, 1)
-A: recv(B)
-A: <(pulse, B, 1)
-"""
-
-# Probably want the raw constants here
-RECV = 'SYS_RECV'
 PULSE = 'SYS_PULSE'
 
 DEBUG = False
@@ -83,7 +71,7 @@ class Syscall(Action):
 
     def __str__(self):
         args = ', '.join(map(str, self.args))
-        return f"syscall{len(self.args)}({self.syscall}, {args})"
+        return f"{self.syscall}({args})"
 
     def emit(self):
         return f"result{self.id} = {self};"
@@ -123,6 +111,33 @@ class Recv(Action):
     def result(self):
         return Result(self, f"result{self.id}", f"rcpt{self.id}", *self.args())
 
+class Socketpair(Action):
+    """
+    Create a connected pair of anonymous local sockets.
+    The result is a three-tuple of return value and two output fds.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def __str__(self):
+        return f"socketpair()"
+
+    @property
+    def res(self): return f"result{self.id}"
+    @property
+    def fds(self): return f"fds_{self.id}"
+    def fd(self, i): return self.fds + f"[{i}]"
+
+    def declarations(self):
+        yield self.res
+        yield ('int', self.fd(2))
+
+    def emit(self):
+        return f"{self.res} = socketpair({self.fds});"
+
+    def result(self):
+        return Result(self, self.res, self.fd(0), self.fd(1))
+
 class Process(object):
     def __init__(self, sequence, name = None):
         self.actions = []
@@ -141,7 +156,13 @@ class Process(object):
         return self.add(Recv(process, nargs)).result()
 
     def pulse(self, process, bits):
-        return self.add(Syscall(PULSE, process, bits)).result()
+        return self.add(Syscall('pulse', process, bits)).result()
+
+    def close(self, fd):
+        return self.add(Syscall('close', fd)).result()
+
+    def socketpair(self):
+        return self.add(Socketpair()).result()
 
     def syscall(self, syscall, *args):
         return self.add(Syscall(syscall, *args)).result()
@@ -151,7 +172,11 @@ class Process(object):
             print(f'puts("{self.name} started...");', file=h)
         for a in self.actions:
             for decl in a.declarations():
-                print(f"uintptr_t {decl};", file=h)
+                if isinstance(decl, str):
+                    decl = f"uintptr_t {decl};"
+                else:
+                    decl = f"{decl[0]} {decl[1]};"
+                print(decl, file=h)
         for a in self.actions:
             print(f"// #{a.id}: {a}", file=h)
             wait = a.wait_for_master()

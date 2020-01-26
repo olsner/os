@@ -77,6 +77,8 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_grant 0
 #define log_waiters 0
 #define log_pulse 0
+#define log_socket 1
+#define log_files 1
 
 #define log(scope, fmt, ...) do { \
     if (log_ ## scope) { \
@@ -110,6 +112,9 @@ void operator delete[](void *p) {
 }
 void operator delete[](void *p, size_t) {
     free(p);
+}
+void* operator new(size_t, void* p) {
+    return p;
 }
 
 namespace {
@@ -239,8 +244,8 @@ void assert_failed(const char* file, int line, const char* msg) {
     abort();
 }
 
-template <typename T>
-T latch(T& var, T value = T()) {
+template <typename T, typename U = T>
+T latch(T& var, U value = U()) {
     T res = var;
     var = value;
     return res;
@@ -512,7 +517,15 @@ Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
 }
 
 void assoc_procs(Process *p, uintptr_t i, Process *q, uintptr_t j) {
-    log(assoc_procs, "%p:%lu <-> %lu:%p\n", p, i, j, q);
+    RefCnt<Socket> server, client;
+    Socket::pair(server, client);
+
+    log(assoc_procs, "%p:%lu <-> %lu:%p\n", p, j, i, q);
+    // file descriptors are 0-based, handles are 1-based (as null has special
+    // meaning there).
+    p->aspace->replace_file(j - 1, server);
+    q->aspace->replace_file(i - 1, std::move(server));
+
     p->assoc_handles(j, q, i);
 }
 
