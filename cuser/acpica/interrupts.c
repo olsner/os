@@ -11,7 +11,9 @@ static const uintptr_t ioapic_handle = 5;
 
 static const bool log_acpica_interrupts = false;
 static const bool log_irq = false;
-static const bool log_ioapic_init = false;
+// FIXME In the C++ kernel, syscall return sometimes loses register values
+// which causes I/O APIC initialization to fail when logging is off.
+static const bool log_ioapic_init = true;
 static const bool log_apic_table = false;
 static const bool log_route_irq = false;
 
@@ -165,17 +167,18 @@ static void add_irq_controller(uintptr_t handle, u32 gsi_base, u32 count)
 		gsi_base, p->last_gsi, handle);
 }
 
-static void AddIOAPIC(ACPI_MADT_IO_APIC *apic)
+static bool AddIOAPIC(ACPI_MADT_IO_APIC *apic)
 {
 	ipc_arg_t arg1 = apic->Id, arg2 = apic->Address, arg3 = apic->GlobalIrqBase;
 	sendrcv3(MSG_ACPI_ADD_IOAPIC, ioapic_handle, &arg1, &arg2, &arg3);
 	if (!arg1) {
 		printf("IOAPIC Initialization failed!\n");
-		abort();
+		return false;
 	} else {
 		log(ioapic_init, "IOAPIC Initialization successful: %d interrupts\n", arg1);
 	}
 	add_irq_controller(ioapic_handle, apic->GlobalIrqBase, arg1);
+	return true;
 }
 
 #pragma pack(1)
@@ -197,6 +200,8 @@ ACPI_STATUS FindIOAPICs(int *pic_mode) {
 	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
 	CHECK_STATUS("AcpiGetTable");
 
+	bool ioapic_found = false;
+	bool ioapic_failed = false;
 	char* endOfTable = (char*)table + table->Header.Length;
 	char* p = (char*)(table + 1);
 	int n = 0;
@@ -211,18 +216,19 @@ ACPI_STATUS FindIOAPICs(int *pic_mode) {
 				(int)apic->IOApic.Id,
 				apic->IOApic.Address,
 				apic->IOApic.GlobalIrqBase);
-			AddIOAPIC(&apic->IOApic);
-			*pic_mode = 1;
+			ioapic_found = true;
+			ioapic_failed = !AddIOAPIC(&apic->IOApic);
 			break;
 		}
 	}
-	if (*pic_mode)
-	{
+	// Note if there were multiple I/O APICs but one of them failed init, we
+	// might need to deinitialize(?) it for PIC mode to be safe again.
+	if (ioapic_found && !ioapic_failed) {
+		*pic_mode = 1;
 		log(ioapic_init, "I/O APICs found, setting APIC mode\n");
-	}
-	else
-	{
-		log(ioapic_init, "I/O APICs NOT found, setting PIC mode\n");
+	} else {
+		*pic_mode = 0;
+		log(ioapic_init, "I/O APICs failed or not found, setting PIC mode\n");
 		AddPIC();
 	}
 failed:
