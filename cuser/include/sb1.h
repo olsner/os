@@ -165,6 +165,18 @@ static inline ipc_msg_t ipc2(ipc_msg_t msg, ipc_dest_t* src, ipc_arg_t* arg1, ip
 	return msg;
 }
 
+static inline uintptr_t ipc1(uintptr_t msg, ipc_dest_t* src, ipc_arg_t* arg1)
+{
+	__asm__ __volatile__ ("syscall"
+		:	/* return value(s) */
+			"=a" (msg),
+			/* in/outputs */
+			"=D" (*src), "=S" (*arg1)
+		: "a" (msg), "D" (*src), "S" (*arg1)
+		: "r8", "r9", "r10", "r11", "%rcx", "%rdx", "memory");
+	return msg;
+}
+
 static inline uintptr_t sendrcv3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
 {
 	return ipc3(msg_call(msg), &dst, arg1, arg2, arg3);
@@ -217,18 +229,6 @@ static inline uintptr_t recv2(uintptr_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2)
 			"=D" (*src), "=S" (*arg1), "=d" (*arg2)
 		: "a" (0), "D" (*src)
 		: "r8", "r9", "r10", "r11", "%rcx", "memory");
-	return msg;
-}
-
-static inline uintptr_t ipc1(uintptr_t msg, ipc_dest_t* src, ipc_arg_t* arg1)
-{
-	__asm__ __volatile__ ("syscall"
-		:	/* return value(s) */
-			"=a" (msg),
-			/* in/outputs */
-			"=D" (*src), "=S" (*arg1)
-		: "a" (msg), "D" (*src), "S" (*arg1)
-		: "r8", "r9", "r10", "r11", "%rcx", "%rdx", "memory");
 	return msg;
 }
 
