@@ -17,7 +17,7 @@ void start() {
 		ipc_dest_t rcpt = 0;
 		ipc_arg_t arg1;
 		ipc_msg_t msg = recv1(&rcpt, &arg1);
-		if ((msg & 0xff) == MSG_PULSE) {
+		if ((msg & 0xff) == SYS_PULSE) {
 			printf("timertest: T %x %x\n", rcpt, arg1);
 			send2(MSG_REG_TIMER, apic_handle, delay *= 2, pulse = (pulse + 1) % (PULSE_MAX + 1));
 		}

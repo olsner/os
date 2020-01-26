@@ -513,7 +513,7 @@ lodstr	rdi,	'handle_irq_generic: irq-proc=%p (%x)', 10
 	mov	[rax + proc.rdi], rsi
 	xchg	rsi, [rbp + gseg.irq_delayed]
 	mov	[rax + proc.rsi], rsi
-	mov	qword [rax + proc.rax], MSG_PULSE
+	mov	qword [rax + proc.rax], SYS_PULSE
 
 	jmp	switch_to
 .delay:
@@ -3013,7 +3013,7 @@ lodstr	rdi, 'recv delayed irq %x', 10
 	zero	edi
 	swapgs
 	mov	rax, [rbp + gseg.process]
-	mov	qword [rax + proc.rax], MSG_PULSE
+	mov	qword [rax + proc.rax], SYS_PULSE
 	jmp	fastret.no_clear
 
 syscall_call:
@@ -3199,7 +3199,7 @@ transfer_pulse:
 	pop	rdi
 
 	zero	eax
-	mov	al, MSG_PULSE
+	mov	al, SYS_PULSE
 	mov	[rdi + proc.rax], rax
 	; TODO Refactoring: move the wake up into a common transfer function,
 	; merge that with transfer_set_handle and run *after* copying/setting

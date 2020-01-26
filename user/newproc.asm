@@ -7,7 +7,7 @@ CHILD_HANDLE	equ	1
 	mov	esi, user_entry_new
 	mov	edx, NEWPROC_PROC
 	mov	r8d, end_of_module
-	mov	eax, MSG_NEWPROC
+	mov	eax, SYS_NEWPROC
 	syscall
 
 lodstr	edi, 'old: calling new proc...', 10

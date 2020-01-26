@@ -774,7 +774,7 @@ void start() {
 		arg2 = 0;
 		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("e1000: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
-		if (rcpt == pin0_irq_handle && msg == MSG_PULSE) {
+		if (rcpt == pin0_irq_handle && msg == SYS_PULSE) {
 			// Disable all interrupts, then ACK receipt to PIC
 			send1(MSG_IRQ_ACK, rcpt, arg);
 			handle_irq();
@@ -804,7 +804,7 @@ void start() {
 			proto_send(find_proto(rcpt), buf, length);
 			break;
 		}
-		case MSG_PFAULT: {
+		case SYS_PFAULT: {
 			protocol* proto = find_proto(rcpt);
 			if (proto) {
 				void *addr = NULL;

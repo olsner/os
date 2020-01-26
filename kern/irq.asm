@@ -53,7 +53,7 @@ rcv_loop:
 	cmp	al, MSG_REG_IRQ
 	je	reg_irq
 
-	cmp	al, MSG_PULSE
+	cmp	al, SYS_PULSE
 	jne	rcv_loop
 
 irq:
@@ -91,7 +91,7 @@ lodstr	edi,	'rawIRQ: %x triggered', 10
 	; We only use bit 0, but we could also let the caller choose.
 	zero	esi
 	inc	esi
-	mov	eax, MSG_PULSE
+	mov	eax, SYS_PULSE
 	syscall
 
 .cont:
@@ -113,7 +113,7 @@ reg_irq:
 	; Remap the fresh handle to the interrupt number
 	push	rsi
 	zero	edx
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	syscall
 
 %if log

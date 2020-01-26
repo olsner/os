@@ -5,7 +5,7 @@ putchar:
 	mov	rdi, HANDLE_CONSOLE
 	mov	eax, msg_send(MSG_CON_WRITE)
 %else
-	mov	eax, MSG_SYSCALL_WRITE
+	mov	eax, SYS_WRITE
 %endif
 	syscall
 	clear_clobbered

@@ -4,10 +4,6 @@
 ; Message registers: rsi, rdx, r8, r9, r10
 ; (rcx and r11 are used by syscall.)
 
-; Placeholder for e.g. no message received
-; (Also overloaded with the "receive syscall")
-MSG_NONE	equ	0
-
 ; Map a page of this object (syscall)
 ; * handle to map (or NULL if e.g. making an anonymous mapping)
 ; * flags:
@@ -24,9 +20,9 @@ MSG_NONE	equ	0
 ;
 ; Registers the handle and offset in your virtual address space. Future memory
 ; access may result in faults getting sent to the named handle.
-MSG_MAP		equ	1
+SYS_MAP		equ	1
 
-; MSG_PFAULT: Received when a fault happens in a process that has mapped a page
+; SYS_PFAULT: Received when a fault happens in a process that has mapped a page
 ; from you, can also be sent to explicitly fault-in a page you've mapped.
 ;
 ; Parameters:
@@ -39,8 +35,8 @@ MSG_MAP		equ	1
 ; For an explicit request to page-in memory, handle should be 0 and the offset
 ; replaced with the virtual address.
 ;
-; Reply with a MSG_GRANT.
-MSG_PFAULT	equ	2
+; Reply with a SYS_GRANT.
+SYS_PFAULT	equ	2
 
 ; Unmap a virtual address range
 ; * object handle to unmap memory from (0 = unmap from self)
@@ -63,7 +59,7 @@ MSG_PFAULT	equ	2
 ; backing page back and remove access. Unmap is a misnomer for that though,
 ; it will just revoke access - the process keeps running and may fault to
 ; request the page be backed again.
-MSG_UNMAP	equ	3
+SYS_UNMAP	equ	3
 
 ; Duplicate, rename or dissociate a handle.
 ;
@@ -78,7 +74,7 @@ MSG_UNMAP	equ	3
 ;
 ; rdi must be a handle. (But does not have to be associated - in this case,
 ; rsi and rdx have the same function.)
-MSG_HMOD	equ	4
+SYS_HMOD	equ	4
 
 ; "Send" a message to a previously dissociated handle and create a process on
 ; it - the dissociated handle becomes the local handle for a new process.
@@ -105,7 +101,7 @@ MSG_HMOD	equ	4
 ; rax: newproc message code
 ; rdi: process handle for parent process
 ; Remaining message registers are copied from the parent process.
-MSG_NEWPROC	equ	5
+SYS_NEWPROC	equ	5
 
 NEWPROC_PROC	equ	1
 
@@ -133,10 +129,10 @@ NEWPROC_PROC	equ	1
 ;   loader data and the file object to load from.
 
 ; backdoor call(s)
-MSG_SYSCALL_WRITE	equ	6
-MSG_SYSCALL_IO		equ	7
+SYS_WRITE	equ	6
+SYS_IO		equ	7
 
-; MSG_GRANT: Reply to a MSG_PFAULT message.
+; SYS_GRANT: Reply to a SYS_PFAULT message.
 ;
 ; Parameters:
 ; * handle (your handle to the mapper process)
@@ -157,7 +153,7 @@ MSG_SYSCALL_IO		equ	7
 ;     all the access that is possible.
 ;   * the X flag is ignored here: if you give Read access you also give execute
 ;     access. It's up to the mapper's mapping whether it should be execute.
-MSG_GRANT	equ	8
+SYS_GRANT	equ	8
 
 
 ; Pulse: send one or more pulses to a handle. The handles will be received by
@@ -168,11 +164,11 @@ MSG_GRANT	equ	8
 ; rdi: handle
 ; rsi (send): bitmask of pulses to add to the handle.
 ; rsi (recv): bitmask of pending pulses for the handle.
-MSG_PULSE		equ	9
+SYS_PULSE		equ	9
 
 ; Add current thread at end of run queue, then switch to the next runnable
 ; thread.
-MSG_SYSCALL_YIELD	equ	10
+SYS_YIELD	equ	10
 
 ; Start of user-mapped message-type range
 MSG_USER	equ	16

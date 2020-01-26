@@ -21,7 +21,7 @@ lodstr	esi,	'Hello World',0
 	mov	edx,'C'
 	call	printf
 
-	mov	eax, MSG_SYSCALL_YIELD
+	mov	eax, SYS_YIELD
 	syscall
 
 	jmp	.start

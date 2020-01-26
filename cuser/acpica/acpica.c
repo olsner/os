@@ -277,7 +277,7 @@ void start() {
 		ipc_arg_t arg2 = 0;
 		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		//printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
-		if (msg == MSG_PULSE) {
+		if (msg == SYS_PULSE) {
 			if (AcpiOsCheckInterrupt(rcpt, arg)) {
 				continue;
 			} else {

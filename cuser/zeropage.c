@@ -33,7 +33,7 @@ void start() {
 		ipc_msg_t msg = recv2(&rcpt, &arg1, &arg2);
 		// PFAULT: source handle, offset, requested flags
 		switch (msg & 0xff) {
-		case MSG_PFAULT: {
+		case SYS_PFAULT: {
 			printf("zeropage: %x pfault %x %x\n", rcpt, arg1, arg2);
 			grant(rcpt, zeropage, arg2 & ALLOWED_FLAGS);
 			break;

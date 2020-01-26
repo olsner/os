@@ -92,7 +92,7 @@ void start() {
 		ipc_dest_t rcpt = 0;
 		ipc_arg_t arg, arg2;
 		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
-		if ((msg & 0xff) == MSG_PULSE) {
+		if ((msg & 0xff) == SYS_PULSE) {
 			// && rcpt == apic_handle
 			set_palette(++palette);
 			send2(MSG_REG_TIMER, apic_handle, FRAME_DELAY, 0);

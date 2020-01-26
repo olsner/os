@@ -3,48 +3,15 @@
 
 #include <stdint.h>
 #include <stddef.h>
-
-typedef uintptr_t ipc_dest_t;
-typedef uint64_t ipc_arg_t;
-// Only 10-bit or so, really, since the "kind" is bit 8 and 9
-// But also used for return values (errors, presumably)
-typedef intptr_t ipc_msg_t;
-
-typedef int64_t off_t; // -> sys/types.h
-
-enum msg_kind {
-	MSG_KIND_SEND = 0,
-	MSG_KIND_CALL = 1,
-	//MSG_KIND_REPLYWAIT = 2
-};
-
-enum msg_masks {
-	MSG_CODE_MASK = 0x0ff,
-	MSG_KIND_MASK = 0x300,
-	MSG_KIND_SHIFT = 8
-};
-
-static ipc_msg_t msg_set_kind(ipc_msg_t msg, enum msg_kind kind) {
-	return msg | (kind << 8);
-}
-static ipc_msg_t msg_send(ipc_msg_t msg) {
-	return msg_set_kind(msg, MSG_KIND_SEND);
-}
-static ipc_msg_t msg_call(ipc_msg_t msg) {
-	return msg_set_kind(msg, MSG_KIND_CALL);
-}
-static uint8_t msg_code(ipc_msg_t msg) {
-	return msg & MSG_CODE_MASK;
-}
-static enum msg_kind msg_get_kind(ipc_msg_t msg) {
-	return (msg & MSG_KIND_MASK) >> MSG_KIND_SHIFT;
-}
+#include "msg_syscalls.h"
 
 /*
  * Tries to fit into the SysV syscall ABI for x86-64.
+ * Syscall/message number/error in rax
+ * IPC source/destination: rdi
  * Message registers: rsi, rdx, r8, r9, r10
- * Syscall/message number in eax
- * Message registers are also return value registers. eax returns a message.
+ * All registers are also return value registers. rax returns the message
+ * number or error.
  * (rcx and r11 are used by syscall.)
 */
 
@@ -291,7 +258,7 @@ static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
 #include "msg_syscalls.h"
 
 static void hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
-	syscall3(MSG_HMOD, h, rename, copy);
+	syscall3(SYS_HMOD, h, rename, copy);
 }
 
 static void hmod_delete(uintptr_t h) {
@@ -307,7 +274,7 @@ static void hmod_copy(uintptr_t h, uintptr_t copy) {
 }
 
 static uintptr_t pulse(uintptr_t handle, uint64_t mask) {
-	return send1(MSG_PULSE, handle, mask);
+	return send1(SYS_PULSE, handle, mask);
 }
 
 enum prot {
@@ -322,8 +289,10 @@ enum prot {
 };
 
 static int64_t map_raw(ipc_dest_t handle, int prot, uint64_t addr, uint64_t offset, uint64_t size) {
-	return syscall5(MSG_MAP, handle, prot, addr, offset, size);
+	return syscall5(SYS_MAP, handle, prot, addr, offset, size);
 }
+
+typedef int64_t off_t; // -> sys/types.h
 
 // Maximum end-address of user mappings.
 #if __INTPTR_WIDTH__ == 32
@@ -353,15 +322,34 @@ static uint64_t map_dma(int prot, const volatile void *local_addr, size_t size) 
 }
 
 static void prefault(const volatile void* addr, int prot) {
-	syscall3(MSG_PFAULT, 0, (uintptr_t)addr, prot);
+	syscall3(SYS_PFAULT, 0, (uintptr_t)addr, prot);
 }
 
 static int grant(uintptr_t rcpt, const volatile void* addr, int prot) {
-	return syscall3(MSG_GRANT, rcpt, (uintptr_t)addr, prot);
+	return syscall3(SYS_GRANT, rcpt, (uintptr_t)addr, prot);
 }
 
 static uint64_t portio(uint16_t port, uint64_t flags, uint64_t data) {
-	return syscall3(SYSCALL_IO, port, flags, data);
+	return syscall3(SYS_IO, port, flags, data);
+}
+
+static void sched_yield(void) {
+	syscall1(SYS_YIELD, 0);
+}
+
+static int socketpair(int fds[2]) {
+	// Need to bounce to temp variables here since the syscalls work on 64-bit
+	// quantities. The pointers should all collapse into register transfers
+	// after inlining though.
+	uint64_t sfd = 0, cfd = 0;
+	int res = ipc1(SYS_SOCKETPAIR, &sfd, &cfd);
+	fds[0] = sfd;
+	fds[1] = cfd;
+	return res;
+}
+
+static int close(int fd) {
+	return syscall1(SYS_CLOSE, fd);
 }
 
 #endif /* _SB1_H_ */

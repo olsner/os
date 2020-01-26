@@ -9,7 +9,7 @@
 
 	paddq	xmm0,xmm1
 
-	mov	eax, MSG_SYSCALL_YIELD
+	mov	eax, SYS_YIELD
 	syscall
 
 	jmp	.loop

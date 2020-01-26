@@ -234,7 +234,7 @@ void start() {
 		ipc_msg_t msg = recv3(&rcpt, &arg1, &arg2, &arg3);
 		switch (msg & 0xff)
 		{
-		case MSG_PULSE:
+		case SYS_PULSE:
 			handle_irq(rcpt - (uintptr_t)upstream_irq);
 			break;
 		case MSG_IRQ_ACK:

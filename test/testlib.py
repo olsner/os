@@ -20,8 +20,7 @@ A: <(pulse, B, 1)
 
 # Probably want the raw constants here
 RECV = 'SYS_RECV'
-PULSE = 'MSG_PULSE'
-WRITE = 'SYSCALL_WRITE'
+PULSE = 'SYS_PULSE'
 
 DEBUG = False
 

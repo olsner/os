@@ -182,7 +182,7 @@ void start() {
 		//debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
 		if (rcpt == proto_handle) {
 			switch (msg & 0xff) {
-			case MSG_PULSE:
+			case SYS_PULSE:
 				for (int i = 0; i < 2 * NBUFS; i++) {
 					if (arg1 & (UINT64_C(1) << i)) {
 						buffer_done(i);

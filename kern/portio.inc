@@ -2,7 +2,7 @@
 ; di = port
 ; => ax = input
 inb:
-	mov	eax, MSG_SYSCALL_IO
+	mov	eax, SYS_IO
 	mov	esi, 0x01
 	syscall
 	ret
@@ -12,7 +12,7 @@ inb:
 outb:
 	mov	edx, esi
 	mov	esi, 0x11
-	mov	eax, MSG_SYSCALL_IO
+	mov	eax, SYS_IO
 	syscall
 	ret
 

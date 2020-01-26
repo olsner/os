@@ -321,7 +321,7 @@ void start() {
 				hmod_delete(rcpt);
 			}
 			break;
-		case MSG_PFAULT:
+		case SYS_PFAULT:
 			*(volatile u64*)&static_data;
 			grant(rcpt, &static_data, PROT_READ);
 			break;

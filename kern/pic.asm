@@ -43,7 +43,7 @@ lodstr	edi, 'PIC booting...', 10
 	mov	rdi, [rsp]
 	mov	rsi, rdi
 	lea	edx, [rbx + IN_IRQ_BASE - 1]
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	syscall
 	; Then register it for IRQ 0x20..0x2f
 	lea	edi, [rbx + IN_IRQ_BASE - 1]
@@ -53,7 +53,7 @@ lodstr	edi, 'PIC booting...', 10
 	dec	ebx
 	jnz	.reg_loop
 
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	mov	edi, fresh_handle
 	; delete
 	zero	esi
@@ -133,7 +133,7 @@ lodstr	edi,	'PIC registering IRQ %x to %x', 10
 
 	; Rename incoming handle to the IRQ they registered + PIC_IRQ_BASE
 	add	esi, PIC_IRQ_BASE
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	zero	edx
 	syscall
 
@@ -212,7 +212,7 @@ lodstr	edi, 'PIC: IRQ %x triggered', 10
 	lea	edi, [rsi + PIC_IRQ_BASE]
 	zero	esi
 	inc	esi
-	mov	eax, MSG_PULSE
+	mov	eax, SYS_PULSE
 	syscall
 
 	jmp	rcv_loop

@@ -99,7 +99,7 @@ lodstr	edi, 'console: boot complete', 10
 	call	printf
 %endif
 
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	mov	edi, the_reader
 	; delete
 	zero	esi
@@ -138,7 +138,7 @@ msg_write:
 	je	.write
 
 	; rename the writer to the_reader
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	mov	esi, the_reader
 	zero	edx
 	syscall
@@ -146,7 +146,7 @@ msg_write:
 .write:
 	; Let's cheat for now
 	; Later: have the frame buffer mapped in this process instead.
-	mov	eax, MSG_SYSCALL_WRITE
+	mov	eax, SYS_WRITE
 	pop	rdi ; the character pushed above
 	syscall
 
@@ -166,7 +166,7 @@ lodstr	edi,	'msg_read from %x', 10
 %endif
 
 	pop	rdi
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	mov	esi, the_reader
 	zero	edx
 	syscall
@@ -207,7 +207,7 @@ lodstr	edi,	'Have key %x (waiting=%x), sending to reader', 10
 	ret
 
 clear_reader:
-	mov	eax, MSG_HMOD
+	mov	eax, SYS_HMOD
 	mov	edi, the_reader
 	zero	esi
 	zero	edx

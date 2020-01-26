@@ -167,7 +167,7 @@ void start() {
 			debug("bochsvga: palette %x := (%x,%x,%x)\n", c, r, g, b);
 			break;
 		}
-		case MSG_PFAULT:
+		case SYS_PFAULT:
 		{
 			assert(arg < LFB_SIZE && rcpt == the_client);
 			if (arg < LFB_SIZE) {

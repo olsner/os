@@ -1,4 +1,4 @@
 putchar:
-	mov	eax, MSG_SYSCALL_WRITE
+	mov	eax, SYS_WRITE
 	syscall
 	ret
