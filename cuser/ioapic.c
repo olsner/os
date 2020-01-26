@@ -3,6 +3,8 @@
 #include "common.h"
 #include "msg_acpi.h"
 
+// FIXME Since ACPICA uses I/O APIC and console uses ACPICA, we must use raw
+// stdio here if we want to be able to output anything.
 #define LOG_ENABLED 0
 #define log(fmt, ...) do { if (LOG_ENABLED) printf("ioapic: " fmt, ## __VA_ARGS__); } while (0)
 

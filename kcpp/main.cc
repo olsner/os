@@ -22,8 +22,6 @@ typedef unsigned int uint;
 
 extern "C" void start64() NORETURN;
 
-#define DEBUGCON 1
-
 #define STRING_INL_LINKAGE static UNUSED
 #include "string.c"
 
@@ -50,6 +48,12 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 
 #define enable_assert 1
 #define log_fileline 1
+
+// Routing of user and kernel console messages to debug/VGA console
+#define user_debugcon 1
+#define user_vgacon 1
+#define kernel_debugcon 1
+#define kernel_vgacon 1
 
 #define log_idle 0
 #define log_switch 0
@@ -111,7 +115,7 @@ void operator delete[](void *p, size_t) {
 namespace {
 
 namespace Console {
-    void write(char c);
+    void write(char c, bool fromUser);
 }
 
 // Might actually want to specialize xprintf for the kernel...
@@ -124,11 +128,11 @@ void fflush(FILE *) {}
 ssize_t fwrite_unlocked(const void* p, size_t sz, size_t n, FILE *) {
     size_t c = n * sz;
     const char *str = (char*)p;
-    while (c--) Console::write(*str++);
+    while (c--) Console::write(*str++, false);
     return n;
 }
 void fputc_unlocked(char c, FILE *) {
-    Console::write(c);
+    Console::write(c, false);
 }
 long int strtol(const char *p, char **end, int radix);
 bool isdigit(char c) {
@@ -174,12 +178,6 @@ static void memset16(u16* dest, u16 value, size_t n) {
     }
 }
 
-static void debugcon_putc(char c) {
-#if DEBUGCON
-    asm("outb %0,%1"::"a"(c),"d"((u16)0xe9));
-#endif
-}
-
 namespace Console {
     static u16* const buffer = PhysAddr<u16>(0xb80a0);
     static u16 pos;
@@ -190,23 +188,31 @@ namespace Console {
         memset16(buffer, 0, width * height);
     }
 
-    void write(char c) {
-        if (c == '\n') {
-            u8 fill = width - (pos % width);
-            while(fill--) buffer[pos++] = 0;
-        } else {
-            buffer[pos++] = 0x0700 | c;
+    void debugcon_putc(char c) {
+        asm("outb %0,%1"::"a"(c),"d"((u16)0xe9));
+    }
+
+    void write(char c, bool fromUser) {
+        if (fromUser ? user_debugcon : kernel_debugcon) {
+            debugcon_putc(c);
         }
-        debugcon_putc(c);
-        if (pos == width * height) {
-            memmove(buffer, buffer + width, sizeof(*buffer) * width * (height - 1));
-            pos -= width;
-            memset16(buffer + pos, 0, width);
+        if (fromUser ? user_vgacon : kernel_vgacon) {
+            if (c == '\n') {
+                u8 fill = width - (pos % width);
+                while(fill--) buffer[pos++] = 0;
+            } else {
+                buffer[pos++] = 0x0700 | c;
+            }
+            if (pos == width * height) {
+                memmove(buffer, buffer + width, sizeof(*buffer) * width * (height - 1));
+                pos -= width;
+                memset16(buffer + pos, 0, width);
+            }
         }
     }
 
     void write(const char *s) {
-        while (char c = *s++) write(c);
+        while (char c = *s++) write(c, false);
     }
 };
 

@@ -403,7 +403,7 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
         break;
     SC_UNIMPL(NEWPROC);
     case SYS_WRITE:
-        Console::write(arg0);
+        Console::write(arg0, true);
         syscall_return(p, 0);
         break;
     case SYS_IO:
