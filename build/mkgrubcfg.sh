@@ -17,7 +17,7 @@ mkgrubcfg1() {
 cat <<EOF
 menuentry "lwIP" {
     multiboot /$kernel
-    module /kern/irq.mod irq
+    module /cuser/irq.mod irq
     module /kern/pic.mod pic
     module /kern/console.mod console
     module /cuser/apic.mod APIC
@@ -30,7 +30,7 @@ menuentry "lwIP" {
 
 menuentry "shell" {
     multiboot /$kernel
-    module /kern/irq.mod irq
+    module /cuser/irq.mod irq
     module /kern/pic.mod pic
     module /kern/console.mod console
     module /cuser/apic.mod APIC
@@ -42,7 +42,7 @@ menuentry "shell" {
 
 menuentry "fbtest" {
     multiboot /$kernel
-    module /kern/irq.mod irq
+    module /cuser/irq.mod irq
     module /kern/pic.mod pic
     module /kern/console.mod console
     module /cuser/apic.mod APIC
@@ -55,19 +55,19 @@ menuentry "fbtest" {
 
 menuentry "timer_test" {
     multiboot /$kernel
-    module /kern/irq.mod irq
+    module /cuser/irq.mod irq
     module /kern/pic.mod pic
     module /kern/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
     module /cuser/acpica.mod ACPICA
-    module /cuser/timer_test.mod
+    module /cuser/timer_test.mod timer_test
     boot
 }
 
 menuentry "ACPICA debugger" {
     multiboot /$kernel
-    module /kern/irq.mod irq
+    module /cuser/irq.mod irq
     module /kern/pic.mod pic
     module /kern/console.mod console
     module /cuser/apic.mod APIC
