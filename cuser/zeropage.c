@@ -43,7 +43,7 @@ void start() {
 			break;
 		}
 		if (rcpt == fresh) {
-			hmod(rcpt, 0, 0);
+			hmod_delete(rcpt);
 		}
 	}
 }

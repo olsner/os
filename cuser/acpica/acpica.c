@@ -196,7 +196,7 @@ static void MsgClaimPci(uintptr_t rcpt, uintptr_t addr, uintptr_t pins)
 	pins = (u64)irqs[3] << 48 | (u64)irqs[2] << 32 | irqs[1] << 16 | irqs[0];
 
 	send2(MSG_ACPI_CLAIM_PCI, rcpt, addr, pins);
-	hmod(rcpt, (uintptr_t)pci_device_handles + addr, 0);
+	hmod_rename(rcpt, (uintptr_t)pci_device_handles + addr);
 	return;
 
 failed:
@@ -329,7 +329,7 @@ void start() {
 		// TODO Handle other stuff.
 		if (rcpt == 0x100)
 		{
-			hmod(rcpt, 0, 0);
+			hmod_delete(rcpt);
 		}
 	}
 	__builtin_unreachable();

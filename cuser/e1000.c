@@ -785,7 +785,7 @@ void start() {
 			if ((msg & 0xff) == MSG_ETHERNET_REG_PROTO) {
 				protocol* proto = reg_proto(arg & 0xffff);
 				log("e1000: registered ethertype %04x => %p\n", arg & 0xffff, proto);
-				hmod(rcpt, (uintptr_t)proto, 0);
+				hmod_rename(rcpt, (uintptr_t)proto);
 				send1(MSG_ETHERNET_REG_PROTO, (uintptr_t)proto, hwaddr0);
 			} else {
 				hmod_delete(rcpt);

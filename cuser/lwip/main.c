@@ -75,7 +75,7 @@ static void check_timers(void) {
 	u64 timeout_ms = sys_timeouts_sleeptime();
 	if (timeout_ms != (u32)-1) {
 		debug("lwip: timeout %lums\n", timeout_ms);
-		hmod(apic_handle, apic_handle, timer_handle);
+		hmod_copy(apic_handle, timer_handle);
 		send2(MSG_REG_TIMER, timer_handle, timeout_ms * 1000000, 0);
 	}
 }
@@ -140,7 +140,7 @@ void start() {
 	prefault(&timer_data, PROT_READ);
 	debug("lwip: initialized timer\n");
 
-	hmod(eth_handle, eth_handle, proto_handle);
+	hmod_copy(eth_handle, proto_handle);
 	ipc_arg_t arg1 = ETHERTYPE_ANY;
 	sendrcv1(MSG_ETHERNET_REG_PROTO, proto_handle, &arg1);
 	hwaddr = arg1;
