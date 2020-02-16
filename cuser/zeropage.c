@@ -18,9 +18,9 @@ void start() {
 
 	printf("zeropage: page at %p\n", (void*)&zeropage);
 	if (*(const volatile char*)zeropage) {
-		puts("zeropage: nonzero value in zero page!?\n");
+		puts("zeropage: nonzero value in zero page!?");
 	} else {
-		puts("zeropage: zero page is indeed zero\n");
+		puts("zeropage: zero page is indeed zero");
 	}
 
 	// Try to suicide

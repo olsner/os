@@ -16,5 +16,6 @@ char getchar(void) {
 
 void puts(const char* str) {
 	while (*str) putchar(*str++);
+	putchar('\n');
 }
 

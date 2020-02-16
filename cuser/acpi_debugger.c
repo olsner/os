@@ -11,7 +11,7 @@
 static const ipc_dest_t acpi_handle = 6;
 
 static void prompt(void) {
-	puts("Enter debugger command: (Esc cancels)\n");
+	puts("Enter debugger command: (Esc cancels)");
 	for (;;) {
 		ipc_arg_t c = getchar();
 		ipc_msg_t msg;
@@ -33,7 +33,7 @@ static void prompt(void) {
 void start() {
 	__default_section_init();
 	sendrcv0(MSG_ACPI_DEBUGGER_INIT, acpi_handle);
-	puts("ACPICA Debugger Shell\n");
+	puts("ACPICA Debugger Shell");
 	for (;;) {
 		prompt();
 	}

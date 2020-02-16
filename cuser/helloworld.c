@@ -2,5 +2,5 @@
 
 void start(void) {
 	for(;;)
-		puts("hello world\n");
+		puts("hello world");
 }
