@@ -523,6 +523,7 @@ void init_modules(Cpu *cpu, const mboot::Info& info) {
     Process **procs = new Process *[count];
     for (size_t n = 0; n < count; n++) {
         const char *name = PhysAddr<char>(mod->string);
+        if (strchr(name, ' ')) name = strchr(name, ' ') + 1;
         printf("Module %#x..%#x: %s\n", mod->start, mod->end, name);
         procs[n] = new_proc_simple(mod->start, mod->end, name);
         mod++;
