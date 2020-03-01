@@ -141,9 +141,9 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     sender->regs.rdi = h->key();
     sender->regs.rsi = arg1;
     sender->regs.rdx = arg2;
-    sender->regs.r10 = arg3;
-    sender->regs.r8 = arg4;
-    sender->regs.r9 = arg5;
+    sender->regs.r8 = arg3;
+    sender->regs.r9 = arg4;
+    sender->regs.r10 = arg5;
 
     if (auto p = sender->aspace->pop_recipient(h)) {
         log(ipc, "send_or_block: %s sends to (specific) %s\n", sender->name(), p->name());
@@ -157,7 +157,7 @@ void send_or_block(Process *sender, Handle *h, u64 msg, u64 arg1, u64 arg2, u64 
     }
 }
 
-NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
+NORETURN void ipc_send(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     auto handle = p->find_handle(rcpt);
     log(ipc, "%s ipc_send to %lx (%s)\n", p->name(), rcpt, handle ? handle->otherspace->name() : NULL);
     assert(handle);
