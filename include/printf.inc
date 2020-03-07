@@ -1,3 +1,5 @@
+; vim:set filetype=nasm:
+
 bits 64
 section .text
 
