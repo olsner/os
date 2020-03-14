@@ -1565,12 +1565,13 @@ lodstr	rdi,	'find_handle for %x in %p', 10
 	pop	rsi
 	pop	rdi
 	call	dict_lookup
-	push	rax
-lodstr	rdi,	'find_handle found %p', 10
-	mov	rsi, rax
-	call	printf
-	cmp	qword [rsp], 0
+	test	rax, rax
 	jz	.no_handle_found
+	push	rax
+lodstr	rdi,	'find_handle found %x: %p'
+	mov	rsi, [rax + handle.key]
+	mov	rdx, rax
+	call	printf
 	; found a handle, does it have an other-end?
 	zero	edx
 	mov	rax, [rsp]
@@ -1580,10 +1581,15 @@ lodstr	rdi,	'find_handle found %p', 10
 	mov	rsi, [rsi + handle.key]
 .no_other:
 	mov	rdx, [rax + handle.proc]
-lodstr	rdi,	'-> %x in %p', 10
+lodstr	rdi,	' -> %x in %p', 10
 	call	printf
-.no_handle_found:
 	pop	rax
+	ret
+
+.no_handle_found:
+lodstr	rdi,	'find_handle found nothing', 10
+	call	printf
+	zero	eax
 	ret
 %else
 	tcall	dict_lookup
@@ -2933,8 +2939,9 @@ lodstr	rdi, '%p: recv from any', 10
 	cmp	edx, 3
 	je	.skip_log
 	push	rax
-lodstr	rdi, '%p: recv from %x in %p', 10
+lodstr	rdi, '%p: recv via %x from %p', 10
 	mov	rsi, [rbp + gseg.process]
+	; rdx = handle.key
 	mov	rcx, [rax + handle.proc]
 	call	printf
 	pop	rax
