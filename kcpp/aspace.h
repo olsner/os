@@ -335,6 +335,11 @@ public:
         }
         return nullptr;
     }
+    void remove_pending_handle(Handle* handle) {
+        PendingPulse *p = pending.remove(handle->key());
+        assert(p);
+        delete p;
+    }
 
     // Find a process waiting to send a message to 'target' in our address
     // space, and remove it from the waiters list.

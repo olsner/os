@@ -191,15 +191,21 @@ NORETURN void ipc_recv(Process *p, u64 from) {
         // noreturn
     }
     if (handle) {
-        log(recv, "%s recv: waiting for %s\n", p->name(), handle->otherspace->name());
-        // TODO Handle cases where 'handle' is the handle with a pulse waiting.
+        if (uintptr_t events = latch(handle->events)) {
+            p->aspace->remove_pending_handle(handle);
+            log(pulse, "%s recv: got events %lx\n", p->name(), events);
+            transfer_pulse(p, from, events);
+        }
         assert(!handle->events);
+        log(recv, "%s recv: waiting for %s\n", p->name(), handle->otherspace->name());
         handle->otherspace->add_waiter(p);
     } else {
         if (auto h = p->aspace->pop_pending_handle()) {
             uintptr_t events = latch(h->events);
+            assert(events); // Indicates we forgot to pop a handle after delivering pulses
             log(pulse, "%s recv: got events %lx from %lx\n", p->name(), events, h->key());
             transfer_pulse(p, h->key(), events);
+            // noreturn
         }
 
         Cpu &c = getcpu();
