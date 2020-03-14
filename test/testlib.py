@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import asyncio
+from async_timeout import timeout
 import glob
 import os
 import signal
@@ -271,7 +273,7 @@ void start() {
         subprocess.check_call(f"ccache {cross}gcc -o {elf} {cflags} {ldflags} {source} {lib_os} -Dproc_main={procname}_main", shell=True)
         subprocess.check_call(f"{cross}objcopy -Obinary {elf} {mod}", shell=True)
 
-    def launch(mods):
+    async def launch(mods):
         # TODO Silence "terminating on signal" printouts. Ideally keeping
         # stderr so unrecognized errors are still displayed.
         cmd = [
@@ -284,27 +286,35 @@ void start() {
         if verbose: print(' '.join(map(repr, cmd)))
         output_lines = []
         # TODO Add a timeout for the read (set an alarm that sends ourselves SIGINT?)
-        with subprocess.Popen(cmd, stdout=subprocess.PIPE) as p:
-            for line in p.stdout:
-                line = line.decode('iso-8859-1').strip()
-                output_lines.append(line)
-                if verbose: print(line)
-                # Asm kernel outputs either blue background or reset ANSI codes
-                # between each character on the debug console, strip that
-                # before matching the string.
-                line = strip_ansi(line)
-                if "FAIL" in line or "PANIC" in line:
-                    if not verbose:
-                        for l in output_lines: print(l)
-                    p.send_signal(signal.SIGINT)
-                    return 1
-                elif line == "PASS":
-                    # Keep running a little bit and check that the VM doesn't
-                    # print more stuff, there could be a way to bug things such
-                    # that a program just prints PASS and a bunch of other
-                    # garbage..
-                    p.send_signal(signal.SIGINT)
-                    return 0
+        p = await asyncio.create_subprocess_exec(*cmd, stdout = subprocess.PIPE)
+
+        try:
+            with timeout(2):
+                while True:
+                    line = await p.stdout.readuntil()
+                    line = line.decode('iso-8859-1').strip()
+                    output_lines.append(line)
+                    if verbose: print(line)
+                    # Asm kernel outputs either blue background or reset ANSI codes
+                    # between each character on the debug console, strip that
+                    # before matching the string.
+                    line = strip_ansi(line)
+                    if "FAIL" in line or "PANIC" in line:
+                        if not verbose:
+                            for l in output_lines: print(l)
+                        return 1
+                    elif line == "PASS":
+                        # Keep running a little bit and check that the VM doesn't
+                        # print more stuff, there could be a way to bug things such
+                        # that a program just prints PASS and a bunch of other
+                        # garbage..
+                        return 0
+        except asyncio.TimeoutError:
+            print("Timed out!")
+            return 1
+        finally:
+            p.send_signal(signal.SIGINT)
+            p.wait()
         print("No status printed. Error in I/O redirection?")
         return 1
 
@@ -323,7 +333,7 @@ void start() {
         compile_to(mod_file, f"{TESTOUT}/temp.c", proc.name)
         mod_files.append(f"{mod_file} {proc.name}")
 
-    return launch(mod_files)
+    return asyncio.get_event_loop().run_until_complete(launch(mod_files))
 
 def processes(n):
     M = Sequence()
