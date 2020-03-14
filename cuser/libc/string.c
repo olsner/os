@@ -95,8 +95,3 @@ char* strncpy(char* d, const char *s, size_t n) {
     memset(d + copy, 0, fill);
     return d;
 }
-
-char *strdup(const char *src) {
-    size_t n = strlen(src) + 1;
-    return memcpy(malloc(n), src, n);
-}

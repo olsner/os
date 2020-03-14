@@ -43,3 +43,8 @@ void free(void* ptr) {
 		// What?
 	}
 }
+
+char *strdup(const char *src) {
+    size_t n = strlen(src) + 1;
+    return memcpy(malloc(n), src, n);
+}
