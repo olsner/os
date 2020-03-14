@@ -306,8 +306,8 @@ static void hmod_copy(uintptr_t h, uintptr_t copy) {
 	hmod(h, h, copy);
 }
 
-static void pulse(uintptr_t handle, uint64_t mask) {
-	send1(MSG_PULSE, handle, mask);
+static uintptr_t pulse(uintptr_t handle, uint64_t mask) {
+	return send1(MSG_PULSE, handle, mask);
 }
 
 enum prot {
