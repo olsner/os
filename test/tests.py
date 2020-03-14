@@ -13,6 +13,11 @@ def test_pulse_sync(M, A, B):
     result.expect(PULSE, B, 1)
 
 @with_procs(2)
+def test_pulse_first_open(M, A, B):
+    B.pulse(A, 1) # .expect(0) # TODO pulse doesn't actually return anything
+    A.recv(None, 1).expect(PULSE, B, 1)
+
+@with_procs(2)
 def test_pulse_first_specific(M, A, B):
     B.pulse(A, 1) # .expect(0) # TODO pulse doesn't actually return anything
     A.recv(B, 1).expect(PULSE, B, 1)

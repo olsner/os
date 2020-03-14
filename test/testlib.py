@@ -95,7 +95,7 @@ class Syscall(Action):
 
 class Recv(Action):
     """
-    Receive from a named process (None should eventually be supported to receive from anywhere).
+    Receive from a named process or None to receive from any process.
     """
     def __init__(self, rcpt, nargs):
         super().__init__()
@@ -103,7 +103,7 @@ class Recv(Action):
         self.nargs = nargs
 
     def __str__(self):
-        return f"recv{self.nargs}(self.proc)"
+        return f"recv{self.nargs}({self.rcpt or '0'})"
 
     def args(self, prefix = "", join = None):
         res = [f"{prefix}arg{self.id}_{i}" for i in range(self.nargs)]
@@ -113,7 +113,7 @@ class Recv(Action):
 
     def declarations(self):
         yield f"result{self.id}"
-        yield f"rcpt{self.id} = {self.rcpt}"
+        yield f"rcpt{self.id} = {self.rcpt or '0'}"
         yield from self.args()
 
     def emit(self):
