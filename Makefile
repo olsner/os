@@ -362,3 +362,12 @@ $(GRUBDIR)/kcpp: out/start32.o force_kcpp
 
 clean::
 	$(MAKE) -C kcpp clean
+
+.PHONY: test test-kasm test-kcpp
+test-kasm: $(GRUBDIR)/kstart.b $(LIBC_OBJS_RAW)
+	test/tests.py --asm
+
+test-kcpp: $(GRUBDIR)/kcpp $(LIBC_OBJS_RAW)
+	test/tests.py --cpp
+
+test: test-kasm test-kcpp

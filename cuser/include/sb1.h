@@ -124,6 +124,21 @@ static inline int64_t syscall5(uint64_t msg, uint64_t dest, uint64_t arg1, uint6
 	return msg;
 }
 
+static inline ipc_msg_t ipc4(ipc_msg_t msg, ipc_dest_t* destSrc, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3, ipc_arg_t* arg4) {
+	register int64_t r8 __asm__("r8") = *arg3;
+	register int64_t r9 __asm__("r9") = *arg4;
+	__asm__ __volatile__ ("syscall"
+		:	/* return value(s) */
+			"=a" (msg),
+			/* clobbered inputs */
+			"=D" (*destSrc), "=S" (*arg1), "=d" (*arg2), "=r" (r8), "=r" (r9)
+		: "a" (msg), "D" (*destSrc), "S" (*arg1), "d" (*arg2), "r" (r8), "r" (r9)
+		: "r10", "r11", "%rcx", "memory");
+	*arg3 = r8;
+	*arg4 = r9;
+	return msg;
+}
+
 // Send 3, receive 3, ignore r9 and r10
 static inline ipc_msg_t ipc3(ipc_msg_t msg, ipc_dest_t* destSrc, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3) {
 	register int64_t r8 __asm__("r8") = *arg3;
@@ -158,6 +173,23 @@ static inline uintptr_t sendrcv3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1,
 static inline ipc_msg_t sendrcv2(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2)
 {
 	return ipc2(msg_call(msg), &dst, arg1, arg2);
+}
+
+static inline ipc_msg_t recv4(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3, ipc_arg_t* arg4)
+{
+	register int64_t r8 __asm__("r8");
+	register int64_t r9 __asm__("r9");
+	uintptr_t msg;
+	__asm__ __volatile__ ("syscall"
+		:	/* return value(s) */
+			"=a" (msg),
+			/* in/outputs */
+			"=D" (*src), "=S" (*arg1), "=d" (*arg2), "=r" (r8), "=r" (r9)
+		: "a" (0), "D" (*src)
+		: "r10", "r11", "%rcx", "memory");
+	*arg3 = r8;
+	*arg4 = r9;
+	return msg;
 }
 
 static inline ipc_msg_t recv3(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
@@ -218,6 +250,11 @@ static inline uintptr_t recv0(uintptr_t src)
 	return syscall1(0, src);
 }
 
+static inline uintptr_t send4(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2, ipc_arg_t arg3, ipc_arg_t arg4)
+{
+	return ipc4(msg_send(msg), &dst, &arg1, &arg2, &arg3, &arg4);
+}
+
 static inline uintptr_t send3(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2, ipc_arg_t arg3)
 {
 	return ipc3(msg_send(msg), &dst, &arg1, &arg2, &arg3);
@@ -269,8 +306,8 @@ static void hmod_copy(uintptr_t h, uintptr_t copy) {
 	hmod(h, h, copy);
 }
 
-static void pulse(uintptr_t handle, uint64_t mask) {
-	send1(MSG_PULSE, handle, mask);
+static uintptr_t pulse(uintptr_t handle, uint64_t mask) {
+	return send1(MSG_PULSE, handle, mask);
 }
 
 enum prot {
