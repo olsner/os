@@ -310,6 +310,8 @@ void start() {
                         # garbage..
                         return 0
         except asyncio.TimeoutError:
+            if not verbose:
+                for l in output_lines: print(l)
             print("Timed out!")
             return 1
         finally:
