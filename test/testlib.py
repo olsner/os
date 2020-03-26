@@ -263,7 +263,9 @@ void start() {
         elf = mod.replace(".mod", ".elf")
         # Usually want to split up compile and link for ccache, but for these
         # short programs the linking is what takes most of the time anyway.
-        cflags = "-g -Os -march=sandybridge -mno-avx -ffunction-sections -fdata-sections -W -Wall -Wextra -Werror -Wstrict-prototypes -Wmissing-prototypes -Wmissing-include-dirs -Wno-unused -Icuser/include -Itest"
+        cflags = "-g -march=sandybridge -mno-avx"
+        cflags += " -W -Wall -Wextra -Werror -Wstrict-prototypes -Wmissing-prototypes -Wmissing-include-dirs -Wno-unused"
+        cflags += " -Icuser/include -Itest"
         ldflags = "-nostdlib -T cuser/linker.ld"
         lib_os = ["stdio_raw", "stdlib", "string", "acpi_strtoul", "ctype"]
         lib_os = " ".join([f"{OUTDIR}/cuser/libc/{f}.o" for f in lib_os])
