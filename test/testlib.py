@@ -35,15 +35,18 @@ class Action(object):
         raise NotImplementedError(self)
 
     def wait_for_master(self):
-        return f"""
-puts(\"{self.process} waiting before step {self.id}\");
-wait_for_master(M, {self.id});
-puts(\"{self.process} starting step {self.id}\");"""
+        res = ''
+        if DEBUG:
+            res += f'puts("{self.process}: waiting before step {self.id}...");\n'
+        res += f'wait_for_master(M, {self.id});\n'
+        if DEBUG:
+            res += f'puts("{self.process}: starting step {self.id}");\n'
+        return res
 
     def send_result(self, *results):
         res = ''
         if DEBUG:
-            res += f'printf("{self.process} step {self.id}: {", ".join(["%d"] * len(results))}\\n", {", ".join(map(str, results))});'
+            res += f'printf("{self.process}: step {self.id}: {", ".join(["%d"] * len(results))}\\n", {", ".join(map(str, results))});'
         res += f"\nsend{len(results) + 1}(MSG_RESULT, M, {self.id}, {', '.join(map(str, results))});"
         return res
 
@@ -188,15 +191,17 @@ class Sequence(object):
         for proc, act in self.processActions:
             print(f"\n// {proc}: #{act.id}: {act}", file=h)
             if DEBUG:
-                print(f'puts("Starting step {act.id} in {proc}");', file=h)
+                print(f'puts("master: next step {act.id} in {proc}");', file=h)
             print(f"send1(MSG_STEP, {proc}, {act.id});", file=h)
+            if DEBUG:
+                print(f'puts("master: step {act.id} in {proc}...");', file=h)
             if act.expected_result():
                 expected = (act.id,) + tuple(act.expected_result())
                 if DEBUG:
-                    print(f'puts("Checking step {act.id}");', file=h)
+                    print(f'puts("master: Checking step {act.id}");', file=h)
                 self.emit_check(proc, expected, h)
-            if DEBUG:
-                print(f'puts("Step {act.id}: OK");', file=h)
+                if DEBUG:
+                    print(f'puts("master: Step {act.id}: OK");', file=h)
         print("pass();", file=h)
 
     def emit_check(self, proc, expected, h):
@@ -238,8 +243,8 @@ def strip_ansi(s):
             s = s[2:]
     return res
 
-def compile_and_run(procs, verbose = False, kernel = "out/kasm/kstart.b"):
-    header="""
+def compile_and_run(procs, verbose = False, kernel = "out/kasm/kstart.b", name = None):
+    header = f"""// Generated code for test {name}
 #include "test_common.h"
 """
     footer="""
@@ -399,7 +404,7 @@ def main(globs = globals()):
             continue
 
         procs = test()
-        res = compile_and_run(procs, args.verbose, args.kernel)
+        res = compile_and_run(procs, args.verbose, args.kernel, name = name)
         if res:
             fails += 1
         else:
