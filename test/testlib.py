@@ -192,9 +192,12 @@ class Sequence(object):
             print(f"\n// {proc}: #{act.id}: {act}", file=h)
             if DEBUG:
                 print(f'puts("master: next step {act.id} in {proc}");', file=h)
-            print(f"send1(MSG_STEP, {proc}, {act.id});", file=h)
-            if DEBUG:
-                print(f'puts("master: step {act.id} in {proc}...");', file=h)
+            print(f"""{{
+                ipc_arg_t step = {act.id};
+                ipc_msg_t msg = sendrcv1(MSG_STEP, {proc}, &step);
+                ASSERT_EQ(MSG_STEP, msg);
+                ASSERT_EQ({act.id}, step);
+            }}""", file=h)
             if act.expected_result():
                 expected = (act.id,) + tuple(act.expected_result())
                 if DEBUG:

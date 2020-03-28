@@ -165,7 +165,7 @@ static inline ipc_msg_t ipc2(ipc_msg_t msg, ipc_dest_t* src, ipc_arg_t* arg1, ip
 	return msg;
 }
 
-static inline uintptr_t sendrcv3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
+static inline ipc_msg_t sendrcv3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
 {
 	return ipc3(msg_call(msg), &dst, arg1, arg2, arg3);
 }
@@ -274,11 +274,11 @@ static inline uintptr_t send0(uintptr_t msg, ipc_dest_t dst)
 	return syscall1(msg_send(msg), dst);
 }
 
-static inline uintptr_t sendrcv1(uintptr_t msg, ipc_dest_t dst, ipc_arg_t* arg1)
+static inline ipc_msg_t sendrcv1(uintptr_t msg, ipc_dest_t dst, ipc_arg_t* arg1)
 {
 	return ipc1(msg_call(msg), &dst, arg1);
 }
-static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
+static inline ipc_msg_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
 {
 	return syscall1(msg_call(msg), dst);
 }
