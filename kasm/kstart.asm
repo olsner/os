@@ -812,9 +812,10 @@ stop_waiting:
 %if log_waiters
 	push	rdi
 	mov	rcx, rdi
-lodstr	rdi, 'Unblocking %p (%x) from %p (%x)', 10
+lodstr	rdi, 'Unblocking %p (%x) from %p (%x), wait-for=%p', 10
 	mov	rdx, [rsi + proc.flags]
 	mov	r8, [rcx + proc.flags]
+	mov	r9, [rsi + proc.waiting_for]
 	call	printf
 lodstr rdi, 'Unblocked %p (%x)', 10
 	mov	rsi, [rsp + 8]
@@ -844,10 +845,12 @@ lodstr	rdi,	'Unblocked process %p (%x)', 10
 lodstr	rdi,	'<end>', 10
 	call	puts
 	pop	rdi
+	; runqueue_append done before the printout
 	ret
 %else
 	pop	rdi
-	tcall	runqueue_append
+	; fall through to runqueue_append since it just happens to be next
+	; tcall	runqueue_append
 %endif
 
 ; rdi: process to add to runqueue
@@ -1795,7 +1798,7 @@ pulse_handle:
 	mov	rax, [rsi + handle.events]
 .retry	mov	rcx, rdx
 	or	rcx, rax
-	; if events == rax (old events), replace with rdx
+	; Try to update the events bits in the handle.
 	cmpxchg	qword [rsi + handle.events], rcx
 	jne	.retry
 	; rax now contains the previous value of events.
@@ -2920,8 +2923,9 @@ syscall_recv:
 lodstr	rdi, '%p: recv from any', 10
 	mov	rsi, rax
 	call	printf
+	zero	esi ; we did a test above that there is no source handle, but clobbered it by printf
 %endif
-	zero	eax
+	zero	eax ; handle to receive from, null since rsi was null
 	jmp	.do_recv
 
 .have_handle:
