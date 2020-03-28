@@ -320,13 +320,17 @@ void start() {
                         # garbage..
                         return 0
         except asyncio.TimeoutError:
+            p.send_signal(signal.SIGINT)
+            await p.wait()
+            p = None
             if not verbose:
                 for l in output_lines: print(l)
             print("Timed out!")
             return 1
         finally:
-            p.send_signal(signal.SIGINT)
-            p.wait()
+            if p:
+                p.send_signal(signal.SIGINT)
+                await p.wait()
         print("No status printed. Error in I/O redirection?")
         return 1
 
