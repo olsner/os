@@ -182,7 +182,7 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 rcpt, u64 arg1, u64 arg2, u64 ar
 NORETURN void ipc_recv(Process *p, u64 from) {
     auto handle = from ? p->find_handle(from) : nullptr;
     log(recv, "%s recv from %lx (%s)\n", p->name(), from,
-            handle ? handle->otherspace->name() : "fresh");
+            handle ? handle->otherspace->name() : from ? "fresh" : "any");
     p->set(proc::InRecv);
     p->regs.rdi = from;
     if (auto sender = p->aspace->pop_sender(handle)) {
