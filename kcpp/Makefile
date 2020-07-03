@@ -23,6 +23,7 @@ LDFLAGS = -Wl,--check-sections -Wl,--gc-sections
 LDFLAGS += -Wl,--oformat=elf64-x86-64
 LDFLAGS += -Wl,-Map,$(@:.elf=.map)
 LDFLAGS += -ffreestanding -nostdlib
+LDFLAGS += -g
 
 HOST_CXXFLAGS = -g -Os -std=gnu++17
 
