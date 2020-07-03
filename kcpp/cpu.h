@@ -44,6 +44,7 @@ struct Cpu {
     DList<Process> runqueue;
     Process *irq_process;
     u64 irq_delayed[4];
+    Process *last_process;
 
     SavedRegs kernel_reg_save;
 
@@ -100,6 +101,7 @@ struct Cpu {
         p->set(proc::Running);
         if (process != p) {
             process = p;
+            last_process = p;
             x86::set_cr3(p->cr3());
         }
         if (p->is(proc::FastRet)) {
@@ -122,6 +124,7 @@ struct Cpu {
             p->set(proc::Running);
             if (process != p) {
                 process = p;
+                last_process = p;
                 x86::set_cr3(p->cr3());
             }
             p->unset(proc::FastRet);

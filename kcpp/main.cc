@@ -239,11 +239,6 @@ void abort() {
     __builtin_unreachable();
 }
 
-void assert_failed(const char* file, int line, const char* msg) {
-    printf("%s:%d: ASSERT FAILED: %s\n", file, line, msg);
-    abort();
-}
-
 template <typename T, typename U = T>
 T latch(T& var, U value = U()) {
     T res = var;
@@ -498,6 +493,16 @@ using aspace::AddressSpace;
 using cpu::Cpu;
 using cpu::getcpu;
 #include "syscall.h"
+
+void assert_failed(const char* file, int line, const char* msg) {
+    printf("%s:%d: ASSERT FAILED: %s\n", file, line, msg);
+    Cpu& c = getcpu();
+    if (c.last_process) {
+        printf("Last user process: %s\n", c.last_process->name());
+        // TODO Print IP and registers of user process?
+    }
+    abort();
+}
 
 Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     u32 end = (end_unaligned + 0xfff) & ~0xfff;
