@@ -5,6 +5,9 @@
 #include <stdlib.h>
 
 #define SYS_WRITE SYSCALL_WRITE
+#ifndef PROCNAME
+#define PROCNAME "<unknown>"
+#endif
 
 enum msg_test {
     MSG_STEP = MSG_USER,
@@ -23,7 +26,7 @@ __attribute__((noreturn)) static void fail(void) {
 
 static void assert_eq(const char *file, int line, const char* exp_s, uintptr_t exp, const char *actual_s, uintptr_t actual) {
     if (exp != actual) {
-        printf("%s:%d: Expected %s == %s (%ld) but got %ld\n", file, line, actual_s, exp_s, exp, actual);
+        printf(PROCNAME " %s:%d: Expected %s == %s (%ld) but got %ld\n", file, line, actual_s, exp_s, exp, actual);
         fail();
     }
 }
@@ -33,6 +36,6 @@ static void assert_eq(const char *file, int line, const char* exp_s, uintptr_t e
 static void wait_for_master(ipc_dest_t rcpt, ipc_arg_t step) {
     ipc_arg_t arg0;
     ipc_msg_t msg = recv1(&rcpt, &arg0);
-    ASSERT_EQ(msg, MSG_STEP);
-    ASSERT_EQ(arg0, step);
+    ASSERT_EQ(MSG_STEP, msg);
+    ASSERT_EQ(step, arg0);
 }

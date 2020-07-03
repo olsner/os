@@ -270,7 +270,7 @@ void start() {
         lib_os += f" {OUTDIR}/cuser/acpica/printf.o"
 
         if verbose: print(f"Compiling {elf}...")
-        subprocess.check_call(f"ccache {cross}gcc -o {elf} {cflags} {ldflags} {source} {lib_os} -Dproc_main={procname}_main", shell=True)
+        subprocess.check_call(f"ccache {cross}gcc -o {elf} {cflags} {ldflags} {source} {lib_os} -Dproc_main={procname}_main '-DPROCNAME=\"{procname}\"'", shell=True)
         subprocess.check_call(f"{cross}objcopy -Obinary {elf} {mod}", shell=True)
 
     async def launch(mods):
