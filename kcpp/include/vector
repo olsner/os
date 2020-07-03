@@ -95,6 +95,7 @@ public:
     vector() = default;
 
     using iterator = T*;
+    using const_iterator = const T*;
     using Base::size;
 
     // Let's make copies more explicit...
@@ -174,6 +175,13 @@ public:
     }
     iterator end() {
         return iterator(Base::at(size()));
+    }
+
+    const_iterator begin() const {
+        return const_iterator(Base::at(0));
+    }
+    const_iterator end() const {
+        return const_iterator(Base::at(size()));
     }
 };
 

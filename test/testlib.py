@@ -164,6 +164,9 @@ class Process(object):
     def socketpair(self):
         return self.add(Socketpair()).result()
 
+    def hmod_rename(self, fd, fd2):
+        return self.add(Syscall('hmod_rename', fd, fd2)).result()
+
     def syscall(self, syscall, *args):
         return self.add(Syscall(syscall, *args)).result()
 

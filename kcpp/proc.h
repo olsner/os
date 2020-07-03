@@ -56,9 +56,12 @@ struct Process {
     DListNode<Process> node;
 
     RefCnt<AddressSpace> aspace;
-    AddressSpace *waiting_for;
+    RefCnt<Socket> blocked_socket;
     uintptr_t fault_addr;
     // TODO FXSave
+
+    RefCnt<File> send_file;
+    u64 recv_dest;
 
     Process(AddressSpace *aspace):
         aspace(aspace)
@@ -67,51 +70,20 @@ struct Process {
         rflags = x86::rflags::IF;
     }
 
-    void assoc_handles(uintptr_t j, Process *other, uintptr_t i) {
-        AddressSpace *otherspace = other->aspace.get();
-        auto x = aspace->new_handle(j, otherspace);
-        auto y = otherspace->new_handle(i, aspace.get());
-        x->other = y;
-        y->other = x;
-    }
-
-    Handle *new_handle(uintptr_t key, AddressSpace *otherspace) {
-        return aspace->new_handle(key, otherspace);
-    }
-    Handle *find_handle(uintptr_t key) const {
-        return aspace->find_handle(key);
-    }
-    void rename_handle(Handle *handle, uintptr_t new_key) {
-        aspace->rename_handle(handle, new_key);
-    }
-    void delete_handle(Handle *handle) {
-        aspace->delete_handle(handle);
-    }
-
-    void wait_for(AddressSpace *otherspace) {
-        otherspace->add_waiter(this);
-    }
-    void add_waiter(Process *other) {
-        other->wait_for(aspace.get());
-    }
-    void remove_waiter(Process *other) {
-        aspace->remove_waiter(other);
-    }
-
     u64 cr3() const {
         return aspace->cr3();
     }
 
     bool is(ProcFlags flag) const {
-        return flags & (1 << flag);
+        return flags & mask(flag);
     }
     bool is_queued() const { return is(Queued); }
 
     void set(ProcFlags flag) {
-        flags |= (1 << flag);
+        flags |= mask(flag);
     }
     void unset(ProcFlags flag) {
-        flags &= ~(1 << flag);
+        flags &= ~mask(flag);
     }
 
     u64 ipc_state() const {
@@ -125,100 +97,14 @@ struct Process {
     const char *name() const { return aspace->name(); }
 
     void dump_regs() const { saved_regs.dump(); }
+
+    bool can_receive_from(Socket* sock) {
+        // blocked_socket = null => open-ended receive
+        return ipc_state() == mask(proc::InRecv) && (blocked_socket == nullptr || blocked_socket == sock);
+    }
+
+    bool sending_to(Socket* sock) {
+        return is(proc::InSend) && blocked_socket == sock;
+    }
 };
-}
-
-namespace aspace {
-
-Process *AddressSpace::pop_sender(Handle *target) {
-    for (auto p: waiters) {
-        if (p->is(proc::InSend)
-            && (!target
-                || (target->otherspace == p->aspace.get()
-                    && target->other->key() == p->regs.rdi))) {
-            remove_waiter(p);
-            return p;
-        }
-    }
-
-    return nullptr;
-}
-
-Process *AddressSpace::pop_recipient(Handle *source) {
-    return pop_recipient(source, proc::mask(proc::InRecv));
-}
-Process *AddressSpace::pop_pfault_recipient(Handle *source) {
-    return pop_recipient(source, proc::mask(proc::InRecv) | proc::mask(proc::PFault));
-}
-Process *AddressSpace::pop_recipient(Handle *source, uintptr_t ipc_state) {
-    // Iterate waiters, find a "remote" process that can receive something from
-    // source.
-    Handle *other = source->other;
-    for (auto p: waiters) {
-        if (p->ipc_state() == ipc_state) {
-            auto rcpt = p->find_handle(p->regs.rdi);
-            log(waiters,
-                    "%s get_recipient(%#lx): found %s receiving from %p (looking for %p)\n",
-                    name(), source->key(), p->name(), rcpt, other);
-            // If there was no handle, we don't expect to find that process
-            // here - pop_open_recipient would be used for that.
-            assert(rcpt);
-            if (!rcpt || rcpt == other) {
-                remove_waiter(p);
-                return p;
-            }
-        } else {
-            log(waiters, "%s get_recipient(%#lx): found %s in state %lu (wanted %lu)\n",
-                    name(), source->key(), p->name(), p->ipc_state(), ipc_state);
-        }
-    }
-    log(waiters, "%s get_recipient(%#lx): no match\n", name(), source->key());
-    return nullptr;
-}
-
-Process *AddressSpace::pop_open_recipient() {
-    for (auto p: blocked) {
-        if (p->ipc_state() == proc::mask(proc::InRecv)) {
-            log(waiters, "%s get_recipient(): found %s\n", name(), p->name());
-            // If it's receiving to a specific handle, we shouldn't find it
-            // here but in the other address space's waiter list.
-            assert(!p->find_handle(p->regs.rdi));
-            remove_blocked(p);
-            return p;
-        }
-    }
-    log(waiters, "%s get_recipient(): no open recipients\n", name());
-    return nullptr;
-}
-
-void AddressSpace::add_waiter(Process *p)
-{
-    log(waiters, "%s adds waiter %s\n", name(), p->name());
-    assert(!p->waiting_for);
-    assert(!p->is_queued());
-    waiters.append(p);
-    p->waiting_for = this;
-}
-void AddressSpace::remove_waiter(Process *p)
-{
-    log(waiters, "%s removes waiter %s\n", name(), p->name());
-    assert(p->waiting_for == this || p->waiting_for == nullptr);
-    waiters.remove(p);
-    p->waiting_for = nullptr;
-}
-void AddressSpace::add_blocked(Process *p)
-{
-    log(waiters, "%s is now blocked on %s\n", p->name(), name());
-    assert(!p->waiting_for);
-    assert(!p->is_queued());
-    blocked.append(p);
-    p->waiting_for = this;
-}
-void AddressSpace::remove_blocked(Process *p)
-{
-    log(waiters, "%s unblocked\n", p->name());
-    assert(p->waiting_for == this);
-    blocked.remove(p);
-    p->waiting_for = nullptr;
-}
 }

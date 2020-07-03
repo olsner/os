@@ -257,16 +257,16 @@ static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
 
 #include "msg_syscalls.h"
 
-static void hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
-	syscall3(SYS_HMOD, h, rename, copy);
+static int hmod(uintptr_t h, uintptr_t rename, uintptr_t copy) {
+	return syscall3(SYS_HMOD, h, rename, copy);
 }
 
 static void hmod_delete(uintptr_t h) {
 	hmod(h, 0, 0);
 }
 
-static void hmod_rename(uintptr_t h, uintptr_t rename) {
-	hmod(h, rename, 0);
+static int hmod_rename(uintptr_t h, uintptr_t rename) {
+	return hmod(h, rename, 0);
 }
 
 static void hmod_copy(uintptr_t h, uintptr_t copy) {

@@ -282,12 +282,12 @@ public:
         return sharings.insert(new Sharing(vaddr, paddr));
     }
 
-    bool find_mapping(uintptr_t vaddr, uintptr_t& offsetFlags, uintptr_t& handle) {
+    bool find_mapping(uintptr_t vaddr, uintptr_t& offsetFlags, int& fd) {
         auto card = mapcards.find_le(vaddr);
         if (!card) return false;
 
         offsetFlags = card->offsetFlags(vaddr);
-        handle = card->handle;
+        fd = card->handle;
 
         return true;
     }
@@ -303,11 +303,23 @@ public:
     int add_file(RefCnt<File> f) {
         return files.add_file(std::move(f));
     }
-    RefCnt<File> get_file(int fd) {
+    RefCnt<File> get_file(int fd) const {
         return files.get_file(fd);
     }
-    void replace_file(int fd, RefCnt<File> f) {
-        files.replace_file(fd, f);
+    RefCnt<Socket> get_socket(int fd) {
+        if (auto file = files.get_file(fd))
+            return file->get_socket();
+
+        return nullptr;
+    }
+    RefCnt<File> replace_file(int fd, RefCnt<File> f) {
+        return files.replace_file(fd, f);
+    }
+    int get_file_number(const RefCnt<File>& file) const {
+        return files.get_file_number(file);
+    }
+    int get_num_files() const {
+        return files.get_num_files();
     }
 
     Handle *new_handle(uintptr_t key, AddressSpace *other) {

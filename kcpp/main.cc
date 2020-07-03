@@ -68,6 +68,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_dict_find 0
 #define log_dict_insert 0
 #define log_ipc 0
+#define log_try_recv 0
 #define log_transfer_message 0
 #define log_assoc_procs 0
 #define log_recv 0
@@ -77,8 +78,8 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_grant 0
 #define log_waiters 0
 #define log_pulse 0
-#define log_socket 1
-#define log_files 1
+#define log_socket 0
+#define log_files 0
 
 #define log(scope, fmt, ...) do { \
     if (log_ ## scope) { \
@@ -524,14 +525,14 @@ Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
 void assoc_procs(Process *p, uintptr_t i, Process *q, uintptr_t j) {
     RefCnt<Socket> server, client;
     Socket::pair(server, client);
+    server->owner = p;
+    client->owner = q;
 
-    log(assoc_procs, "%p:%lu <-> %lu:%p\n", p, j, i, q);
-    // file descriptors are 0-based, handles are 1-based (as null has special
-    // meaning there).
-    p->aspace->replace_file(j - 1, server);
-    q->aspace->replace_file(i - 1, std::move(server));
-
-    p->assoc_handles(j, q, i);
+    log(assoc_procs, "%s:%p:%lu <-> %lu:%p:%s\n", p->name(), server.get(), j, i, client.get(), q->name());
+    // Since file descriptors are 0-based where handles are 1-based (as null has special
+    // meaning there), these should be j - 1 and i - 1 really. Temporarily keep the 1-based indexes so that e.g. tests are portable between C++ and assembly kernels.
+    p->aspace->replace_file(j, std::move(server));
+    q->aspace->replace_file(i, std::move(client));
 }
 
 void init_modules(Cpu *cpu, const mboot::Info& info) {
@@ -601,16 +602,18 @@ void handle_irq_generic(Cpu *cpu, u8 vec) {
     u64 mask = 1 << (vec & 63);
     if (cpu->irq_delayed[ix] & mask) {
         // Already delayed, so we can't do anything else here
-        log(irq, "handle_irq_generic: already delayed\n");
+        log(irq, "already delayed\n");
         return;
     }
     cpu->irq_delayed[ix] |= mask;
 
-    if (auto rcpt = p->aspace->pop_open_recipient()) {
+    if (p->is(proc::InRecv)) {
         auto irqs = latch(cpu->irq_delayed[0]);
-        log(irq, "handle_irq_generic: sending %lx to %s\n", irqs, rcpt->name());
-        syscall::transfer_pulse(rcpt, 0, irqs);
+        log(irq, "sending %lx to %s\n", irqs, p->name());
+        syscall::transfer_pulse(p, nullptr, -1, irqs);
     }
+
+    log(irq, "%s not receiving, delaying\n", p->name());
 }
 
 } // namespace
