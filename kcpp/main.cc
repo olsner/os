@@ -91,13 +91,20 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
     } \
 } while (0)
 
-namespace { namespace mem { void *malloc(size_t); void free(void *); } }
+namespace {
+    namespace mem {
+        void *malloc_no_size();
+        void *malloc(size_t);
+        void free(void *);
+    }
+}
 
 using mem::malloc;
+using mem::malloc_no_size;
 using mem::free;
 
-void *operator new(size_t sz) {
-    return malloc(sz);
+void *operator new(size_t) {
+    return malloc_no_size();
 }
 void operator delete(void *p) {
     free(p);
@@ -105,8 +112,8 @@ void operator delete(void *p) {
 void operator delete(void *p, size_t) {
     free(p);
 }
-void *operator new[](size_t sz) {
-    return malloc(sz);
+void *operator new[](size_t) {
+    return malloc_no_size();
 }
 void operator delete[](void *p) {
     free(p);

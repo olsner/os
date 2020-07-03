@@ -4,8 +4,6 @@
 
 namespace syscall {
 
-namespace {
-
 NORETURN void syscall_return(Process *p, u64 res, u64 arg1 = 0, u64 arg2 = 0, u64 arg3 = 0, u64 arg4 UNUSED = 0, u64 arg5 UNUSED = 0) {
     getcpu().syscall_return(p, res, arg1, arg2, arg3 /* TODO , arg4, arg5*/);
 }
@@ -470,10 +468,6 @@ NORETURN void syscall_close(Process *p, int fd) {
     syscall_return(p, res);
 }
 
-// non-transaction send and receive still need a 
-
-} // namespace
-
 extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
 
 NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4, u64 nr) {
@@ -533,4 +527,4 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     }
 }
 
-} // system
+} // syscall

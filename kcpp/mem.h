@@ -21,14 +21,18 @@ void free(void *page) {
     used_pages--;
 }
 
-void *malloc(size_t sz) {
-    assert(sz <= 4096);
+void *malloc_no_size() {
     free_page *res = freelist_head;
     assert(res);
     freelist_head = res->next;
     memset(res, 0, 4096);
     used_pages++;
     return res;
+}
+
+void *malloc(size_t sz) {
+    assert(sz <= 4096);
+    return malloc_no_size();
 }
 
 uintptr_t allocate_frame() {
