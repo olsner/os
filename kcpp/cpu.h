@@ -75,7 +75,7 @@ struct Cpu {
     }
 
     void queue(Process *p) {
-        log(runqueue, "queue %s. queued=%d flags=%lu\n", p->name(), p->is_queued(), p->flags);
+        log(runqueue, "queue %s. queued=%d flags=%u\n", p->name(), p->is_queued(), p->flags);
         assert(p->is_runnable());
         if (!p->is_queued()) {
             p->set(proc::Queued);

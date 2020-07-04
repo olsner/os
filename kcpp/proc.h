@@ -34,7 +34,7 @@ enum ProcFlags {
     PFault = 5
 
 };
-u64 mask(ProcFlags flag) {
+u32 mask(ProcFlags flag) {
     return 1 << flag;
 }
 using x86::Regs;
@@ -52,7 +52,7 @@ struct Process {
         SavedRegs saved_regs;
     };
     // End of assembly-shared fields.
-    u64 flags;
+    u32 flags;
 
     DListNode<Process> node;
 
