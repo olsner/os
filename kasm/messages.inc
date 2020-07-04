@@ -254,6 +254,8 @@ MSG_KIND_REPLYWAIT equ 0x200
 MSG_CODE_MASK equ 0xff
 MSG_KIND_SHIFT equ 8
 
+MSG_TX_ACCEPTFD equ (1 << 62)
+
 %define msg_code(msg, kind) ((kind) | (msg))
 %define msg_send(msg) msg_code(msg, MSG_KIND_SEND)
 %define msg_call(msg) msg_code(msg, MSG_KIND_CALL)

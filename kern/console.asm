@@ -26,7 +26,7 @@
 ;   (after 15 characters, start dropping stuff)
 
 the_reader equ 1
-pic_driver equ 6
+pic_driver equ 6 ; ACPICA
 
 IRQ_KEYBOARD	equ 1
 KEY_DATA	equ 0x60

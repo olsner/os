@@ -18,7 +18,7 @@ cat <<EOF
 menuentry "lwIP" {
     multiboot /$kernel
     module /cuser/irq.mod irq
-    module /kern/pic.mod pic
+    module /cuser/pic.mod pic
     module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
@@ -31,7 +31,7 @@ menuentry "lwIP" {
 menuentry "shell" {
     multiboot /$kernel
     module /cuser/irq.mod irq
-    module /kern/pic.mod pic
+    module /cuser/pic.mod pic
     module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
@@ -43,7 +43,7 @@ menuentry "shell" {
 menuentry "fbtest" {
     multiboot /$kernel
     module /cuser/irq.mod irq
-    module /kern/pic.mod pic
+    module /cuser/pic.mod pic
     module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
@@ -56,7 +56,7 @@ menuentry "fbtest" {
 menuentry "timer_test" {
     multiboot /$kernel
     module /cuser/irq.mod irq
-    module /kern/pic.mod pic
+    module /cuser/pic.mod pic
     module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
@@ -68,7 +68,7 @@ menuentry "timer_test" {
 menuentry "ACPICA debugger" {
     multiboot /$kernel
     module /cuser/irq.mod irq
-    module /kern/pic.mod pic
+    module /cuser/pic.mod pic
     module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC

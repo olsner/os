@@ -22,14 +22,6 @@ static const u16 KEY_CMD = 0x64;
 
 static const uintptr_t acpica_handle = 6;
 
-static void outb(u16 port, u8 data) {
-	portio(port, 0x11, data);
-}
-
-static u8 inb(u16 port) {
-	return portio(port, 0x1, 0);
-}
-
 static void clear_8042_buffer(void) {
     do {
         inb(KEY_DATA);

@@ -13,11 +13,10 @@ PIC_IRQ_BASE	equ	0x20
 IN_IRQ_BASE	equ	0x30
 
 IRQ_DRIVER	equ	1
-fresh_handle	equ	0x100
 
 boot:
 	; Input: IRQ driver in rdi
-	mov	edi, IRQ_DRIVER
+	mov	rdi, MSG_TX_ACCEPTFD | IRQ_DRIVER
 	push	rdi
 	; Check that rdi doesn't overlap our internal stuff:
 	; 0x20..0x2f: keep track of our clients
@@ -39,26 +38,22 @@ lodstr	edi, 'PIC booting...', 10
 
 	mov	ebx, 16
 .reg_loop:
-	; Duplicate IRQ handler -> 0x30..0x3f (incoming IRQ)
+
+	; Register IRQ 0x20..0x2f to a new fd
 	mov	rdi, [rsp]
-	mov	rsi, rdi
-	lea	edx, [rbx + IN_IRQ_BASE - 1]
+	lea	esi, [rbx + PIC_IRQ_BASE - 1]
+	mov	rax, msg_call(MSG_REG_IRQ)
+	syscall
+
+	; edi is the return value, a newly allocated file descriptor
+	; Now rename it to 0x30..0x3f (incoming IRQ range)
+	lea	esi, [rbx + IN_IRQ_BASE - 1]
+	zero	edx
 	mov	eax, SYS_HMOD
 	syscall
-	; Then register it for IRQ 0x20..0x2f
-	lea	edi, [rbx + IN_IRQ_BASE - 1]
-	lea	esi, [rbx + PIC_IRQ_BASE - 1]
-	mov	eax, msg_call(MSG_REG_IRQ)
-	syscall
+
 	dec	ebx
 	jnz	.reg_loop
-
-	mov	eax, SYS_HMOD
-	mov	edi, fresh_handle
-	; delete
-	zero	esi
-	zero	edx
-	syscall
 
 	mov	edi, PIC1_CMD
 	mov	esi, PIC_EOI
@@ -68,14 +63,15 @@ lodstr	edi, 'PIC booting...', 10
 	call	outb
 
 %if log
-	mov	rsi, [rsp]
+	mov	esi, [rsp]
 lodstr	edi, 'PIC boot complete. rawIRQ is %x', 10
 	call	printf
 %endif
 
 rcv_loop:
 	zero	eax
-	mov	edi, fresh_handle
+	zero	edi
+	dec	edi
 	syscall
 
 	push	rax

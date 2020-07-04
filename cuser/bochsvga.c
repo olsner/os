@@ -59,10 +59,6 @@ static const uintptr_t acpi_handle = 6;
 
 static u8 mmiospace[LFB_SIZE] PLACEHOLDER_SECTION;
 
-static void outb(u16 port, u8 data) {
-	portio(port, 0x11, data);
-}
-
 static u16 read_reg(enum Index i) {
 	portio(VBE_DISPI_IOPORT_INDEX, 0x12, (u16)i);
 	return portio(VBE_DISPI_IOPORT_DATA, 0x2, 0);

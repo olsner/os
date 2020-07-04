@@ -15,6 +15,8 @@ static const bool log_ioapic_init = true;
 static const bool log_apic_table = false;
 static const bool log_route_irq = false;
 
+static const bool force_pic_mode = false;
+
 // All controllers follow the REG_IRQ/ACK_IRQ interface, and should be
 // duplicated for each interrupt they handle.
 typedef struct irq_controller
@@ -243,8 +245,10 @@ ACPI_STATUS FindIOAPICs(int *pic_mode) {
 				(int)apic->IOApic.Id,
 				apic->IOApic.Address,
 				apic->IOApic.GlobalIrqBase);
-			ioapic_found = true;
-			ioapic_failed = !AddIOAPIC(&apic->IOApic);
+			if (!force_pic_mode) {
+				ioapic_found = true;
+				ioapic_failed = !AddIOAPIC(&apic->IOApic);
+			}
 			break;
 		}
 	}

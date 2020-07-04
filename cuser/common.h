@@ -97,6 +97,14 @@ static void __barrier(void) {
 	__asm__ __volatile__ ("":::"memory");
 }
 
+static void outb(u16 port, u8 data) {
+	portio(port, 0x11, data);
+}
+
+static u8 inb(u16 port) {
+	return portio(port, 0x1, 0);
+}
+
 __END_DECLS
 
 #endif // __COMMON_H
