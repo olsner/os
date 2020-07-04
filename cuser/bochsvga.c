@@ -54,8 +54,6 @@ enum Index {
 #define VBE_DISPI_NOCLEARMEM             0x80
 
 static const uintptr_t acpi_handle = 6;
-static const uintptr_t the_client = 0xff;
-static const uintptr_t fresh = 0x100;
 
 #define LFB_SIZE (16 * 1048576)
 
@@ -97,8 +95,9 @@ void start() {
 	// bus << 8 | dev << 3 | func
 	const uintptr_t pci_id = arg;
 	ipc_arg_t arg2 = 0; // No interrupts to claim.
-	sendrcv2(MSG_ACPI_CLAIM_PCI, acpi_handle, &arg, &arg2);
-	if (!arg)
+	sendrcv2(MSG_ACPI_CLAIM_PCI, MSG_TX_ACCEPTFD | acpi_handle, &arg, &arg2);
+	const int device_fd = arg;
+	if (device_fd < 0)
 	{
 		log("bochsvga: failed :(\n");
 		abort();
@@ -119,7 +118,7 @@ void start() {
 	}
 	debug("Mapping mmiospace %p to BAR %p\n", (void*)mmiospace, mmiobase);
 	// TODO Map unprefetchable!
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE,
+	map(-1, MAP_PHYS | PROT_READ | PROT_WRITE,
 		(void*)mmiospace, mmiobase, sizeof(mmiospace));
 	memset(mmiospace, 0, sizeof(mmiospace));
 
@@ -127,12 +126,15 @@ void start() {
 	debug("bochsvga: Found bochs version %x\n", bochs_id);
 	assert(bochs_id >= VBE_DISPI_ID0 && bochs_id <= VBE_DISPI_ID5);
 
+	int the_client = -1;
+
 	for(;;) {
-		ipc_dest_t rcpt = fresh;
-		arg = 0;
-		arg2 = 0;
+		ipc_dest_t rcpt = msg_set_fd(0, -1);
+		ipc_arg_t arg = 0;
+		ipc_arg_t arg2 = 0;
 		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("bochsvga: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
+		const int fd = msg_dest_fd(rcpt);
 
 		switch (msg & 0xff) {
 		case MSG_SET_VIDMODE:
@@ -151,7 +153,7 @@ void start() {
 				| VBE_DISPI_8BIT_DAC);
 			debug("bochsvga: mode updated!\n");
 			send2(MSG_SET_VIDMODE, rcpt, arg, arg2);
-			hmod_rename(rcpt, the_client);
+			the_client = fd;
 			break;
 		}
 		case MSG_SET_PALETTE:
@@ -169,7 +171,7 @@ void start() {
 		}
 		case SYS_PFAULT:
 		{
-			assert(arg < LFB_SIZE && rcpt == the_client);
+			assert(arg < LFB_SIZE && fd == the_client);
 			if (arg < LFB_SIZE) {
 				void *addr = (char*)&mmiospace + arg;
 				int prot = arg2 & (PROT_READ | PROT_WRITE);

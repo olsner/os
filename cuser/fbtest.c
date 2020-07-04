@@ -17,7 +17,7 @@
 #define H 480UL
 #define BPP 8
 
-static const uintptr_t fbhandle = 6;
+static const uintptr_t fbhandle = 7;
 static const uintptr_t apic_handle = 4;
 
 static __attribute__((const)) u16 usqrt(u32 x) {
@@ -89,7 +89,7 @@ void start() {
 	set_palette(palette);
 
 	for(;;) {
-		ipc_dest_t rcpt = 0;
+		ipc_dest_t rcpt = apic_handle;
 		ipc_arg_t arg, arg2;
 		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		if ((msg & 0xff) == SYS_PULSE) {

@@ -4,7 +4,6 @@
  * number of pages filled with zeroes. */
 
 static const int ALLOWED_FLAGS = PROT_READ | PROT_EXECUTE;
-static const ipc_dest_t fresh = 256;
 
 static const char zeropage[4096] __attribute__((aligned(4096)));
 
@@ -29,7 +28,7 @@ void start() {
 
 	for (;;) {
 		ipc_arg_t arg1, arg2;
-		ipc_dest_t rcpt = fresh;
+		ipc_dest_t rcpt = msg_set_fd(0, -1);
 		ipc_msg_t msg = recv2(&rcpt, &arg1, &arg2);
 		// PFAULT: source handle, offset, requested flags
 		switch (msg & 0xff) {
@@ -41,9 +40,6 @@ void start() {
 		default:
 			printf("zeropage: unknown message %x from %x: %x %x\n", msg, rcpt, arg1, arg2);
 			break;
-		}
-		if (rcpt == fresh) {
-			hmod_delete(rcpt);
 		}
 	}
 }

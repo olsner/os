@@ -14,7 +14,7 @@ void start() {
 
 	send2(MSG_REG_TIMER, apic_handle, delay, pulse);
 	for (;;) {
-		ipc_dest_t rcpt = 0;
+		ipc_dest_t rcpt = apic_handle;
 		ipc_arg_t arg1;
 		ipc_msg_t msg = recv1(&rcpt, &arg1);
 		if ((msg & 0xff) == SYS_PULSE) {
