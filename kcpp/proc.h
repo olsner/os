@@ -87,7 +87,7 @@ struct Process {
     }
 
     u64 ipc_state() const {
-        return flags & (mask(InSend) | mask(InRecv) | mask(PFault));
+        return flags & (mask(InSend) | mask(InRecv));
     }
     bool is_runnable() const {
         return ipc_state() == 0;

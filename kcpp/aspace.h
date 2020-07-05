@@ -17,7 +17,11 @@ enum MapFlags {
 struct MapCard {
     typedef uintptr_t Key;
     DictNode<Key, MapCard> as_node;
-    uintptr_t handle;
+    // Should this be the actual file instead? At one point it was decided that
+    // memory mappings should be "dumb" and only applied when a fault happens,
+    // but I think POSIX semantics might be impossible with that...
+    // In POSIXy terms, the file description is mapped, not the file descriptor.
+    int fd;
     // .vaddr + .offset = handle-offset to be sent to backer on fault
     // For a direct physical mapping, paddr = .vaddr + .offset
     // .offset = handle-offset - vaddr
@@ -25,9 +29,9 @@ struct MapCard {
     // The low 12 bits contain flags.
     uintptr_t offset;
 
-    MapCard(uintptr_t vaddr, uintptr_t handle, uintptr_t offset):
+    MapCard(uintptr_t vaddr, int fd, uintptr_t offset):
         as_node(vaddr),
-        handle(handle),
+        fd(fd),
         offset(offset)
     {}
 
@@ -43,8 +47,8 @@ struct MapCard {
     uintptr_t offsetFlags(uintptr_t vaddr) const {
         return vaddr + offset;
     }
-    void set(uintptr_t handle, uintptr_t offset) {
-        this->handle = handle;
+    void set(int fd, uintptr_t offset) {
+        this->fd = fd;
         this->offset = offset;
     }
 };
@@ -146,9 +150,6 @@ class AddressSpace: public RefCounted<AddressSpace> {
     Dict<Backing> backings;
     Dict<Sharing> sharings;
 
-    Dict<Handle> handles;
-    Dict<PendingPulse> pending;
-
     // Processes waiting for this address space to do something.
     DList<Process> waiters;
     // Processes in this address space waiting for something to happen, e.g. in
@@ -156,6 +157,7 @@ class AddressSpace: public RefCounted<AddressSpace> {
     DList<Process> blocked;
 
     FTable files;
+    // TODO Add back this for more efficient pending-pulse handling? Dict<PendingPulse> pending;
 
     char name_[16];
 
@@ -181,20 +183,21 @@ public:
         mapcard_set(vaddr, handle, offset | flags);
     }
 
-    void map_range(uintptr_t start, uintptr_t end, uintptr_t handle, uintptr_t offsetFlags) {
-        log(map_range, "map_range %#lx..%#lx to %#lx:%#lx\n", start, end, handle, offsetFlags);
+    void map_range(uintptr_t start, uintptr_t end, int fd, uintptr_t offsetFlags) {
+        log(map_range, "map_range %#lx..%#lx to %d:%#lx\n", start, end, fd, offsetFlags);
 
         // Start by figuring out what to do with the end of the range. We want
         // to make sure that end.. is mapped to whatever it was mapped to
         // before, and also optimize away any unnecessary cards.
 
-        uintptr_t end_handle = 0, end_offset = 0;
+        uintptr_t end_offset = 0;
+        int end_fd = -1;
         MapCard *endCard = mapcards.find_le(end);
         if (endCard) {
-            end_handle = endCard->handle;
+            end_fd = endCard->fd;
             end_offset = endCard->offset;
         }
-        if (end_offset == offsetFlags && end_handle == handle) {
+        if (end_offset == offsetFlags && end_fd == fd) {
             // Remove end card, it's equivalent to the start-card we're adding.
             // TODO Seems to be missing a few cases here... If end-vaddr <
             // start, we shouldn't touch it. (and we shouldn't add a start
@@ -206,13 +209,13 @@ public:
             // to be duplicated at the end. If the vaddr is exactly equal, we
             // can just keep it to mark the end of the range.
             if (endCard->vaddr() != end) {
-                mapcard_set(end, end_handle, end_offset);
+                mapcard_set(end, end_fd, end_offset);
             }
         }
 
         // Set this last, since there might be an older mapcard at vaddr==start
         // that sets what the parameters starting at end.
-        mapcard_set(start, handle, offsetFlags);
+        mapcard_set(start, fd, offsetFlags);
 
         // Find all cards vaddr < key < end and remove them.
         while (MapCard *p = mapcards.remove_range_exclusive(start, end))
@@ -259,7 +262,7 @@ public:
         }
         assert(card->vaddr() <= vaddr);
         assert((card->flags() & MAP_RWX) && "No access");
-        if (card->handle) {
+        if (card->fd >= 0) {
             unimpl("User mappings");
         }
 
@@ -287,7 +290,7 @@ public:
         if (!card) return false;
 
         offsetFlags = card->offsetFlags(vaddr);
-        fd = card->handle;
+        fd = card->fd;
 
         return true;
     }
@@ -321,73 +324,5 @@ public:
     int get_num_files() const {
         return files.get_num_files();
     }
-
-    Handle *new_handle(uintptr_t key, AddressSpace *other) {
-        if (Handle *old = handles.find_exact(key)) {
-            delete_handle(old);
-        }
-        return handles.insert(new Handle(key, other));
-    }
-
-    Handle *find_handle(uintptr_t key) const {
-        return handles.find_exact(key);
-    }
-    void rename_handle(Handle *handle, uintptr_t new_key) {
-        handles.rekey(handle, new_key);
-    }
-    void delete_handle(Handle *handle) {
-        handle->dissociate();
-        Handle* existing = handles.remove(handle->key());
-        assert(existing == handle);
-        delete handle;
-    }
-
-    void pulse_handle(Handle *handle, uintptr_t events) {
-        assert(events);
-        // If any events are pending we know it's already on the list.
-        if (!handle->events) {
-            pending.insert(new PendingPulse(handle));
-        }
-        handle->events |= events;
-    }
-    Handle *pop_pending_handle() {
-        while (PendingPulse *p = pending.pop()) {
-            Handle *res = find_handle(p->key());
-            delete p;
-            // The handle could've been deleted while still pending.
-            if (res && res->events) {
-                return res;
-            }
-        }
-        return nullptr;
-    }
-
-    // Find a process waiting to send a message to 'target' in our address
-    // space, and remove it from the waiters list.
-    Process *pop_sender(Handle *target);
-
-    // Find a process waiting to receive a message from source (our end),
-    // return it or NULL if no match is found. Also removes the process from
-    // the relevant wait list.
-    Process *pop_recipient(Handle *source);
-    Process *pop_pfault_recipient(Handle *source);
-    // Also accept processes in a specific ipc state (e.g. page fault).
-    Process *pop_recipient(Handle *source, uintptr_t ipc_state);
-
-    // Find a process in this address space waiting to receive any message.
-    // Note that as opposed to pop_sender/recipient, the blocked process is in
-    // this address space, in other words you want to run this on the target
-    // address space when trying to send.
-    Process *pop_open_recipient();
-
-    // Add a process (in *another* address space) that is blocked on something
-    // in this address space.
-    void add_waiter(Process *p);
-    void remove_waiter(Process *p);
-
-    // Add a process (in this address space) that is blocked on something
-    // unspecified.
-    void add_blocked(Process *p);
-    void remove_blocked(Process *p);
 };
 }

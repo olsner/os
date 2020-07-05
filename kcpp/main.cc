@@ -487,7 +487,6 @@ using aspace::AddressSpace;
 #include "dlist.h"
 #include "mem.h"
 #include "refcnt.h"
-#include "handle.h"
 #include "aspace.h"
 #include "proc.h"
 #include "cpu.h"
@@ -515,9 +514,9 @@ Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     ret->rip = 0x100000 + (start & 0xfff);
 
     using namespace aspace; // for MAP_*
-    aspace->mapcard_set(0x0ff000, 0, 0, MAP_ANON | MAP_RW);
-    aspace->mapcard_set(0x100000, 0, start_page - 0x100000, MAP_PHYS | MAP_RX);
-    aspace->mapcard_set(0x100000 + (end - start_page), 0, 0, 0);
+    aspace->mapcard_set(0x0ff000, -1, 0, MAP_ANON | MAP_RW);
+    aspace->mapcard_set(0x100000, -1, start_page - 0x100000, MAP_PHYS | MAP_RX);
+    aspace->mapcard_set(0x100000 + (end - start_page), -1, 0, 0);
 
     return ret;
 }

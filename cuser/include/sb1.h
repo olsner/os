@@ -273,8 +273,8 @@ static void hmod_copy(uintptr_t h, uintptr_t copy) {
 	hmod(h, h, copy);
 }
 
-static uintptr_t pulse(uintptr_t handle, uint64_t mask) {
-	return send1(SYS_PULSE, handle, mask);
+static uintptr_t pulse(int fd, uint64_t mask) {
+	return send1(SYS_PULSE, fd, mask);
 }
 
 enum prot {
@@ -288,8 +288,8 @@ enum prot {
 	PROT_NO_CACHE = 32,
 };
 
-static int64_t map_raw(ipc_dest_t handle, int prot, uint64_t addr, uint64_t offset, uint64_t size) {
-	return syscall5(SYS_MAP, handle, prot, addr, offset, size);
+static int64_t map_raw(int fd, int prot, uint64_t addr, uint64_t offset, uint64_t size) {
+	return syscall5(SYS_MAP, fd, prot, addr, offset, size);
 }
 
 typedef int64_t off_t; // -> sys/types.h
@@ -302,20 +302,20 @@ static const uintptr_t USER_MAP_MAX = UINTPTR_MAX;
 #else
 static const uintptr_t USER_MAP_MAX = 0x800000000000;
 #endif
-static void* map(ipc_dest_t handle, enum prot prot, const volatile void *local_addr, off_t offset, size_t size) {
+static void* map(int fd, enum prot prot, const volatile void *local_addr, off_t offset, size_t size) {
 	if (size < 0x1000) { size = 0x1000; }
-	return (void*)(intptr_t)map_raw(handle, prot, (uintptr_t)local_addr, offset, size);
+	return (void*)(intptr_t)map_raw(fd, prot, (uintptr_t)local_addr, offset, size);
 }
 
 static void map_anon(int prot, void *local_addr, uintptr_t size) {
 	if (size) {
-		map(0, MAP_ANON | prot, local_addr, 0, size);
+		map(-1, MAP_ANON | prot, local_addr, 0, size);
 	}
 }
 
 static uint64_t map_dma(int prot, const volatile void *local_addr, size_t size) {
 	if (size) {
-		return map_raw(0, MAP_DMA | prot, (uintptr_t)local_addr, 0, size);
+		return map_raw(-1, MAP_DMA | prot, (uintptr_t)local_addr, 0, size);
 	} else {
 		return (uint64_t)-1;
 	}

@@ -330,7 +330,7 @@ NORETURN void syscall_pulse(Process *p, int fd, u64 bits) {
     syscall_return(p, 0);
 }
 
-NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
+NORETURN void syscall_map(Process *p, int fd, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
     using namespace aspace;
 
     // TODO (also unimpl in asm): remove any previously backed pages.
@@ -350,7 +350,7 @@ NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr
 
     // For DMA memory we want to allocate the memory right away so we can
     // return the address to the caller.
-    if (!handle && (flags & MAP_DMA) == MAP_DMA) {
+    if (fd < 0 && (flags & MAP_DMA) == MAP_DMA) {
         // Maybe require that offset == 0, since it's currently not used but we
         // might find a use for it later? And then we'd not want stuff relying
         // on garbage being OK.
@@ -361,7 +361,7 @@ NORETURN void syscall_map(Process *p, uintptr_t handle, uintptr_t flags, uintptr
     }
 
     uintptr_t end_vaddr = vaddr + size;
-    p->aspace->map_range(vaddr, end_vaddr, handle, flags | (offset - vaddr));
+    p->aspace->map_range(vaddr, end_vaddr, fd, flags | (offset - vaddr));
 
     if (flags & MAP_PHYS) {
         syscall_return(p, offset);
@@ -386,9 +386,7 @@ NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
     }
 
     log(prefault, "%s prefault: mapped to %d offset %lx\n", p->name(), fd, offsetFlags);
-    // TODO Should rather be a transaction flag.
-    p->set(proc::PFault);
-    ipc_call(p, SYS_PFAULT, fd, offsetFlags & -4096, flags & offsetFlags);
+    ipc_call(p, SYS_PFAULT, MSG_TX_PFAULT | fd, offsetFlags & -4096, flags & offsetFlags);
 }
 
 // Respond to a PFAULT message from a process that's mapped some memory from
@@ -406,16 +404,12 @@ NORETURN void syscall_grant(Process *p, u64 dest, uintptr_t vaddr, uintptr_t fla
     log(grant, "%s grant(fd=%d vaddr=%#lx flags=%lu)\n", p->name(), fd, vaddr, flags);
 
     // Find faulted process in otherspace
-    auto rcpt = sock->get_recipient();
-    if (!rcpt) {
+    const auto tx = sock->end_transaction(dest);
+    if (!tx) {
+        // TODO error code instead
         abort("No-one seems to be waiting for a page fault...\n");
     }
-    // TODO The pfault check should move up into get_recipient() so we can get the right one. (also, should be a transaction flag so this is just end_transaction() and a check for match)
-    if (!rcpt->is(proc::PFault)) {
-        // Note that rcpt has already been popped from a waiting list, to
-        // allow more progress we should add it back if we don't send anything.
-        abort("GRANT target is not handling a fault\n");
-    }
+    const auto rcpt = tx.peer;
     auto fault_addr = rcpt->fault_addr;
     uintptr_t offsetFlags;
     int mapped_fd;
@@ -439,13 +433,15 @@ NORETURN void syscall_grant(Process *p, u64 dest, uintptr_t vaddr, uintptr_t fla
     rcpt->aspace->add_shared_backing(fault_addr | flags, sharing);
     // TODO Add the PTE for the newly added page to save a page fault
 
-    rcpt->unset(proc::PFault);
-    if (rcpt->is(proc::InRecv)) {
+    if (rcpt->is(proc::PFault)) {
+        unimpl("grant after page fault");
+    }
+    else {
+        assert(rcpt->is(proc::InRecv));
         // If this is set we got here from an explicit pfault syscall, so
         // respond with a message.
         transfer_message(rcpt, p, msg_send(SYS_GRANT), dest, vaddr, flags);
     }
-    unimpl("grant after page fault");
 }
 
 NORETURN void syscall_yield(Process *p) {
