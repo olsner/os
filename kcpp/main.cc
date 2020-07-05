@@ -241,8 +241,8 @@ void abort() {
 
 template <typename T, typename U = T>
 T latch(T& var, U value = U()) {
-    T res = var;
-    var = value;
+    T res = static_cast<T&&>(var);
+    var = static_cast<T&&>(value);
     return res;
 }
 
