@@ -34,26 +34,6 @@ NORETURN void syscall_portio(Process *p, u16 port, u8 op, u32 data) {
     syscall_return(p, res);
 }
 
-NORETURN void syscall_hmod(Process *p, int fd, int rename, int copy) {
-    log(hmod, "%s hmod: fd=%d rename=%d copy=%d\n", p->name(), fd, rename, copy);
-    const auto aspace = p->aspace;
-    if (auto file = aspace->get_file(fd)) {
-        aspace->replace_file(fd, nullptr);
-        assert(copy < 512);
-        assert(rename < 512);
-        // TODO 0 is not the "null" file, check for >=0 instead
-        // Also need more variants to allow it being used for dup(), dup2() and dup3().
-        if (copy) {
-            aspace->replace_file(copy, file);
-        }
-        if (rename) {
-            aspace->replace_file(rename, std::move(file));
-        }
-        syscall_return(p, 0);
-    }
-    syscall_return(p, -EBADF);
-}
-
 void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     p->regs.rax = msg;
     p->regs.rdi = dest;
@@ -488,9 +468,6 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     case SYS_PFAULT:
         /* First argument (arg0) is not used. */
         syscall_pfault(p, arg1, arg2);
-        break;
-    case SYS_HMOD:
-        syscall_hmod(p, arg0, arg1, arg2);
         break;
     case SYS_WRITE:
         Console::write(arg0, true);

@@ -64,7 +64,6 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_int_entry_regs 0
 #define log_irq 0
 #define log_portio 0
-#define log_hmod 0
 #define log_dict_find 0
 #define log_dict_insert 0
 #define log_ipc 0

@@ -85,7 +85,7 @@ enum syscalls_builtins {
 	SYS_MAP = 1,
 	SYS_PFAULT = 2,
 	SYS_UNMAP = 3,
-	SYS_HMOD = 4,
+	// SYS_HMOD = 4, no longer implemented
 	SYS_NEWPROC = 5,
 	SYS_WRITE = 6,
 	// arg0 (dst) = port
