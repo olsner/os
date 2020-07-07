@@ -3,8 +3,9 @@
 
 enum msg_ethernet {
 	/**
-	 * Register an ethernet protocol. Use with a fresh handle, memory map pages
-	 * to read incoming packets and store outgoing packets.
+	 * Register an ethernet protocol. Use with MSG_TX_ACCEPTFD, then memory map
+	 * pages on the returned file to read incoming packets and store outgoing
+	 * packets.
 	 * The special protocol number 0 can be used to match all protocols.
 	 *
 	 * The number of buffers to use is decided by the protocol through sending
@@ -12,9 +13,10 @@ enum msg_ethernet {
 	 * buffers start out owned by the protocol until given to ethernet for
 	 * sending or receiving.
 	 *
-	 * arg1: protocol number
+	 * arg1: protocol number / ethertype
 	 * Returns:
-	 * arg1: MAC address of card
+	 * arg1: created protocol file descriptor
+	 * arg2: MAC address of card
 	 */
 	MSG_ETHERNET_REG_PROTO = MSG_USER,
 	/**

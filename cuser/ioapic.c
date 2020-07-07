@@ -188,7 +188,7 @@ static void reg_gsi(uintptr_t tx, uintptr_t gsi, uintptr_t flags)
 	socketpair(fds);
 
 	downstream_gsi[gsi] = fds[0];
-	send2(MSG_REG_IRQ, tx | MSG_TX_CLOSEFD, fds[1], gsi);
+	send2(MSG_REG_IRQ, MSG_TX_CLOSEFD | tx, fds[1], gsi);
 }
 
 static void handle_irq(uintptr_t irq) {

@@ -13,9 +13,6 @@
 #endif
 
 static const uintptr_t acpi_handle = 6;
-static const uintptr_t pic_handle = 6;
-static const uintptr_t pin0_irq_handle = 0x100;
-static const uintptr_t fresh = 0x101;
 
 struct rdesc
 {
@@ -236,6 +233,7 @@ static buffer* buffer_owners[NBUFS];
 typedef struct protocol
 {
 	u16 ethertype;
+	int fd;
 	buffer buffers[PROTO_NBUFS];
 } protocol;
 #define MAX_PROTO 10
@@ -351,7 +349,7 @@ static void incoming_packet(int start, int end) {
 		size_t index = buf - proto->buffers;
 		assert(buf->state == RECV);
 		buf->state = UNUSED;
-		pulse((uintptr_t)proto, UINT64_C(1) << index);
+		pulse(proto->fd, UINT64_C(1) << index);
 	}
 	for (int i = start; i != end; i = (i + 1) % N_DESC)
 	{
@@ -487,14 +485,15 @@ static protocol* reg_proto(u16 ethertype) {
 	protocol* proto = &protocols[i];
 	memset(proto, 0, sizeof(protocol));
 	proto->ethertype = ethertype;
+	proto->fd = -1;
 	return proto;
 }
 
 static protocol* find_proto(uintptr_t rcpt) {
-	uintptr_t p = (uintptr_t)protocols;
-	uintptr_t i = (rcpt - p) / sizeof(protocol);
-	if (i < free_protocol && rcpt == (p + i * sizeof(protocol))) {
-		return (protocol*)rcpt;
+	for (size_t i = 0; i < free_protocol; i++) {
+		if (protocols[i].fd == msg_dest_fd(rcpt)) {
+			return &protocols[i];
+		}
 	}
 	return NULL;
 }
@@ -542,6 +541,16 @@ static buffer* buffer_for_recv(protocol* proto) {
 	return NULL;
 }
 
+static void proto_register(uintptr_t rcpt, u16 ethertype) {
+	protocol* proto = reg_proto(ethertype);
+
+	int fds[2];
+	socketpair(fds);
+	proto->fd = fds[0];
+	log("e1000: registered ethertype %04x => %p fd %d\n", ethertype, proto, proto->fd);
+	send2(MSG_ETHERNET_REG_PROTO, MSG_TX_CLOSEFD | rcpt, fds[1], hwaddr0);
+}
+
 static void proto_recv(protocol* proto, u8 recv_buffer) {
 	if (!proto) {
 		return;
@@ -558,7 +567,7 @@ static void proto_ack_send(protocol* proto, buffer* buf) {
 	size_t index = buf - proto->buffers;
 	debug("e1000: ack_send proto %d buffer %d (state = %d)\n", proto - protocols, index, buf->state);
 	assert(buf->state == SEND);
-	pulse((uintptr_t)proto, UINT64_C(1) << index);
+	pulse(proto->fd, UINT64_C(1) << index);
 	// We're done with the buffer so ownership goes back to the client.
 	buf->state = UNUSED;
 }
@@ -636,22 +645,25 @@ void start() {
 		log("e1000: No devices found\n");
 		abort();
 	}
-	log("e1000: found %x\n", arg);
+	log("e1000: found at %x (%02x:%02x.%d)\n", arg, arg >> 8, (arg >> 3) & 0x1f, arg & 0x7);
 	// bus << 8 | dev << 3 | func
 	const uintptr_t pci_id = arg;
 	ipc_arg_t arg2 = ACPI_PCI_CLAIM_MASTER | 1; // Just claim pin 0
-	sendrcv2(MSG_ACPI_CLAIM_PCI, acpi_handle, &arg, &arg2);
-	if (!arg) {
+	sendrcv2(MSG_ACPI_CLAIM_PCI, MSG_TX_ACCEPTFD | acpi_handle, &arg, &arg2);
+	const int device_fd = arg;
+	if (!arg2 || device_fd < 0) {
 		log("e1000: failed :(\n");
 		abort();
 	}
+
 	arg2 &= 0xffff;
 	const u8 irq = arg2 & 0xff;
 	const u8 triggering = !!(arg2 & 0x100);
 	const u8 polarity = !!(arg2 & 0x200);
 	log("e1000: claimed! irq %x triggering %d polarity %d\n", irq, triggering, polarity);
-	hmod_copy(pic_handle, pin0_irq_handle);
-	sendrcv1(MSG_REG_IRQ, pin0_irq_handle, &arg2);
+	sendrcv1(MSG_REG_IRQ, MSG_TX_ACCEPTFD | acpi_handle, &arg2);
+	const int pin0_irq_handle = arg2;
+	log("e1000: IRQ mapped to %d\n", pin0_irq_handle);
 
 	u32 cmd = readpci16(pci_id, PCI_COMMAND);
 	assert(cmd & PCI_COMMAND_MASTER);
@@ -671,7 +683,7 @@ void start() {
 		mmiobase |= bar1 << 32;
 	}
 	debug("Mapping mmiospace %p to BAR %p\n", (void*)mmiospace, mmiobase);
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+	map(-1, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		mmiospace, mmiobase, sizeof(mmiospace));
 
 	debug("Status: %x\n", mmiospace[STATUS]);
@@ -698,7 +710,7 @@ void start() {
 
 	for (size_t i = 0; i < N_DESC; i++) {
 		// Note: DMA memory must still be allocated page by page
-		uintptr_t physAddr = (uintptr_t)map(0,
+		uintptr_t physAddr = (uintptr_t)map(-1,
 				MAP_DMA | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 				(void*)receive_buffers[i], 0, sizeof(receive_buffers[i]));
 		init_descriptor((union desc*)receive_descriptors + i, physAddr);
@@ -769,32 +781,23 @@ void start() {
 
 	for(;;) {
 		print_dev_state();
-		uintptr_t rcpt = fresh;
+		ipc_dest_t rcpt = msg_set_fd(0, -1);
 		arg = 0;
 		arg2 = 0;
 		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		debug("e1000: received %x from %x: %x %x\n", msg, rcpt, arg, arg2);
-		if (rcpt == pin0_irq_handle && msg == SYS_PULSE) {
+		if (msg_dest_fd(rcpt) == pin0_irq_handle && msg == SYS_PULSE) {
 			// Disable all interrupts, then ACK receipt to PIC
 			send1(MSG_IRQ_ACK, rcpt, arg);
 			handle_irq();
 			continue;
 		}
 
-		if (rcpt == fresh) {
-			if ((msg & 0xff) == MSG_ETHERNET_REG_PROTO) {
-				protocol* proto = reg_proto(arg & 0xffff);
-				log("e1000: registered ethertype %04x => %p\n", arg & 0xffff, proto);
-				hmod_rename(rcpt, (uintptr_t)proto);
-				send1(MSG_ETHERNET_REG_PROTO, (uintptr_t)proto, hwaddr0);
-			} else {
-				hmod_delete(rcpt);
-			}
-			continue;
-		}
-
 		switch (msg & 0xff)
 		{
+		case MSG_ETHERNET_REG_PROTO:
+			proto_register(rcpt, arg & 0xffff);
+			break;
 		case MSG_ETHERNET_RECV:
 			proto_recv(find_proto(rcpt), arg);
 			break;
