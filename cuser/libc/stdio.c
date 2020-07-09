@@ -8,10 +8,11 @@ void putchar(char c) {
 	send1(MSG_CON_WRITE, CONSOLE_HANDLE, c);
 }
 
-char getchar(void) {
+int getchar(void) {
 	ipc_arg_t c = 0;
-	sendrcv1(MSG_CON_READ, CONSOLE_HANDLE, &c);
-	return c;
+	ipc_msg_t res = sendrcv1(MSG_CON_READ, CONSOLE_HANDLE, &c);
+	// set_errno(res) or something
+	return res == MSG_CON_READ ? (int)c : -1;
 }
 
 void puts(const char* str) {

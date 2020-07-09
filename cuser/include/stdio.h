@@ -11,7 +11,7 @@
 
 __BEGIN_DECLS
 
-char getchar(void);
+int getchar(void);
 void putchar(char c);
 void puts(const char* str);
 

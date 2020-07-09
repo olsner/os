@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "common.h"
 #include "msg_acpi.h"
 
@@ -13,7 +15,7 @@ static const ipc_dest_t acpi_handle = 6;
 static void prompt(void) {
 	puts("Enter debugger command: (Esc cancels)");
 	for (;;) {
-		ipc_arg_t c = getchar();
+		int c = getchar();
 		ipc_msg_t msg;
 		switch (c) {
 		case '\n': msg = MSG_ACPI_DEBUGGER_CMD; break;
@@ -23,7 +25,8 @@ static void prompt(void) {
 		// Even the buffer message can cause ACPI to do output, which will
 		// deadlock because the console thinks we own it.
 		putchar(c);
-		sendrcv1(msg, acpi_handle, &c);
+		ipc_arg_t arg = c;
+		sendrcv1(msg, acpi_handle, &arg);
 		if (msg != MSG_ACPI_DEBUGGER_BUFFER) {
 			break;
 		}
