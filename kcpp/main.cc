@@ -199,7 +199,8 @@ namespace Console {
         if (fromUser ? user_vgacon : kernel_vgacon) {
             if (c == '\n') {
                 u8 fill = width - (pos % width);
-                while(fill--) buffer[pos++] = 0;
+                memset16(buffer + pos, 0, fill);
+                pos += fill;
             } else {
                 buffer[pos++] = 0x0700 | c;
             }
@@ -211,8 +212,8 @@ namespace Console {
         }
     }
 
-    void write(const char *s) {
-        while (char c = *s++) write(c, false);
+    void write(const char *s, bool fromUser = false) {
+        while (char c = *s++) write(c, fromUser);
     }
 };
 
