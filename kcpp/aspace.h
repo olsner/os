@@ -312,8 +312,8 @@ public:
 
         return nullptr;
     }
-    RefCnt<File> replace_file(int fd, RefCnt<File> f) {
-        return files.replace_file(fd, f);
+    RefCnt<File>& file_at(int fd) {
+        return files.at(fd);
     }
     int get_file_number(const RefCnt<File>& file) const {
         return files.get_file_number(file);

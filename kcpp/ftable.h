@@ -50,15 +50,13 @@ struct FTable {
         return it - files.begin();
     }
 
-    // Insert a file at a specific place in the fd table, replacing whatever
-    // was there.
-    RefCnt<File> replace_file(int fd, RefCnt<File> new_file) {
+    // Resize the file table if necessary and return a reference to the given
+    // file table entry.
+    RefCnt<File>& at(int fd) {
         if (files.size() <= size_t(fd)) {
             files.resize(fd + 1, nullptr);
         }
-        auto old_file = latch(files[fd], std::move(new_file));
-        // TODO Shrink table if we inserted a nullptr in the last entry.
-        return old_file;
+        return files[fd];
     }
 
     int get_file_number(const RefCnt<File>& file) const {

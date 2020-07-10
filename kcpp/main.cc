@@ -531,8 +531,8 @@ void assoc_procs(Process *p, uintptr_t i, Process *q, uintptr_t j) {
     log(assoc_procs, "%s:%p:%lu <-> %lu:%p:%s\n", p->name(), server.get(), j, i, client.get(), q->name());
     // Since file descriptors are 0-based where handles are 1-based (as null has special
     // meaning there), these should be j - 1 and i - 1 really. Temporarily keep the 1-based indexes so that e.g. tests are portable between C++ and assembly kernels.
-    p->aspace->replace_file(j, std::move(server));
-    q->aspace->replace_file(i, std::move(client));
+    p->aspace->file_at(j) = std::move(server);
+    q->aspace->file_at(i) = std::move(client);
 }
 
 void init_modules(Cpu *cpu, const mboot::Info& info) {

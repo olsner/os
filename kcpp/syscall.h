@@ -267,7 +267,11 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 ar
     check_error(sock, p, -EBADF);
 
     if (dest & MSG_TX_FD) {
-        p->send_file = dest & MSG_TX_CLOSEFD ? p->aspace->replace_file(arg1, nullptr) : p->aspace->get_file(arg1);
+        auto& fd_slot = p->aspace->file_at(arg1);
+        p->send_file = fd_slot;
+        if (dest & MSG_TX_CLOSEFD) {
+            fd_slot = nullptr;
+        }
         check_error(p->send_file, p, -EBADF);
     }
 
@@ -464,8 +468,10 @@ NORETURN void syscall_socketpair(Process *p) {
 
 NORETURN void syscall_close(Process *p, int fd) {
     log(socket, "%s: close(%d)\n", p->name(), fd);
-    p->aspace->replace_file(fd, nullptr);
-    syscall_return(p, 0);
+    auto& f = p->aspace->file_at(fd);
+    int res = f ? 0 : -EBADF;
+    f = nullptr;
+    syscall_return(p, res);
 }
 
 // non-transaction send and receive still need a 
