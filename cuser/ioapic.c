@@ -12,19 +12,21 @@ static volatile u32 lapic[1024] PLACEHOLDER_SECTION ALIGN(4096);
 	static const size_t name = (offset) / sizeof(u32)
 REG(EOI, 0xb0);
 
-static const uintptr_t fresh = 0x100;
 static const uintptr_t rawIRQ = 0x1;
 #define MAX_GSI 64
 // 48 is the 32 CPU exceptions plus 16 PIC interrupts still there to deal with
 // spurious interrupts.
 #define GSI_IRQ_BASE 49
 
+#define NUM_GSIS (MAX_GSI + 1)
+#define NUM_IRQS 256
+
 typedef volatile u32 apic_page[4096 / 4];
 static apic_page apic_pages[256] PLACEHOLDER_SECTION ALIGN(4096);
 
 static void map_mmio(volatile void *p, uintptr_t physAddr, size_t size)
 {
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+	map(-1, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		p, physAddr, size);
 }
 
@@ -49,12 +51,12 @@ enum Reg {
 // Map each gsi to the apic id that handles it.
 // 0 will be used for unknown GSIs, but this is also a valid APIC ID. Check the
 // mmio pointer for an apic to see if it is initialized.
-u8 apic_id_for_gsi[256];
+u8 apic_id_for_gsi[NUM_GSIS];
 
-// Handles for registered GSI clients. Set to 1 when registered.
-u8 downstream_gsi[256];
+// Handles for registered GSI clients.
+int downstream_gsi[NUM_GSIS];
 // Handles for raw IRQs upstream
-u8 upstream_irq[256] PLACEHOLDER_SECTION;
+int upstream_irq[NUM_IRQS];
 
 // General operation:
 // * one or more MSG_ACPI_ADD_IOAPIC messages to register the I/O APIC's present
@@ -90,10 +92,10 @@ static u64 read_redirect(struct apic* a, u8 pin)
 	return (hi << 32) | lo;
 }
 
-static void register_rawirq(ipc_arg_t irq, ipc_dest_t handle)
+static int register_rawirq(ipc_arg_t irq)
 {
-	hmod_copy(rawIRQ, handle);
-	sendrcv1(MSG_REG_IRQ, handle, &irq);
+	sendrcv1(MSG_REG_IRQ, MSG_TX_ACCEPTFD | rawIRQ, &irq);
+	return irq;
 }
 
 static void add_ioapic(uintptr_t h, u8 id, uintptr_t physAddr, u64 gsibase)
@@ -115,20 +117,17 @@ static void add_ioapic(uintptr_t h, u8 id, uintptr_t physAddr, u64 gsibase)
 		log("Found APIC version %#x with %d interrupts\n", ver & 0xff, max_redir + 1);
 
 		send1(MSG_ACPI_ADD_IOAPIC, h, max_redir + 1);
-		hmod_rename(h, (uintptr_t)apic);
 
 		for (u64 i = 0; i <= max_redir; i++) {
 			u8 gsi = gsibase + i;
 			u8 irq = GSI_IRQ_BASE + gsi;
-			//log("Registering IRQ %d for GSI %d\n", irq, gsi);
-			register_rawirq(irq, (uintptr_t)&upstream_irq[irq]);
+			upstream_irq[irq] = register_rawirq(irq);
 			apic_id_for_gsi[gsi] = id;
 		}
 	}
 	else
 	{
 		send1(MSG_ACPI_ADD_IOAPIC, h, 0);
-		hmod_delete(h);
 	}
 }
 
@@ -160,8 +159,9 @@ enum {
 	// 7 = ExtINT
 };
 
-static void reg_gsi(uintptr_t h, uintptr_t gsi, uintptr_t flags)
+static void reg_gsi(uintptr_t tx, uintptr_t gsi, uintptr_t flags)
 {
+	assert(tx & MSG_TX_ACCEPTFD);
 	assert(gsi < MAX_GSI);
 	struct apic* apic = &apics[apic_id_for_gsi[gsi]];
 	assert(apic->mmio);
@@ -184,9 +184,11 @@ static void reg_gsi(uintptr_t h, uintptr_t gsi, uintptr_t flags)
 	write_redirect(apic, pin, x);
 	log("Changed redirect from %#lx to %#lx\n", prev, read_redirect(apic, pin));
 
-	send1(MSG_REG_IRQ, h, gsi);
-	downstream_gsi[gsi] = 1;
-	hmod_rename(h, (uintptr_t)&downstream_gsi[gsi]);
+	int fds[2];
+	socketpair(fds);
+
+	downstream_gsi[gsi] = fds[0];
+	send2(MSG_REG_IRQ, tx | MSG_TX_CLOSEFD, fds[1], gsi);
 }
 
 static void handle_irq(uintptr_t irq) {
@@ -202,8 +204,8 @@ static void handle_irq(uintptr_t irq) {
 		write_redirect(apic, pin, red_entry | RED_MASKED);
 		lapic[EOI] = 0;
 	}
-	if (downstream_gsi[gsi]) {
-		pulse((uintptr_t)&downstream_gsi[gsi], 1);
+	if (downstream_gsi[gsi] >= 0) {
+		pulse(downstream_gsi[gsi], 1);
 	}
 }
 
@@ -220,23 +222,50 @@ static void ack_irq(uintptr_t gsi) {
 	}
 }
 
+static int irq_index_from_fd(int fd) {
+	for (int i = 0; i < NUM_IRQS; i++) {
+		if (upstream_irq[i] == fd) {
+			log("matched fd %d to IRQ %d\n", fd, i);
+			return i;
+		}
+	}
+	log("no upstream IRQ for fd %d\n", fd);
+	return -1;
+}
+
+static int gsi_index_from_fd(int fd) {
+	for (int i = 0; i < NUM_GSIS; i++) {
+		if (downstream_gsi[i] == fd) {
+			log("matched fd %d to GSI %d\n", fd, i);
+			return i;
+		}
+	}
+	log("no downstream GSI for fd %d\n", fd);
+	return -1;
+}
+
 void start() {
 	__default_section_init();
 
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+	// Set to -1 since 0 is a valid file descriptor.
+	memset(&upstream_irq, 0xff, sizeof(upstream_irq));
+	memset(&downstream_gsi, 0xff, sizeof(downstream_gsi));
+
+	map(-1, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		lapic, apic_pbase, sizeof(lapic));
 
 	for (;;) {
 		ipc_arg_t arg1, arg2, arg3;
-		ipc_dest_t rcpt = fresh;
+		ipc_dest_t rcpt = msg_set_fd(0, -1);
 		ipc_msg_t msg = recv3(&rcpt, &arg1, &arg2, &arg3);
+		log("Got %#lx from %#lx\n", msg & 0xff, rcpt);
 		switch (msg & 0xff)
 		{
 		case SYS_PULSE:
-			handle_irq(rcpt - (uintptr_t)upstream_irq);
+			handle_irq(irq_index_from_fd(rcpt));
 			break;
 		case MSG_IRQ_ACK:
-			ack_irq(rcpt - (uintptr_t)downstream_gsi);
+			ack_irq(gsi_index_from_fd(rcpt));
 			break;
 		case MSG_ACPI_ADD_IOAPIC:
 			add_ioapic(rcpt, arg1, arg2, arg3);
