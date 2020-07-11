@@ -19,7 +19,7 @@ menuentry "lwIP" {
     multiboot /$kernel
     module /cuser/irq.mod irq
     module /kern/pic.mod pic
-    module /kern/console.mod console
+    module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
     module /cuser/acpica.mod ACPICA
@@ -32,11 +32,11 @@ menuentry "shell" {
     multiboot /$kernel
     module /cuser/irq.mod irq
     module /kern/pic.mod pic
-    module /kern/console.mod console
+    module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
     module /cuser/acpica.mod ACPICA
-    module /user/shell.mod
+    module /user/shell.mod shell
     boot
 }
 
@@ -44,7 +44,7 @@ menuentry "fbtest" {
     multiboot /$kernel
     module /cuser/irq.mod irq
     module /kern/pic.mod pic
-    module /kern/console.mod console
+    module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
     module /cuser/acpica.mod ACPICA
@@ -57,7 +57,7 @@ menuentry "timer_test" {
     multiboot /$kernel
     module /cuser/irq.mod irq
     module /kern/pic.mod pic
-    module /kern/console.mod console
+    module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
     module /cuser/acpica.mod ACPICA
@@ -69,7 +69,7 @@ menuentry "ACPICA debugger" {
     multiboot /$kernel
     module /cuser/irq.mod irq
     module /kern/pic.mod pic
-    module /kern/console.mod console
+    module /cuser/console.mod console
     module /cuser/apic.mod APIC
     module /cuser/ioapic.mod IOAPIC
     module /cuser/acpica.mod ACPICA

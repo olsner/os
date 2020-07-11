@@ -63,7 +63,7 @@ ASMFILES     := $(ASMDIR)/kstart.asm $(MOD_ASMFILES)
 MOD_CFILES   := cuser/helloworld.c cuser/zeropage.c
 MOD_CFILES   += cuser/test_maps.c cuser/e1000.c cuser/apic.c cuser/timer_test.c
 MOD_CFILES   += cuser/bochsvga.c cuser/fbtest.c cuser/acpi_debugger.c
-MOD_CFILES   += cuser/ioapic.c cuser/irq.c
+MOD_CFILES   += cuser/ioapic.c cuser/irq.c cuser/console.c
 MOD_OFILES   := $(MOD_CFILES:%.c=$(OUTDIR)/%.o)
 MOD_ELFS     := $(MOD_CFILES:%.c=$(OUTDIR)/%.elf)
 MOD_ELFS     += $(OUTDIR)/cuser/acpica.elf $(OUTDIR)/cuser/lwip.elf
@@ -203,7 +203,8 @@ ELFS_WANT_LIBC_RAW := \
 	$(OUTDIR)/cuser/irq.elf \
 	$(OUTDIR)/cuser/apic.elf \
 	$(OUTDIR)/cuser/ioapic.elf \
-	$(OUTDIR)/cuser/acpica.elf
+	$(OUTDIR)/cuser/acpica.elf \
+	$(OUTDIR)/cuser/console.elf
 ELFS_WANT_LIBC = $(filter-out $(ELFS_WANT_LIBC_RAW), $(ALL_ELFS))
 
 $(ELFS_WANT_LIBC): $(LIBC_OBJS)
