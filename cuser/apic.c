@@ -12,7 +12,6 @@
 #endif
 
 static const uintptr_t irq_driver = 1;
-static const uintptr_t fresh_handle = 100;
 static const uintptr_t apic_pbase = 0xfee00000;
 // Very approximate ticks per second for qemu
 #define APIC_TICKS 6000000
@@ -71,7 +70,9 @@ struct timer {
 	u64 timeout;
 	timer* down;
 	timer* right;
+	int fd;
 	u8 pulse;
+	bool closefd;
 };
 
 static timer* ph_merge(timer* l, timer* r) {
@@ -189,14 +190,26 @@ static void timer_free(timer* t) {
 	t->timeout = (uintptr_t)t;
 	timer_add(&free_timers, t);
 }
-static timer* reg_timer(u64 ns, u8 pulse) {
+static void reg_timer(ipc_dest_t rcpt, u64 ns, u8 pulse) {
 	u64 ticks = (ns / 1000) * apic_ticks / 1000000;
 	logf("%lu ns -> %lu ticks\n", ns, ticks);
 	u64 tick_counter = get_tick_counter();
 	u64 tick_timeout = tick_counter + ticks;
 	timer* t = timer_add(&timers_head, timer_new(tick_timeout, pulse));
-	logf("registered %p\n", t);
-	return t;
+
+	if (rcpt & MSG_TX_ACCEPTFD) {
+		int fds[2];
+		socketpair(fds);
+		t->fd = fds[0];
+		send1(MSG_REG_TIMER, MSG_TX_CLOSEFD | rcpt, fds[1]);
+		t->closefd = true;
+		logf("registered %p to new file %d\n", t, t->fd);
+	}
+	else {
+		t->fd = msg_dest_fd(rcpt);
+		t->closefd = false;
+		logf("registered %p to existing file %d\n", t, t->fd);
+	}
 }
 
 static void __more_stack(size_t more) {
@@ -226,7 +239,7 @@ void start() {
 
 	// Perhaps we should use ACPI information to tell us if/that there's an
 	// APIC and where we can find it.
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+	map(-1, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		apic, apic_pbase, sizeof(apic));
 
 	apic[TIMER_DIV] = TIMER_DIV_128;
@@ -239,7 +252,8 @@ void start() {
 	apic[LINT1_LVT] = LVT_MT_NMI;
 	apic[ERROR_LVT] = LVT_MASK;
 
-	// Register irq 48 with irq driver
+	logf("registering IRQ %d with %d...\n", apic_timer_irq, irq_driver);
+	// Register irq 48 with raw irq driver
 	// Note we don't use the PIC driver here - APIC interrupts have their own
 	// EOI etc.
 	ipc_arg_t arg = apic_timer_irq;
@@ -268,10 +282,12 @@ void start() {
 				logf("idle.\n");
 			}
 			while (timers_head && timers_head->timeout <= tick_counter) {
-				logf("triggered %p.\n", timers_head);
 				timer* t = timer_pop(&timers_head);
-				pulse((uintptr_t)t, 1 << t->pulse);
-				hmod_delete((uintptr_t)t);
+				logf("triggered %p -> pulse %d on %d\n", timers_head, t->pulse, t->fd);
+				pulse(t->fd, 1 << t->pulse);
+				if (t->closefd) {
+					close(t->fd);
+				}
 				timer_free(t);
 			}
 			if (timers_head) {
@@ -287,16 +303,16 @@ void start() {
 			}
 		}
 
-		ipc_dest_t rcpt = fresh_handle;
+		ipc_dest_t rcpt = msg_set_fd(0, -1);
 		ipc_arg_t arg1, arg2;
 		logf("receiving\n");
 		const ipc_msg_t msg = recv2(&rcpt, &arg1, &arg2);
 
-		logf("received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
+		logf("received %x from %lx/%d: %lx %lx\n", msg & 0xff, rcpt >> 32, msg_dest_fd(rcpt), arg1, arg2);
 
 		// Note that since we use the raw IRQ driver, we don't need to ACK the
 		// IRQ's we get - it's not listening for that anyway.
-		if (rcpt == irq_driver) {
+		if (msg == SYS_PULSE && rcpt == irq_driver) {
 			logf("irq\n");
 			// Keep the counter counting please. (Switch back to periodic mode?)
 			setTIC((u32)-1);
@@ -307,8 +323,7 @@ void start() {
 		logf("received %x from %p: %lx %lx\n", msg&0xff, rcpt, arg1, arg2);
 		switch (msg & 0xff) {
 		case MSG_REG_TIMER:
-			// FIXME Check if the rcpt is already registered as a timer.
-			hmod_rename(rcpt, (uintptr_t)reg_timer(arg1, arg2));
+			reg_timer(rcpt, arg1, arg2);
 			break;
 		case MSG_TIMER_GETTIME:
 			if (msg_get_kind(msg) == MSG_KIND_CALL) {
@@ -316,9 +331,6 @@ void start() {
 				send2(msg & 0xff, rcpt, static_data.ms_counter, ticks);
 			} else {
 				logf("gettime must be a sendrcv call\n");
-			}
-			if (rcpt == fresh_handle) {
-				hmod_delete(rcpt);
 			}
 			break;
 		case SYS_PFAULT:
