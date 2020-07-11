@@ -26,9 +26,6 @@
 
 static const uintptr_t eth_handle = 7;
 static const uintptr_t apic_handle = 4;
-static const uintptr_t proto_handle = 0x100;
-static const uintptr_t timer_handle = 0x101;
-static const uintptr_t fresh_handle = 0x200;
 
 // static const u16 ETHERTYPE_ARP = 0x0806;
 
@@ -43,6 +40,7 @@ extern void netif_rcvd(const char*, size_t);
 struct netif netif;
 static ip_addr_t ipaddr, netmask, gw;
 static u64 hwaddr;
+static int proto_handle = -1;
 
 // Should be a struct somewhere we can share it with the apic implementation.
 static volatile const struct {
@@ -75,8 +73,7 @@ static void check_timers(void) {
 	u64 timeout_ms = sys_timeouts_sleeptime();
 	if (timeout_ms != (u32)-1) {
 		debug("lwip: timeout %lums\n", timeout_ms);
-		hmod_copy(apic_handle, timer_handle);
-		send2(MSG_REG_TIMER, timer_handle, timeout_ms * 1000000, 0);
+		send2(MSG_REG_TIMER, apic_handle, timeout_ms * 1000000, 0);
 	}
 }
 
@@ -140,10 +137,10 @@ void start() {
 	prefault(&timer_data, PROT_READ);
 	debug("lwip: initialized timer\n");
 
-	hmod_copy(eth_handle, proto_handle);
-	ipc_arg_t arg1 = ETHERTYPE_ANY;
-	sendrcv1(MSG_ETHERNET_REG_PROTO, proto_handle, &arg1);
-	hwaddr = arg1;
+	ipc_arg_t arg1 = ETHERTYPE_ANY, arg2 = 0;
+	sendrcv2(MSG_ETHERNET_REG_PROTO, MSG_TX_ACCEPTFD | eth_handle, &arg1, &arg2);
+	proto_handle = arg1;
+	hwaddr = arg2;
 	debug("lwip: registered protocol on %012lx, mapping+faulting buffer...\n", hwaddr);
 
 	map(proto_handle, PROT_READ, receive_buffers, 0, sizeof(receive_buffers));
@@ -176,11 +173,12 @@ void start() {
 
 	check_timers();
 	for (;;) {
-		ipc_dest_t rcpt = fresh_handle;
+		ipc_dest_t rcpt = msg_set_fd(0, -1);
 		ipc_arg_t arg2 = 0;
 		ipc_msg_t msg = recv2(&rcpt, &arg1, &arg2);
 		//debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
-		if (rcpt == proto_handle) {
+		const int fd = msg_dest_fd(rcpt);
+		if (fd == proto_handle) {
 			switch (msg & 0xff) {
 			case SYS_PULSE:
 				for (int i = 0; i < 2 * NBUFS; i++) {
@@ -194,13 +192,10 @@ void start() {
 				assert(false);
 				break;
 			}
-		} else if (rcpt == timer_handle) {
+		} else if (fd == apic_handle) {
 			//debug("lwip: timer\n");
 		} else {
 			debug("lwip: received %lx from %lx: %lx %lx\n", msg, rcpt, arg1, arg2);
-		}
-		if (rcpt == fresh_handle) {
-			hmod_delete(rcpt);
 		}
 		check_timers();
 	}
