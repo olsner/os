@@ -1,6 +1,8 @@
 #ifndef __MSG_SYSCALLS_H
 #define __MSG_SYSCALLS_H
 
+#include <stdint.h>
+
 #if __cplusplus >= 201109L
 #define CONSTEXPR constexpr
 #else

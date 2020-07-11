@@ -11,8 +11,6 @@ static const uintptr_t ioapic_handle = 5;
 
 static const bool log_acpica_interrupts = false;
 static const bool log_irq = false;
-// FIXME In the C++ kernel, syscall return sometimes loses register values
-// which causes I/O APIC initialization to fail when logging is off.
 static const bool log_ioapic_init = true;
 static const bool log_apic_table = false;
 static const bool log_route_irq = false;
@@ -21,24 +19,40 @@ static const bool log_route_irq = false;
 // duplicated for each interrupt they handle.
 typedef struct irq_controller
 {
-	// Uses handles &GSI_HANDLES[gsi_base..first_gsi + count]
 	u16 first_gsi;
 	u16 last_gsi;
-	// Base handle to copy when registering IRQ
-	uintptr_t handle;
+	// file descriptor for the controller, used to add more IRQs
+	int controller;
 } irq_controller;
 #define MAX_CONTROLLERS 1
 static u8 n_controllers;
 static irq_controller irq_controllers[MAX_CONTROLLERS];
-#define MAX_GSI 4096
-static const char GSI_INPUTS[MAX_GSI] ALIGN(4096) PLACEHOLDER_SECTION;
-// Set to 1 when registered
-static char GSI_OUTPUTS[MAX_GSI];
+
+#define MAX_GSI 64
+// fd for each GSI registered with an upstream interrupt controller.
+static int upstream_gsi_fd[MAX_GSI];
+// fd for each downstream GSI client registered to us.
+static int downstream_gsi_fd[MAX_GSI];
+
+static int find_fd(const int fd, const int* array, int n) {
+	for (int i = 0; i < n; i++) {
+		if (array[i] == fd) {
+			return i;
+		}
+	}
+	return -1;
+}
+static int find_upstream_gsi(int fd) {
+	return find_fd(fd, upstream_gsi_fd, MAX_GSI);
+}
+static int find_downstream_gsi(int fd) {
+	return find_fd(fd, downstream_gsi_fd, MAX_GSI);
+}
 
 // Only for interrupts registered to ACPI itself.
 typedef struct irq_reg
 {
-	UINT32 InterruptNumber;
+	int InterruptNumber;
 	ACPI_OSD_HANDLER ServiceRoutine;
 	void* Context;
 	struct irq_reg* Next;
@@ -80,40 +94,37 @@ static void HandleIrq(const irq_reg* irq, uintptr_t num) {
 	irq->ServiceRoutine(irq->Context);
 }
 
-int AcpiOsCheckInterrupt(uintptr_t rcpt, uintptr_t arg)
+bool AcpiOsCheckInterrupt(ipc_dest_t rcpt, uintptr_t arg)
 {
-	if (rcpt >= (uintptr_t)&GSI_INPUTS[0]
-		&& rcpt < (uintptr_t)&GSI_INPUTS[MAX_GSI])
-	{
-		unsigned gsi = rcpt - (uintptr_t)&GSI_INPUTS[0];
-		assert(gsi < MAX_GSI);
-		if (GSI_OUTPUTS[gsi]) {
-			pulse((uintptr_t)&GSI_OUTPUTS[gsi], 1);
-			return 1;
+	int gsi = find_upstream_gsi(msg_dest_fd(rcpt));
+	if (gsi >= 0) {
+		if (downstream_gsi_fd[gsi] >= 0) {
+			log(irq, "Forwarding GSI %d to downstream %d\n", gsi, downstream_gsi_fd[gsi]);
+			pulse(downstream_gsi_fd[gsi], 1);
+			return true;
 		}
 		const irq_reg* irq = irq_regs;
 		while (irq) {
 			if (irq->InterruptNumber == gsi) {
 				HandleIrq(irq, gsi);
 				send0(MSG_IRQ_ACK, rcpt);
-				return 1;
+				return true;
 			}
 			irq = irq->Next;
 		}
 		log(irq, "GSI %d unregistered\n", gsi);
 		return 1;
 	}
-	log(irq, "IRQ %#lx/%#x: Not found!\n", rcpt, arg);
-	return 0;
+	log(irq, "IRQ %#lx/%#x: Not found! (gsi=%d)\n", rcpt, arg, gsi);
+	return false;
 }
 
-void AckIRQ(uintptr_t rcpt) {
-	if (rcpt >= (uintptr_t)&GSI_OUTPUTS[0]
-		&& rcpt < (uintptr_t)&GSI_OUTPUTS[MAX_GSI])
-	{
-		unsigned gsi = rcpt - (uintptr_t)&GSI_OUTPUTS[0];
+void AckIRQ(ipc_dest_t rcpt) {
+	int gsi = find_downstream_gsi(msg_dest_fd(rcpt));
+	if (gsi >= 0) {
+		assert(upstream_gsi_fd[gsi] >= 0);
 //		log(irq, "Sending ack for GSI %d to %p\n", gsi, &GSI_INPUTS[gsi]);
-		send0(MSG_IRQ_ACK, (uintptr_t)&GSI_INPUTS[gsi]);
+		send0(MSG_IRQ_ACK, upstream_gsi_fd[gsi]);
 	}
 }
 
@@ -131,14 +142,23 @@ void RegIRQ(uintptr_t rcpt, uintptr_t int_spec)
 {
 	unsigned gsi = int_spec & 0xff;
 
-	log(irq, "Registering Interrupt %#x to %#lx\n", gsi, rcpt);
+	log(irq, "Registering Interrupt %d to %#lx\n", gsi, rcpt);
 	assert(gsi < MAX_GSI);
-	assert(!GSI_OUTPUTS[gsi]);
+	assert(downstream_gsi_fd[gsi] < 0);
 
-	GSI_OUTPUTS[gsi] = 1;
-	// FIXME (if IOAPIC) Send flags with polarity and edge/level trigger
-	send1(MSG_REG_IRQ, rcpt, gsi);
-	hmod_rename(rcpt, (uintptr_t)&GSI_OUTPUTS[gsi]);
+	int fds[2];
+	if (rcpt & MSG_TX_ACCEPTFD) {
+		socketpair(fds);
+		rcpt |= MSG_TX_CLOSEFD;
+	}
+	else {
+		fds[0] = msg_dest_fd(rcpt);
+		fds[1] = gsi;
+	}
+
+	downstream_gsi_fd[gsi] = fds[0];
+	log(irq, "Registering GSI %d: sending downstream fd %d to %#lx (our end %d)\n", gsi, fds[1], rcpt, fds[0]);
+	send1(MSG_REG_IRQ, rcpt, fds[1]);
 
 	irq_controller *p = ControllerForGSI(gsi);
 	if (!p) {
@@ -146,11 +166,14 @@ void RegIRQ(uintptr_t rcpt, uintptr_t int_spec)
 		return;
 	}
 
-	ipc_dest_t h = (ipc_dest_t)&GSI_INPUTS[gsi];
-	hmod_copy(p->handle, h);
+	// TODO If sharing interrupts, we might have already registered the upstream IRQ.
+	assert(upstream_gsi_fd[gsi] < 0);
+	// FIXME (if IOAPIC) Send flags with polarity and edge/level trigger
 	ipc_arg_t arg = int_spec;
-	sendrcv1(MSG_REG_IRQ, h, &arg);
-	log(irq, "Registered GSI %d through %#x\n", gsi, p->handle);
+	sendrcv1(MSG_REG_IRQ, MSG_TX_ACCEPTFD | p->controller, &arg);
+	upstream_gsi_fd[gsi] = arg;
+	log(irq, "Registered GSI %d: upstream fd %d through %d\n", gsi, upstream_gsi_fd[gsi], p->controller);
+	log(irq, "Registered GSI %d: downstream fd %d\n", gsi, downstream_gsi_fd[gsi]);
 }
 
 static void add_irq_controller(uintptr_t handle, u32 gsi_base, u32 count)
@@ -161,7 +184,7 @@ static void add_irq_controller(uintptr_t handle, u32 gsi_base, u32 count)
 	assert(gsi_base + count < MAX_GSI);
 	p->first_gsi = gsi_base;
 	p->last_gsi = gsi_base + count - 1;
-	p->handle = handle;
+	p->controller = handle;
 
 	log(irq, "Registered GSIs %d..%d to interrupt controller %#x\n",
 		gsi_base, p->last_gsi, handle);
@@ -196,6 +219,10 @@ typedef union acpi_apic_struct
 #pragma pack()
 
 ACPI_STATUS FindIOAPICs(int *pic_mode) {
+	// Initialize to -1.
+	memset(&upstream_gsi_fd, 0xff, sizeof(upstream_gsi_fd));
+	memset(&downstream_gsi_fd, 0xff, sizeof(downstream_gsi_fd));
+
 	ACPI_TABLE_MADT* table = NULL;
 	ACPI_STATUS status = AcpiGetTable("APIC", 0, (ACPI_TABLE_HEADER**)&table);
 	CHECK_STATUS("AcpiGetTable");

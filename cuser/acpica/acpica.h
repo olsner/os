@@ -13,7 +13,9 @@
 #define _COMPONENT ACPI_DRIVER
 ACPI_MODULE_NAME("acpica")
 
-int AcpiOsCheckInterrupt(uintptr_t rcpt, uintptr_t arg);
+// Returns true if the interrupt was handled/expected. false if the recipient
+// is not an interrupt source or is not registered to any downstream client.
+bool AcpiOsCheckInterrupt(uintptr_t rcpt, uintptr_t arg);
 void RegIRQ(uintptr_t rcpt, uintptr_t int_spec);
 void AckIRQ(uintptr_t rcpt);
 
@@ -24,11 +26,11 @@ ACPI_STATUS RouteIRQ(ACPI_PCI_ID* device, int pin, int* irq);
 
 ACPI_STATUS EnumeratePCI(void);
 ACPI_STATUS PrintAcpiDevice(ACPI_HANDLE Device);
+void FindPCIDevice(uintptr_t rcpt, uintptr_t vendor_device);
+void ClaimPCIDevice(uintptr_t rcpt, uintptr_t addr, uintptr_t pins);
 
 UINT32 PciReadWord(UINT32 Addr);
 UINT32 AddrFromPciId(ACPI_PCI_ID* PciId, UINT32 Register);
-
-ACPI_STATUS FindPCIDevByVendor(UINT16 vendor, UINT16 device, ACPI_PCI_ID* id);
 
 static void FreeBuffer(ACPI_BUFFER* buffer) {
 	AcpiOsFree(buffer->Pointer);

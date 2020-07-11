@@ -6,8 +6,6 @@
 #include "common.h"
 #include "acpica.h"
 
-static const bool log_claim_pci = false;
-
 /******************************************************************************
  *
  * Example ACPICA handler and handler installation
@@ -148,61 +146,6 @@ static ACPI_STATUS ExecuteOSI(int pic_mode)
     return AE_OK;
 }
 
-// reserve some virtual memory space (never touched) to keep track pci device
-// handles.
-static const char pci_device_handles[65536] PLACEHOLDER_SECTION;
-
-static void MsgFindPci(uintptr_t rcpt, uintptr_t arg)
-{
-	ACPI_PCI_ID temp = { 0, 0, 0, 0 };
-	u16 vendor = arg >> 16;
-	u16 device = arg;
-	uintptr_t addr = -1;
-	ACPI_STATUS status = FindPCIDevByVendor(vendor, device, &temp);
-	if (ACPI_SUCCESS(status)) {
-		addr = temp.Bus << 16 | temp.Device << 3 | temp.Function;
-	}
-	send1(MSG_ACPI_FIND_PCI, rcpt, addr);
-}
-
-static void MsgClaimPci(uintptr_t rcpt, uintptr_t addr, uintptr_t pins)
-{
-	addr &= 0xffff;
-	ACPI_PCI_ID id = { 0, (addr >> 8) & 0xff, (addr >> 3) & 31, addr & 7 };
-	log(claim_pci, "claim pci %02x:%02x.%x\n", id.Bus, id.Device, id.Function);
-
-	// Set up whatever stuff to track PCI device drivers in general
-
-	int irqs[4] = {0};
-	for (int pin = 0; pin < 4; pin++) {
-		if (!(pins & (1 << pin))) continue;
-
-		ACPI_STATUS status = RouteIRQ(&id, 0, &irqs[pin]);
-		CHECK_STATUS("RouteIRQ");
-		log(claim_pci, "%02x:%02x.%x pin %d routed to IRQ %#x\n",
-			id.Bus, id.Device, id.Function,
-			pin, irqs[pin]);
-	}
-
-	if (pins & ACPI_PCI_CLAIM_MASTER) {
-		u64 value;
-		AcpiOsReadPciConfiguration(&id, PCI_COMMAND, &value, 16);
-		if (!(value & PCI_COMMAND_MASTER)) {
-			value |= PCI_COMMAND_MASTER;
-			AcpiOsWritePciConfiguration(&id, PCI_COMMAND, value, 16);
-		}
-	}
-
-	pins = (u64)irqs[3] << 48 | (u64)irqs[2] << 32 | irqs[1] << 16 | irqs[0];
-
-	send2(MSG_ACPI_CLAIM_PCI, rcpt, addr, pins);
-	hmod_rename(rcpt, (uintptr_t)pci_device_handles + addr);
-	return;
-
-failed:
-	send2(MSG_ACPI_CLAIM_PCI, rcpt, 0, 0);
-}
-
 static size_t debugger_buffer_pos = 0;
 
 static void debugger_pre_cmd(void) {
@@ -231,7 +174,7 @@ void start() {
 
 	// NB! Must be at least as large as physical memory - the ACPI tables could
 	// be anywhere. (Could be handled by AcpiOsMapMemory though.)
-	map(0, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
+	map(-1, MAP_PHYS | PROT_READ | PROT_WRITE | PROT_NO_CACHE,
 		(void*)ACPI_PHYS_BASE, 0, USER_MAP_MAX - ACPI_PHYS_BASE);
 
 	__default_section_init();
@@ -272,25 +215,24 @@ void start() {
 	AcpiEnableEvent(ACPI_EVENT_POWER_BUTTON, 0);
 
 	for (;;) {
-		ipc_dest_t rcpt = 0x100;
+		ipc_dest_t rcpt = msg_set_fd(0, -1);
 		ipc_arg_t arg = 0;
 		ipc_arg_t arg2 = 0;
 		ipc_msg_t msg = recv2(&rcpt, &arg, &arg2);
 		//printf("acpica: Received %#lx from %#lx: %#lx %#lx\n", msg, rcpt, arg, arg2);
 		if (msg == SYS_PULSE) {
-			if (AcpiOsCheckInterrupt(rcpt, arg)) {
-				continue;
-			} else {
-				printf("acpica: Unhandled pulse: %#x from %#lx\n", arg, rcpt);
+			if (!AcpiOsCheckInterrupt(rcpt, arg)) {
+				printf("acpica: Unhandled pulse: %#x from %#lx/%d\n", arg, rcpt >> 32, msg_dest_fd(rcpt));
 			}
+			continue;
 		}
 		switch (msg & 0xff)
 		{
 		case MSG_ACPI_FIND_PCI:
-			MsgFindPci(rcpt, arg);
+			FindPCIDevice(rcpt, arg);
 			break;
 		case MSG_ACPI_CLAIM_PCI:
-			MsgClaimPci(rcpt, arg, arg2);
+			ClaimPCIDevice(rcpt, arg, arg2);
 			break;
 		// This feels a bit wrong, but as long as we use PIO access to PCI
 		// configuration space, we need to serialize all accesses.
@@ -325,12 +267,10 @@ void start() {
 		case MSG_IRQ_ACK:
 			AckIRQ(rcpt);
 			continue;
+		default:
+			printf("acpica: Unhandled message %#lx from %#lx/%d: %#lx %#lx\n", msg, rcpt >> 32, msg_dest_fd(rcpt), arg, arg2);
 		}
 		// TODO Handle other stuff.
-		if (rcpt == 0x100)
-		{
-			hmod_delete(rcpt);
-		}
 	}
 	__builtin_unreachable();
 
