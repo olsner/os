@@ -1,0 +1,170 @@
+// vim: ft=cpp:
+
+namespace std {
+
+template<typename T> constexpr T min(T a, T b) { return a < b ? a : b; }
+template<typename T> constexpr T max(T a, T b) { return a > b ? a : b; }
+template<typename T> T&& move(T& input) {
+    return static_cast<T&&>(input);
+}
+template<typename T, typename U> T exchange(T& value, U new_value) {
+    T res = move(value);
+    value = move(new_value);
+    return res;
+}
+
+namespace detail {
+
+template <size_t ElemSize, size_t Align>
+class vector_base
+{
+    char* m_base = nullptr;
+    size_t m_size = 0;
+    size_t m_allocated = 0;
+
+public:
+    void* at(size_t i) { return m_base + i * ElemSize; }
+    const void* at(size_t i) const { return m_base + i * ElemSize; }
+
+    // Resizing and reserving:
+    // 1. Calculate size to allocate
+    // 2. Create new storage of the given size/allocation
+    // 3. copy/move data
+    // 4. Move the allocation into place
+    //
+    // Resize-in-place could be done with malloc cooperation, add an API for
+    // attempting to increase allocation size without moving and use that
+    // before falling back to reallocation and copy.
+
+    size_t next_size(size_t required_n) const {
+        // TODO Add a power-of-two growing policy or something. Maybe power-of-1.5 to reduce waste?
+        return std::max(required_n, m_allocated / ElemSize);
+    }
+
+    void set_size(size_t n) {
+        m_size = n * ElemSize;
+        assert(m_size <= m_allocated);
+    }
+
+    size_t available() const { return m_allocated / ElemSize; }
+    size_t size() const { return m_size / ElemSize; }
+
+    vector_base() = default;
+    vector_base(size_t size, size_t allocation) {
+        m_base = new char[allocation * ElemSize];
+        m_size = size * ElemSize;
+        m_allocated = allocation * ElemSize;
+    }
+
+    vector_base(vector_base&& other):
+        m_base(exchange(other.m_base, nullptr)),
+        m_size(exchange(other.m_size, 0)),
+        m_allocated(exchange(other.m_allocated, 0)) {}
+    vector_base& operator=(vector_base&& other) {
+        delete[] m_base;
+        m_base = exchange(other.m_base, nullptr);
+        m_size = exchange(other.m_size, 0);
+        m_allocated = exchange(other.m_allocated, 0);
+        return *this;
+    }
+
+    // Copying may require element-dependent copying code, so don't do that here.
+    vector_base(const vector_base&) = delete;
+    vector_base& operator=(const vector_base&) = delete;
+};
+
+constexpr size_t MinAlign = 4096; // Currently using page-frame allocator, so alignment isn't an issue
+template<typename T> constexpr size_t align_for = max(alignof(T), MinAlign);
+
+}
+
+template <typename T>
+class vector: detail::vector_base<sizeof(T), detail::align_for<T>>
+{
+    using Base = detail::vector_base<sizeof(T), detail::align_for<T>>;
+    size_t m_size;
+
+    T& at(size_t i) { return *(T*)Base::at(i); }
+    const T& at(size_t i) const { return *(const T*)Base::at(i); }
+
+    using Base::available;
+    using Base::next_size;
+    using Base::set_size;
+
+public:
+    vector() = default;
+
+    using iterator = T*;
+    using Base::size;
+
+    // Let's make copies more explicit...
+    vector(const vector& other) = delete;
+    vector(vector&& other): Base(other), m_size(exchange(other.m_size, 0)) {
+    }
+    vector& operator=(vector&& other) {
+        Base::operator=(other);
+        m_size = exchange(other.m_size, 0);
+        return *this;
+    }
+
+    const T& back() const {
+        return at(size() - 1);
+    }
+    T& back() {
+        return at(size() - 1);
+    }
+
+    T& operator[](size_t i) {
+        return at(i);
+    }
+    const T& operator[](size_t i) const {
+        return at(i);
+    }
+
+    void push_back(T value) {
+        reserve(size() + 1);
+        set_size(size() + 1);
+        new (&back()) T(move(value));
+    }
+
+    void reserve(size_t new_size) {
+        if (new_size <= available()) {
+            return;
+        }
+        // TODO First, see if new_size is possible to accomodate with in-place resize
+        size_t alloc = next_size(new_size);
+        const size_t n = size();
+        Base new_storage(n, alloc);
+
+        T* const dest = (T*)new_storage.at(0);
+        for (size_t i = 0; i < n; i++) {
+            dest[i] = move(at(i));
+        }
+
+        Base::operator=(std::move(new_storage));
+    }
+
+    iterator begin() {
+        return iterator(Base::at(0));
+    }
+    iterator end() {
+        return iterator(Base::at(size()));
+    }
+};
+
+// <algorithm>
+template<typename It, typename Pred> It find_if(It begin, It end, Pred&& pred) {
+    for (; begin != end; ++begin) {
+        if (pred(*begin)) return begin;
+    }
+    return end;
+}
+
+template<typename It, typename U> It find(It begin, It end, const U& item) {
+    for (auto it = begin; it != end; ++it) {
+        if (*it == item) return it;
+    }
+    return end;
+}
+
+}
