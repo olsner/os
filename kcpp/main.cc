@@ -73,6 +73,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_recv 0
 #define log_map_range 0
 #define log_syscall 0
+#define log_syscall_error 0
 #define log_prefault 0
 #define log_grant 0
 #define log_waiters 0
@@ -615,7 +616,8 @@ void handle_irq_generic(Cpu *cpu, u8 vec) {
     if (p->is(proc::InRecv)) {
         auto irqs = latch(cpu->irq_delayed[0]);
         log(irq, "sending %lx to %s\n", irqs, p->name());
-        syscall::transfer_pulse(p, nullptr, -1, irqs);
+        auto res = syscall::transfer_pulse(p, nullptr, -1, irqs);
+        cpu->syscall_return(res.p, res.rax, res.arg1, res.arg2);
     }
 
     log(irq, "%s not receiving, delaying\n", p->name());

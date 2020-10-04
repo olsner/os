@@ -4,20 +4,29 @@
 
 namespace syscall {
 
-NORETURN void syscall_return(Process *p, u64 res, u64 arg1 = 0, u64 arg2 = 0, u64 arg3 = 0, u64 arg4 UNUSED = 0, u64 arg5 UNUSED = 0) {
-    getcpu().syscall_return(p, res, arg1, arg2, arg3 /* TODO , arg4, arg5*/);
-}
+struct Result {
+    Process* p;
+    i64 rax = 0;
+    u64 arg1 = 0;
+    u64 arg2 = 0;
+    u64 arg3 = 0;
+    u64 arg4 = 0;
+    u64 arg5 = 0;
 
-static inline void check_error(bool flag, Process *p, int res) {
-    if (!(flag)) {
-        syscall_return(p, res);
+    bool success() const {
+        return rax >= 0;
     }
-}
-#if 0
-#define check_error(flag, p, res) assert(flag)
-#endif
+};
 
-NORETURN void syscall_portio(Process *p, u16 port, u8 op, u32 data) {
+#define check_error(flag, p, res) \
+    do { \
+        if (!(flag)) { \
+            log(syscall_error, "Check `%s' failed: returning %s\n", #flag, #res); \
+            return { p, res }; \
+        } \
+    } while (0)
+
+[[nodiscard]] Result syscall_portio(Process *p, u16 port, u8 op, u32 data) {
     log(portio, "portio: port=%x op=%x data=%x\n", port, op, data);
     u32 res = 0;
     switch (op) {
@@ -31,7 +40,7 @@ NORETURN void syscall_portio(Process *p, u16 port, u8 op, u32 data) {
     if ((op & 0x10) == 0) {
         log(portio, "portio: res=%x\n", res);
     }
-    syscall_return(p, res);
+    return { p, res };
 }
 
 void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
@@ -44,15 +53,15 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     p->regs.r10 = arg5;
 }
 
-NORETURN void transfer_pulse(Process *target, Process *source, int fd, uintptr_t events) {
+[[nodiscard]] Result transfer_pulse(Process *target, Process *source, int fd, uintptr_t events) {
     log(pulse, "%s <- %s: %d events %#lx\n", target->name(), source ? source->name() : nullptr, fd, events);
 
     target->unset(proc::InRecv);
     assert(target->is_runnable());
-    syscall_return(target, SYS_PULSE, fd, events);
+    return { target, SYS_PULSE, msg_set_fd(0, fd), events };
 }
 
-NORETURN void transfer_message(Process *target, Process *source, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
+[[nodiscard]] Result transfer_message(Process *target, Process *source, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     log(transfer_message, "%s <- %s: %lx %lx/%d args %ld %ld %ld %ld %ld\n", target->name(), source->name(), msg, dest >> 32, msg_dest_fd(dest), arg1, arg2, arg3, arg4, arg5);
 
     target->unset(proc::InRecv);
@@ -66,7 +75,7 @@ NORETURN void transfer_message(Process *target, Process *source, u64 msg, u64 de
     // If the source is blocked, there can't be an fd to send (as that only happens on the return).
     if (source->ipc_state()) {
         log(transfer_message, "direct (source blocked)\n");
-        syscall_return(target, msg, dest, arg1, arg2, arg3, arg4 /* TODO , arg5 */);
+        return { target, (i64)msg, dest, arg1, arg2, arg3, arg4 /* TODO , arg5 */ };
     }
 
     // TODO I think this has to be done at a higher level - we don't know if
@@ -86,23 +95,31 @@ NORETURN void transfer_message(Process *target, Process *source, u64 msg, u64 de
         log(transfer_message, "target fd %ld\n", arg1);
     }
 
-    // If source isn't blocking, add both target and source to run queue and
-    // schedule. If the scheduling decision would've been 'target' anyway
-    // though, this unnecessarily leaves the happy path.
-
-    store_message(target, msg, dest, arg1, arg2, arg3, arg4, arg5);
-
-    log(transfer_message, "delayed\n");
-
     assert(!source->blocked_socket);
 
-    Cpu& c = getcpu();
-    c.queue(target);
-    c.queue(source);
-    c.run();
+    // At this point, both source and target are runnable, so we have a choice
+    // to make.
+    const bool sync_send = true;
+
+    getcpu().queue(source);
+    if (sync_send) {
+        // This is the least amount of code - context-switch directly to the
+        // unblocked process.
+        log(transfer_message, "direct (source not blocked)\n");
+        return { target, (i64)msg, dest, arg1, arg2, arg3, arg4 };
+    }
+    else {
+        // Add both target and source to run queue and schedule, possibly back
+        // to the sender instead of the recipient.
+
+        log(transfer_message, "delayed\n");
+        store_message(target, msg, dest, arg1, arg2, arg3, arg4, arg5);
+        getcpu().queue(target);
+        return { nullptr };
+    }
 }
 
-NORETURN void ipc_call(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
+[[nodiscard]] Result ipc_call(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0) {
     const int fd = msg_dest_fd(dest);
 
     log(ipc, "%s call %ld to %lx/%d args %ld %ld\n", p->name(), msg, dest >> 32, fd, arg1, arg2);
@@ -126,12 +143,12 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 ar
                 fd = recipient->aspace->get_file_number(other_side);
             }
             txid = msg_set_fd(txid, fd);
-            transfer_message(recipient, p, msg, txid, arg1, arg2, arg3, arg4, arg5);
+            return transfer_message(recipient, p, msg, txid, arg1, arg2, arg3, arg4, arg5);
         }
         else {
             other_side->add_waiter(recipient);
             log(ipc, "call: no transaction slots available\n");
-            syscall_return(p, -EAGAIN);
+            return { p, -EAGAIN };
         }
     }
 
@@ -142,15 +159,15 @@ NORETURN void ipc_call(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 ar
     p->recv_dest = dest;
     sock->add_waiter(p);
 
-    getcpu().run();
+    return { nullptr };
 }
 
-void ipc_try_recv(Process *p, u64 from, RefCnt<Socket> sock) {
+[[nodiscard]] Result ipc_try_recv(Process *p, u64 from, RefCnt<Socket> sock) {
     const int fd = msg_dest_fd(from);
 
     if (uintptr_t send_bits = sock->get_reset_event_bits()) {
         log(ipc, "recv: %s finishing receive of pulses %#lx from %d\n", p->name(), send_bits, fd);
-        transfer_pulse(p, nullptr, fd, send_bits);
+        return transfer_pulse(p, nullptr, fd, send_bits);
     }
 
     const RefCnt<Socket> other_side(sock->other_side); // may be weak ref, convert to strong
@@ -170,11 +187,11 @@ void ipc_try_recv(Process *p, u64 from, RefCnt<Socket> sock) {
             else {
                 // Didn't successfully send to the sender, add it to waiters and keep going.
                 other_side->add_waiter(sender);
-                return;
+                return { p, -EAGAIN };
             }
         }
-        log(ipc, "recv: %s finishing receive from %s\n", p->name(), sender->name());
-        transfer_message(p, sender,
+        log(ipc, "recv: %s finishing receive from %s (msg=%ld)\n", p->name(), sender->name(), sender->regs.rax);
+        return transfer_message(p, sender,
                 // msg, txid
                 sender->regs.rax, txid,
                 // arg1..5
@@ -186,59 +203,72 @@ void ipc_try_recv(Process *p, u64 from, RefCnt<Socket> sock) {
         Process* other_proc = other_side->owner;
         log(try_recv, "other side owner %s state %lx blocked on %p (sending_to = %d)\n", other_proc->name(), other_proc->ipc_state(), other_proc->blocked_socket.get(), other_proc->sending_to(other_side.get()));
     }
+
+    return { p, -EAGAIN };
 }
 
-// Ugly stuff! Open-ended receives should be handled properly instead of
-// iterating all open file descriptors to find something.
-void ipc_recv_any(Process* p, u64 from) {
+[[nodiscard]] Result ipc_recv_any(Process* p, u64 from) {
     Cpu& cpu = getcpu();
     if (p == cpu.irq_process) {
         if (auto irqs = latch(cpu.irq_delayed[0])) {
             log(irq, "recv: delivering IRQs %lx to %s\n", irqs, p->name());
-            transfer_pulse(p, nullptr, -1, irqs);
+            return transfer_pulse(p, nullptr, -1, irqs);
         }
     }
 
+    // Ugly stuff! Open-ended receives should be handled properly instead of
+    // iterating all open file descriptors to find something.
     const int num_files = p->aspace->get_num_files();
     for (int fd = 0; fd < num_files; fd++) {
-        if (auto sock = p->aspace->get_socket(fd)) {
-            ipc_try_recv(p, msg_set_fd(from, fd), std::move(sock));
+        if (const auto& sock = p->aspace->get_socket(fd)) {
+            Result res = ipc_try_recv(p, msg_set_fd(from, fd), sock);
+            if (res.rax != -EAGAIN) {
+                log(ipc, "ipc_recv_any: %d => %ld (success=%d proc=%p)\n", fd, res.rax, res.success(), res.p);
+                return res;
+            }
         }
     }
+
+    return { p, -EAGAIN };
 }
 
-NORETURN void ipc_recv(Process *p, u64 from) {
+[[nodiscard]] Result ipc_recv(Process *p, u64 from) {
     const int fd = msg_dest_fd(from);
     log(ipc, "recv: %s recv %d flags %lx\n", p->name(), fd, from >> 32);
 
     if (fd < 0) {
         // returns into the process if it finds something to deliver, only
         // returns here if nothing was found.
-        ipc_recv_any(p, from);
-
-        log(ipc, "recv: %s waiting for whatever\n", p->name());
-        p->set(proc::InRecv);
-        p->blocked_socket = nullptr;
-        p->recv_dest = from;
-        getcpu().run();
+        Result res = ipc_recv_any(p, from);
+        if (res.rax == -EAGAIN) {
+            log(ipc, "recv: %s waiting for whatever\n", p->name());
+            p->set(proc::InRecv);
+            p->blocked_socket = nullptr;
+            p->recv_dest = from;
+            return { nullptr };
+        } else {
+            log(ipc, "recv: recv_any returned %ld\n", res.rax);
+            return res;
+        }
     }
 
     const auto sock = p->aspace->get_socket(fd);
     check_error(sock, p, -EBADF);
 
-    // FIXME Leaks reference to sock when it does a syscall-return or context switch...
-    ipc_try_recv(p, from, sock);
+    Result res = ipc_try_recv(p, from, sock);
+    if (res.rax == -EAGAIN) {
+        const auto other_side = sock->other_side;
+        p->set(proc::InRecv);
+        p->recv_dest = from;
+        sock->add_waiter(p);
 
-    const auto other_side = sock->other_side;
-    p->set(proc::InRecv);
-    p->recv_dest = from;
-    sock->add_waiter(p);
-
-    log(ipc, "recv: %s blocking on receive from %d (%p -> %p)\n", p->name(), fd, other_side, sock.get());
-    getcpu().run();
+        log(ipc, "recv: %s blocking on receive from %d (%p -> %p)\n", p->name(), fd, other_side, sock.get());
+        return { nullptr };
+    }
+    return res;
 }
 
-NORETURN void ipc_send(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
+[[nodiscard]] Result ipc_send(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     const int fd = msg_dest_fd(dest);
     const auto sock = p->aspace->get_socket(fd);
     log(ipc, "%s send %ld to %d args %ld %ld\n", p->name(), msg, fd, arg1, arg2);
@@ -258,7 +288,7 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 ar
     // match check should be done up here instead of in end_transaction.
     if (Transaction tx = sock->end_transaction(dest)) {
         assert(!tx.peer->blocked_socket);
-        transfer_message(tx.peer, p, msg, tx.id, arg1, arg2, arg3, arg4, arg5);
+        return transfer_message(tx.peer, p, msg, tx.id, arg1, arg2, arg3, arg4, arg5);
     }
 
     const RefCnt<Socket> other_side(sock->other_side); // may be weak ref, convert to strong
@@ -269,7 +299,7 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 ar
         if (msg_dest_fd(txid) < 0) {
             txid = msg_set_fd(txid, recipient->aspace->get_file_number(other_side));
         }
-        transfer_message(recipient, p, msg, txid, arg1, arg2, arg3, arg4, arg5);
+        return transfer_message(recipient, p, msg, txid, arg1, arg2, arg3, arg4, arg5);
     }
 
     store_message(p, msg, dest, arg1, arg2, arg3, arg4, arg5);
@@ -278,10 +308,10 @@ NORETURN void ipc_send(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 ar
     sock->add_waiter(p);
 
     log(ipc, "send: %s blocked on send on %d (%p -> %p)\n", p->name(), fd, sock.get(), other_side.get());
-    getcpu().run();
+    return { nullptr };
 }
 
-NORETURN void syscall_pulse(Process *p, int fd, u64 bits) {
+[[nodiscard]] Result syscall_pulse(Process *p, int fd, u64 bits) {
     log(pulse, "%s sending pulse %lx to %d\n", p->name(), bits, fd);
 
     auto sock = p->aspace->get_socket(fd);
@@ -300,15 +330,15 @@ NORETURN void syscall_pulse(Process *p, int fd, u64 bits) {
         // transfer_pulse always switches to target process as it was woken up
         p->regs.rax = 0;
         getcpu().queue(p);
-        transfer_pulse(recipient, p, fd, send_bits);
+        return transfer_pulse(recipient, p, fd, send_bits);
     }
 
     log(pulse, "%s: pulse not deliverable, saved\n", p->name());
     other_side->add_event_bits(bits);
-    syscall_return(p, 0);
+    return { p, 0 };
 }
 
-NORETURN void syscall_map(Process *p, int fd, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
+[[nodiscard]] Result syscall_map(Process *p, int fd, uintptr_t flags, uintptr_t vaddr, uintptr_t offset, uintptr_t size) {
     using namespace aspace;
 
     // TODO (also unimpl in asm): remove any previously backed pages.
@@ -334,20 +364,18 @@ NORETURN void syscall_map(Process *p, int fd, uintptr_t flags, uintptr_t vaddr, 
         // on garbage being OK.
         offset = mem::allocate_frame();
 
-        // TODO Check that size == 4096, otherwise we'll give the process
-        // access to a whole bunch of extra physical memory.
+        // TODO Check that size == 4096 and produce an error.
+
+        size = 4096;
     }
 
     uintptr_t end_vaddr = vaddr + size;
     p->aspace->map_range(vaddr, end_vaddr, fd, flags | (offset - vaddr));
 
-    if (flags & MAP_PHYS) {
-        syscall_return(p, offset);
-    }
-    syscall_return(p, 0);
+    return { p, flags & MAP_PHYS ? (i64)offset : 0 };
 }
 
-NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
+[[nodiscard]] Result syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
     // TODO Error out instead of silently adjusting the values.
     vaddr &= -4096;
     flags &= aspace::MAP_RWX;
@@ -364,13 +392,13 @@ NORETURN void syscall_pfault(Process *p, uintptr_t vaddr, uintptr_t flags) {
     }
 
     log(prefault, "%s prefault: mapped to %d offset %lx\n", p->name(), fd, offsetFlags);
-    ipc_call(p, SYS_PFAULT, MSG_TX_PFAULT | fd, offsetFlags & -4096, flags & offsetFlags);
+    return ipc_call(p, SYS_PFAULT, MSG_TX_PFAULT | fd, offsetFlags & -4096, flags & offsetFlags);
 }
 
 // Respond to a PFAULT message from a process that's mapped some memory from
 // us. This could be from a "prefault" syscall, or from the page fault
 // exception handler.
-NORETURN void syscall_grant(Process *p, u64 dest, uintptr_t vaddr, uintptr_t flags) {
+[[nodiscard]] Result syscall_grant(Process *p, u64 dest, uintptr_t vaddr, uintptr_t flags) {
     using namespace aspace;
 
     // TODO Error out instead of adjusting
@@ -418,34 +446,34 @@ NORETURN void syscall_grant(Process *p, u64 dest, uintptr_t vaddr, uintptr_t fla
         assert(rcpt->is(proc::InRecv));
         // If this is set we got here from an explicit pfault syscall, so
         // respond with a message.
-        transfer_message(rcpt, p, msg_send(SYS_GRANT), dest, vaddr, flags);
+        return transfer_message(rcpt, p, msg_send(SYS_GRANT), dest, vaddr, flags);
     }
 }
 
-NORETURN void syscall_yield(Process *p) {
-    auto &cpu = getcpu();
-    cpu.queue(p);
-    cpu.run();
+[[nodiscard]] Result syscall_yield(Process *p) {
+    getcpu().queue(p);
+    return { nullptr };
 }
 
-NORETURN void syscall_socketpair(Process *p) {
+[[nodiscard]] Result syscall_socketpair(Process *p) {
     RefCnt<Socket> server = nullptr;
     RefCnt<Socket> client = nullptr;
     Socket::pair(server, client);
+    // TODO Check for memory allocation error...
     server->owner = p;
     client->owner = p;
     int serverfd = p->aspace->add_file(std::move(server));
     int clientfd = p->aspace->add_file(std::move(client));
     log(socket, "%s: socketpair -> s=%d c=%d\n", p->name(), serverfd, clientfd);
-    syscall_return(p, 0, serverfd, clientfd);
+    return { p, 0, (u64)serverfd, (u64)clientfd };
 }
 
-NORETURN void syscall_close(Process *p, int fd) {
+[[nodiscard]] Result syscall_close(Process* p, int fd) {
     log(socket, "%s: close(%d)\n", p->name(), fd);
     auto& f = p->aspace->file_at(fd);
     int res = f ? 0 : -EBADF;
     f = nullptr;
-    syscall_return(p, res);
+    return { p, res };
 }
 
 extern "C" void syscall(u64, u64, u64, u64, u64, u64, u64) NORETURN;
@@ -458,49 +486,55 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     getcpu().leave(p);
     p->set(proc::FastRet);
 
+    Result res { p, -ENOSYS };
+
     switch (nr) {
     case SYS_RECV:
-        ipc_recv(p, arg0);
+        res = ipc_recv(p, arg0);
         break;
     case SYS_MAP:
-        syscall_map(p, arg0, arg1, arg2, arg3, arg4);
+        res = syscall_map(p, arg0, arg1, arg2, arg3, arg4);
         break;
     case SYS_PFAULT:
         /* First argument (arg0) is not used. */
-        syscall_pfault(p, arg1, arg2);
+        res = syscall_pfault(p, arg1, arg2);
         break;
     case SYS_WRITE:
         Console::write(arg0, true);
-        syscall_return(p, 0);
+        res.rax = 0;
         break;
     case SYS_IO:
-        syscall_portio(p, arg0, arg1, arg2);
+        res = syscall_portio(p, arg0, arg1, arg2);
         break;
     case SYS_GRANT:
-        syscall_grant(p, arg0, arg1, arg2);
+        res = syscall_grant(p, arg0, arg1, arg2);
         break;
     case SYS_PULSE:
-        syscall_pulse(p, arg0, arg1);
+        res = syscall_pulse(p, arg0, arg1);
         break;
     case SYS_YIELD:
-        syscall_yield(p);
+        res = syscall_yield(p);
         break;
     case SYS_SOCKETPAIR:
-        syscall_socketpair(p);
+        res = syscall_socketpair(p);
         break;
     case SYS_CLOSE:
-        syscall_close(p, arg0);
+        res = syscall_close(p, arg0);
         break;
     default:
-        if (nr >= MSG_USER) {
-            if (msg_get_kind(nr) == MSG_KIND_SEND) {
-                ipc_send(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
-            } else if (msg_get_kind(nr) == MSG_KIND_CALL) {
-                ipc_call(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
-            }
+        if (nr >= MSG_USER && msg_get_kind(nr) == MSG_KIND_SEND) {
+            res = ipc_send(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
+        } else if (nr >= MSG_USER && msg_get_kind(nr) == MSG_KIND_CALL) {
+            res = ipc_call(p, nr, arg0, arg1, arg2, arg3, arg4, arg5);
+        } else {
+            log(syscall_error, "unimplemented syscall: %ld\n", nr);
         }
-        printf("unimplemented syscall: %ld\n", nr);
-        syscall_return(p, -ENOSYS);
+    }
+
+    if (res.p) {
+        getcpu().syscall_return(res.p, res.rax, res.arg1, res.arg2, res.arg3 /* TODO , res.arg4, res.arg5*/);
+    } else {
+        getcpu().run();
     }
 }
 

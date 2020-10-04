@@ -303,8 +303,8 @@ public:
         (*pt)[(vaddr >> 12) & 0x1ff] = pte;
     }
 
-    int add_file(RefCnt<File> f) {
-        return files.add_file(std::move(f));
+    int add_file(const RefCnt<File>& f) {
+        return files.add_file(f);
     }
     RefCnt<File> get_file(int fd) const {
         return files.get_file(fd);
