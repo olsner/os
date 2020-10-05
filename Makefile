@@ -374,3 +374,13 @@ test-kcpp: $(GRUBDIR)/kcpp $(LIBC_OBJS_RAW)
 	test/tests.py --cpp
 
 test: test-kasm test-kcpp
+
+DOC_MD := doc/ipc_api.md
+DOC_HTML := $(DOC_MD:.md=.html)
+
+doc: $(DOC_HTML)
+
+%.html: %.md
+	markdown $< > $@
+
+all: doc

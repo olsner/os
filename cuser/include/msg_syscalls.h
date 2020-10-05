@@ -64,6 +64,8 @@ typedef int64_t ipc_msg_t;
 
 typedef int64_t off_t; // -> sys/types.h
 
+// TODO I think these are a bit redundant. Both send, call and receive have a
+// place to put TX flags already, so we could avoid needing two flags.
 enum msg_kind {
 	MSG_KIND_SEND = 0,
 	MSG_KIND_CALL = 1 << 8,
