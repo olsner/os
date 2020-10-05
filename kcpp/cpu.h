@@ -117,7 +117,7 @@ struct Cpu {
     // same process that called (e.g. in IPC cases when the old is blocked and
     // the new is immediately made runnable), so the context switch stuff in
     // switch_to is mostly still necessary.
-    NORETURN void syscall_return(Process *p, u64 rax, u64 arg1 = 0, u64 arg2 = 0, u64 arg3 = 0) {
+    NORETURN void syscall_return(Process *p, u64 rax, u64 arg1 = 0, u64 arg2 = 0, u64 arg3 = 0, u64 arg4 = 0, u64 arg5 = 0, u64 arg6 = 0) {
         log(switch, "syscall_return %s rax=%lx arg1=%lx arg2=%lx\n", p->name(), rax, arg1, arg2);
         assert(p->is(proc::FastRet));
         if (p->is(proc::FastRet)) {
@@ -128,8 +128,6 @@ struct Cpu {
                 x86::set_cr3(p->cr3());
             }
             p->unset(proc::FastRet);
-            // Nothing really returns this many registers anyway...
-            u64 arg4 = 0, arg5 = 0, arg6 = 0;
             fastret(arg1, arg2, arg3, p, arg4, arg5, arg6, rax);
         }
         else {

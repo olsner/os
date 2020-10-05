@@ -12,6 +12,7 @@ struct Result {
     u64 arg3 = 0;
     u64 arg4 = 0;
     u64 arg5 = 0;
+    u64 arg6 = 0;
 
     bool success() const {
         return rax >= 0;
@@ -75,7 +76,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     // If the source is blocked, there can't be an fd to send (as that only happens on the return).
     if (source->ipc_state()) {
         log(transfer_message, "direct (source blocked)\n");
-        return { target, (i64)msg, dest, arg1, arg2, arg3, arg4 /* TODO , arg5 */ };
+        return { target, (i64)msg, dest, arg1, arg2, arg3, arg4, arg5 };
     }
 
     // TODO I think this has to be done at a higher level - we don't know if
@@ -106,7 +107,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
         // This is the least amount of code - context-switch directly to the
         // unblocked process.
         log(transfer_message, "direct (source not blocked)\n");
-        return { target, (i64)msg, dest, arg1, arg2, arg3, arg4 };
+        return { target, (i64)msg, dest, arg1, arg2, arg3, arg4, arg5 };
     }
     else {
         // Add both target and source to run queue and schedule, possibly back
@@ -271,7 +272,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
 [[nodiscard]] Result ipc_send(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
     const int fd = msg_dest_fd(dest);
     const auto sock = p->aspace->get_socket(fd);
-    log(ipc, "%s send %ld to %d args %ld %ld\n", p->name(), msg, fd, arg1, arg2);
+    log(ipc, "%s send %ld to %d args %ld %ld %ld %ld %ld\n", p->name(), msg, fd, arg1, arg2, arg3, arg4, arg5);
     check_error(sock, p, -EBADF);
 
     if (dest & MSG_TX_FD) {
@@ -532,7 +533,7 @@ NORETURN void syscall(u64 arg0, u64 arg1, u64 arg2, u64 arg5, u64 arg3, u64 arg4
     }
 
     if (res.p) {
-        getcpu().syscall_return(res.p, res.rax, res.arg1, res.arg2, res.arg3 /* TODO , res.arg4, res.arg5*/);
+        getcpu().syscall_return(res.p, res.rax, res.arg1, res.arg2, res.arg3, res.arg4, res.arg5, res.arg6);
     } else {
         getcpu().run();
     }
