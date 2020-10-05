@@ -17,8 +17,24 @@ typedef unsigned int uint;
 
 #define PACKED __attribute__((packed))
 #define UNUSED __attribute__((unused))
-#define NORETURN __attribute__((noreturn))
 #define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+/*
+ * NORETURN functions must not be called with any live C++ objects since their
+ * destructors will not be called.
+ *
+ * I guess this is reasonable when the NORETURN function is something like exit
+ * or abort, but in the kernel it's more of a tail-call into user-space that
+ * will actually continue the program on the next interrupt/syscall.
+ *
+ * In particular we want any smart pointers to release their references to
+ * avoid leaks.
+ *
+ * To ensure this, write "plain" code without smart objects in the top-level
+ * function called from the assembly stub, do the work by calling other
+ * functions (these may be entirely normal C++), then finish with a NORETURN
+ * call to continue running - e.g. Cpu::syscall_return/switch_to/run.
+ */
+#define NORETURN __attribute__((noreturn))
 
 extern "C" void start64() NORETURN;
 
