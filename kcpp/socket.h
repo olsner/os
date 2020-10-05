@@ -44,14 +44,16 @@ class Socket final : public File {
 public:
     Socket* other_side = nullptr; // TODO weak_ptr
 private:
-    bool server_side;
     // List of processes sending or receiving on this end of the socket. This
     // does not cover processes currently in a transaction.
     DList<Process> waiters;
     uintptr_t events = 0;
 
 public:
-    Socket(bool server): server_side(server) {}
+    // server_side isn't recorded since it doesn't actually matter. This is
+    // nice because "server" and "client" is more a matter of which process
+    // is doing the communication than how the socket fd was created.
+    Socket(bool server_side UNUSED) {}
     ~Socket() {
         for (Transaction& tx: tx_table) {
             assert(!tx.used());
