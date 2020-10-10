@@ -531,17 +531,17 @@ void assert_failed(const char* file, int line, const char* msg) {
 Process *new_proc_simple(u32 start, u32 end_unaligned, const char *name) {
     u32 end = (end_unaligned + 0xfff) & ~0xfff;
     u32 start_page = start & ~0xfff;
-    auto aspace = new AddressSpace();
+    auto aspace = make_refcnt<AddressSpace>();
     aspace->set_name(name);
-    auto ret = new Process(aspace);
-    ret->regs.rsp = 0x100000;
-    ret->rip = 0x100000 + (start & 0xfff);
 
     using namespace aspace; // for MAP_*
     aspace->mapcard_set(0x0ff000, -1, 0, MAP_ANON | MAP_RW);
     aspace->mapcard_set(0x100000, -1, start_page - 0x100000, MAP_PHYS | MAP_RX);
     aspace->mapcard_set(0x100000 + (end - start_page), -1, 0, 0);
 
+    auto ret = new Process(std::move(aspace));
+    ret->regs.rsp = 0x100000;
+    ret->rip = 0x100000 + (start & 0xfff);
     return ret;
 }
 

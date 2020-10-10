@@ -9,11 +9,15 @@ template <typename T> class RefCnt
         if (ptr_) ptr_->addref();
     }
 
-    template <typename U> friend class RefCnt;
-public:
     explicit RefCnt(T* ptr): ptr_(ptr) {
         addref();
     }
+
+    template <typename U>
+    friend class RefCnt;
+    template <typename U, typename... Args>
+    friend RefCnt<U> make_refcnt(Args&&... args);
+public:
     ~RefCnt() {
         if (ptr_) ptr_->release();
     }
@@ -60,6 +64,9 @@ public:
     bool operator==(const RefCnt& other) const {
         return ptr_ == other.ptr_;
     }
+    bool operator!=(const RefCnt& other) const {
+        return ptr_ != other.ptr_;
+    }
     template <typename U> bool operator==(const RefCnt<U>& other) const {
         return ptr_ == other.ptr_;
     }
@@ -74,6 +81,20 @@ public:
     }
     operator bool() const {
         return ptr_ != nullptr;
+    }
+
+    template<typename U> RefCnt<U> cast() const {
+        return RefCnt<U>(static_cast<U*>(ptr_));
+    }
+    /**
+     * Not entirely safe since the pointer needs to have come from RefCnt, or
+     * at least the heap.
+     *
+     * The current implementation works with any heap pointer, but that's just
+     * an accident. It'll be more shared_ptr:y eventually.
+     */
+    static RefCnt from_raw(T* p) {
+        return RefCnt(p);
     }
 };
 

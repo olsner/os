@@ -62,6 +62,9 @@ struct FTable {
     }
 
     int get_file_number(const RefCnt<File>& file) const {
+        return get_file_number(file.get());
+    }
+    int get_file_number(File* file) const {
         auto it = std::find(files.begin(), files.end(), file);
         if (it == files.end()) {
             return -1;

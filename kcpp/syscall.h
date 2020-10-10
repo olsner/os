@@ -127,7 +127,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
 
     const auto sock = p->aspace->get_socket(fd);
     check_error(sock, p, -EBADF);
-    const RefCnt<Socket> other_side(sock->other_side); // may be weak ref, convert to strong
+    const auto other_side = sock->get_other();
 
     p->set(proc::InRecv);
 
@@ -147,7 +147,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
             return transfer_message(recipient, p, msg, txid, arg1, arg2, arg3, arg4, arg5);
         }
         else {
-            other_side->add_waiter(recipient);
+            recipient->block_on_socket(other_side);
             log(ipc, "call: no transaction slots available\n");
             return { p, -EAGAIN };
         }
@@ -158,7 +158,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
 
     p->set(proc::InSend);
     p->recv_dest = dest;
-    sock->add_waiter(p);
+    p->block_on_socket(sock);
 
     return { nullptr };
 }
@@ -171,7 +171,8 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
         return transfer_pulse(p, nullptr, fd, send_bits);
     }
 
-    const RefCnt<Socket> other_side(sock->other_side); // may be weak ref, convert to strong
+    const auto other_side = sock->get_other();
+    assert(other_side); // TODO ENOTCONN or EPIPE here?
     if (auto sender = other_side->get_sender()) {
         sender->blocked_socket = nullptr;
 
@@ -187,7 +188,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
             }
             else {
                 // Didn't successfully send to the sender, add it to waiters and keep going.
-                other_side->add_waiter(sender);
+                sender->block_on_socket(other_side);
                 return { p, -EAGAIN };
             }
         }
@@ -202,7 +203,10 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     else {
         log(try_recv, "%s trying %p <- %p, no sender waiting\n", p->name(), sock.get(), other_side.get());
         Process* other_proc = other_side->owner;
-        log(try_recv, "other side owner %s state %lx blocked on %p (sending_to = %d)\n", other_proc->name(), other_proc->ipc_state(), other_proc->blocked_socket.get(), other_proc->sending_to(other_side.get()));
+        log(try_recv, "other side owner %s state %lx blocked on %p (sending_to = %d)\n", other_proc->name(),
+                other_proc->ipc_state(),
+                other_proc->blocked_socket.get(),
+                other_proc->sending_to(other_side.get()));
     }
 
     return { p, -EAGAIN };
@@ -223,6 +227,8 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     for (int fd = 0; fd < num_files; fd++) {
         if (const auto& sock = p->aspace->get_socket(fd)) {
             Result res = ipc_try_recv(p, msg_set_fd(from, fd), sock);
+            // TODO After ipc_try_recv starts reporting errors for more cases,
+            // only return on success.
             if (res.rax != -EAGAIN) {
                 log(ipc, "ipc_recv_any: %d => %ld (success=%d proc=%p)\n", fd, res.rax, res.success(), res.p);
                 return res;
@@ -258,12 +264,12 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
 
     Result res = ipc_try_recv(p, from, sock);
     if (res.rax == -EAGAIN) {
-        const auto other_side = sock->other_side;
+        const auto other_side = sock->get_other();
         p->set(proc::InRecv);
         p->recv_dest = from;
-        sock->add_waiter(p);
+        p->block_on_socket(sock);
 
-        log(ipc, "recv: %s blocking on receive from %d (%p -> %p)\n", p->name(), fd, other_side, sock.get());
+        log(ipc, "recv: %s blocking on receive from %d (%p -> %p)\n", p->name(), fd, other_side.get(), sock.get());
         return { nullptr };
     }
     return res;
@@ -292,7 +298,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
         return transfer_message(tx.peer, p, msg, tx.id, arg1, arg2, arg3, arg4, arg5);
     }
 
-    const RefCnt<Socket> other_side(sock->other_side); // may be weak ref, convert to strong
+    const auto other_side = sock->get_other();
     if (const auto recipient = other_side->get_recipient()) {
         recipient->blocked_socket = nullptr;
 
@@ -306,7 +312,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     store_message(p, msg, dest, arg1, arg2, arg3, arg4, arg5);
 
     p->set(proc::InSend);
-    sock->add_waiter(p);
+    p->block_on_socket(sock);
 
     log(ipc, "send: %s blocked on send on %d (%p -> %p)\n", p->name(), fd, sock.get(), other_side.get());
     return { nullptr };
@@ -318,7 +324,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     auto sock = p->aspace->get_socket(fd);
     check_error(sock, p, -EBADF);
 
-    const RefCnt<Socket> other_side(sock->other_side); // may be weak ref, convert to strong
+    const auto other_side = sock->get_other();
     // auto [rcpt,fd] = get_recipient?
     if (auto recipient = other_side->get_recipient()) {
         recipient->blocked_socket = nullptr;
@@ -423,7 +429,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     if (!rcpt->aspace->find_mapping(fault_addr, offsetFlags, mapped_fd)) {
         abort("Process fault addr is not mapped\n");
     }
-    if (rcpt->aspace->get_socket(mapped_fd).get() != sock->other_side) {
+    if (rcpt->aspace->get_socket(mapped_fd) != sock->get_other()) {
         abort("Process fault addr is mapped to the wrong handle\n");
     }
     flags &= offsetFlags;
@@ -471,9 +477,8 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
 
 [[nodiscard]] Result syscall_close(Process* p, int fd) {
     log(socket, "%s: close(%d)\n", p->name(), fd);
-    auto& f = p->aspace->file_at(fd);
+    const auto f = std::move(p->aspace->file_at(fd));
     int res = f ? 0 : -EBADF;
-    f = nullptr;
     return { p, res };
 }
 

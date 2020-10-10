@@ -63,8 +63,7 @@ struct Process {
     RefCnt<File> send_file;
     u64 recv_dest;
 
-    Process(AddressSpace *aspace):
-        aspace(aspace)
+    Process(RefCnt<AddressSpace> aspace): aspace(std::move(aspace))
     {
         flags = 1 << FastRet;
         rflags = x86::rflags::IF;
@@ -106,5 +105,7 @@ struct Process {
     bool sending_to(Socket* sock) {
         return is(proc::InSend) && blocked_socket == sock;
     }
+
+    void block_on_socket(const RefCnt<Socket>& sock);
 };
 }

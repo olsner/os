@@ -41,9 +41,10 @@ class Socket final : public File {
     static constexpr uint64_t tx_mask = msg_set_fd(~MSG_TX_CLOSEFD, 0);
 
     Transaction tx_table[NTX];
-public:
-    Socket* other_side = nullptr; // TODO weak_ptr
 private:
+    // Some kind of manual weak_ptr, replace it with an actual weak_ptr once
+    // we have those.
+    Socket* other_side = nullptr;
     // List of processes sending or receiving on this end of the socket. This
     // does not cover processes currently in a transaction.
     DList<Process> waiters;
@@ -62,6 +63,10 @@ public:
         // TODO Iterate receivers, any that receive specifically from this file should now get an error.
         // (e.g. one thread does close() while another receives)
         // This implies the process -> file link should be weak.
+
+        if (other_side) {
+            other_side->other_side = nullptr;
+        }
     }
 
     static void pair(RefCnt<Socket>& server, RefCnt<Socket>& client) {
@@ -69,6 +74,12 @@ public:
         client = make_refcnt<Socket>(false);
         server->other_side = client.get();
         client->other_side = server.get();
+    }
+
+    RefCnt<Socket> get_other() const {
+        // Eventually other_side might be a weak_ptr that has official ways
+        // to convert to a strong shared_ptr.
+        return RefCnt<Socket>::from_raw(other_side);
     }
 
     // Allocate a transaction and return its id.
@@ -132,9 +143,7 @@ public:
         return nullptr;
     }
     void add_waiter(Process* p) {
-        assert(!p->blocked_socket);
-        assert(!p->is_runnable());
-        p->blocked_socket = RefCnt<Socket>(this);
+        assert(p->blocked_socket.get() == this);
         waiters.append(p);
     }
 
@@ -148,5 +157,9 @@ public:
 
 template <> constexpr const char* nameof<Socket> = "Socket";
 
-inline RefCnt<Socket> File::get_socket() { return RefCnt<Socket>(static_cast<Socket*>(this)); }
-
+void Process::block_on_socket(const RefCnt<Socket>& sock) {
+    assert(!blocked_socket);
+    assert(!is_runnable());
+    blocked_socket = sock;
+    sock->add_waiter(this);
+}

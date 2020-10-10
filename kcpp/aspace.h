@@ -311,7 +311,7 @@ public:
     }
     RefCnt<Socket> get_socket(int fd) {
         if (auto file = files.get_file(fd))
-            return file->get_socket();
+            return file.cast<Socket>();
 
         return nullptr;
     }
