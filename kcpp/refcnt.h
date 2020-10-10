@@ -82,12 +82,15 @@ RefCnt<T> make_refcnt(Args&&... args) {
     return RefCnt(new T(static_cast<Args>(args)...));
 }
 
+template<typename T> const char* nameof; // = "<unknown>";
+
 template <typename T>
 class RefCounted
 {
     uint32_t count = 0;
 
     void deleteme() {
+        log(refcnt, "Deleting %s: %p\n", nameof<T>, this);
         delete static_cast<T*>(this);
     }
 
@@ -95,8 +98,10 @@ class RefCounted
 
     void addref() {
         count++;
+        log(refcnt, "%s: %p++ => %u\n", nameof<T>, this, count);
     }
     void release() {
+        log(refcnt, "%s: %p-- => %u\n", nameof<T>, this, count - 1);
         assert(count);
         if (!--count)
             deleteme();

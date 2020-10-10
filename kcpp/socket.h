@@ -146,5 +146,7 @@ public:
     }
 };
 
+template <> constexpr const char* nameof<Socket> = "Socket";
+
 inline RefCnt<Socket> File::get_socket() { return RefCnt<Socket>(static_cast<Socket*>(this)); }
 

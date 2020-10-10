@@ -96,6 +96,7 @@ void strlcpy(char *dst, const char *src, size_t dstsize) {
 #define log_pulse 0
 #define log_socket 0
 #define log_files 0
+#define log_refcnt 0
 
 #define log(scope, fmt, ...) do { \
     if (log_ ## scope) { \

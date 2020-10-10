@@ -326,3 +326,5 @@ public:
     }
 };
 }
+
+template <> constexpr const char* nameof<aspace::AddressSpace> = "AddressSpace";

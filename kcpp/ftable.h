@@ -16,6 +16,8 @@ struct File: RefCounted<File> {
     RefCnt<Socket> get_socket();
 };
 
+template <> const char* nameof<File> = "File";
+
 namespace aspace {
 
 // A table for storing file descriptors -> file mappings
