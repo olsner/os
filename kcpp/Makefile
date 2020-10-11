@@ -70,6 +70,7 @@ $(OUT)/%.o: %.asm
 	$(HUSH_ASM) $(YASM) -i . -f elf64 -g dwarf2 $< -o $@ -L nasm -l $(OUT)/$*.lst
 
 $(GRUBDIR)/kcpp: $(OUT)/kernel
+	@mkdir -p $(@D)
 	@$(CP) $< $@
 
 $(OUT)/xprintf_test: xprintf.cpp
