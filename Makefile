@@ -223,7 +223,7 @@ GRUB_MKRESCUE = $(GRUB_PREFIX)/bin/grub-mkrescue
 $(OUTDIR)/grub.iso: $(GRUB_CFG) $(KERNELS) $(MODFILES)
 	@echo Creating grub boot image $@ from $^
 	$(GRUB_MKRESCUE) $(GRUB_MODULES) -d $(GRUBLIBDIR) -o $@ $(GRUBDIR) >/dev/null
-	@echo '$@: \\' > $@.d
+	@echo -e '$@: \\' > $@.d
 	@find $(GRUBDIR) | sed 's/$$/ \\/' >> $@.d
 	@echo >> $@.d
 	@find $(GRUBDIR) | sed 's/$$/:/' >> $@.d

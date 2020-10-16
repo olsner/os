@@ -14,19 +14,19 @@ CP=cp
 endif
 
 ifneq ($(VERBOSE),YES)
-HUSH_AS     = @echo ' [AS]\t'$@;
-HUSH_ASM    = @echo ' [ASM]\t'$@;
+HUSH_AS     = @echo -e ' [AS]\t'$@;
+HUSH_ASM    = @echo -e ' [ASM]\t'$@;
 # Not useful to know about really - implied by CC/CXX so might as well be implied by AS/ASM too
-#HUSH_ASM_DEP=@echo ' [DEP]\t'$@;
+#HUSH_ASM_DEP=@echo -e ' [DEP]\t'$@;
 HUSH_ASM_DEP= @
-HUSH_CC     = @echo ' [CC]\t'$@;
-HUSH_CXX    = @echo ' [CXX]\t'$@;
-HUSH_LD     = @echo ' [LD]\t'$@;
-HUSH_OBJCOPY= @echo ' [OBJCOPY]\t'$@;
+HUSH_CC     = @echo -e ' [CC]\t'$@;
+HUSH_CXX    = @echo -e ' [CXX]\t'$@;
+HUSH_LD     = @echo -e ' [LD]\t'$@;
+HUSH_OBJCOPY= @echo -e ' [OBJCOPY]\t'$@;
 
-SIZE_ASM=@echo ' [ASM]\t'$@: `$(FILE_SIZE) $@` bytes
-SIZE_LD= @echo ' [LD]\t'$@: `$(FILE_SIZE) $@` bytes
-SIZE_OBJCOPY= @echo ' [OBJCOPY]\t'$@: `$(FILE_SIZE) $@` bytes
+SIZE_ASM=@echo -e ' [ASM]\t'$@: `$(FILE_SIZE) $@` bytes
+SIZE_LD= @echo -e ' [LD]\t'$@: `$(FILE_SIZE) $@` bytes
+SIZE_OBJCOPY= @echo -e ' [OBJCOPY]\t'$@: `$(FILE_SIZE) $@` bytes
 endif
 
 ifeq ($(LTO), YES)
