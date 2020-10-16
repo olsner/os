@@ -347,6 +347,7 @@ $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
+yasm/yasm: CC=
 yasm/yasm: yasm/Makefile
 	$(MAKE) -C yasm
 
