@@ -341,7 +341,7 @@ void start() {
             return 1
         finally:
             p.send_signal(signal.SIGINT)
-            p.wait()
+            await p.wait()
         print("No status printed. Error in I/O redirection?")
         return 1
 
