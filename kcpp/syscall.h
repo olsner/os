@@ -172,7 +172,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     }
 
     const auto other_side = sock->get_other();
-    assert(other_side); // TODO ENOTCONN or EPIPE here?
+    check_error(other_side, p, -EPIPE);
     if (auto sender = other_side->get_sender()) {
         sender->blocked_socket = nullptr;
 
@@ -227,9 +227,7 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     for (int fd = 0; fd < num_files; fd++) {
         if (const auto& sock = p->aspace->get_socket(fd)) {
             Result res = ipc_try_recv(p, msg_set_fd(from, fd), sock);
-            // TODO After ipc_try_recv starts reporting errors for more cases,
-            // only return on success.
-            if (res.rax != -EAGAIN) {
+            if (res.rax > 0) {
                 log(ipc, "ipc_recv_any: %d => %ld (success=%d proc=%p)\n", fd, res.rax, res.success(), res.p);
                 return res;
             }
@@ -283,11 +281,12 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
 
     if (dest & MSG_TX_FD) {
         auto& fd_slot = p->aspace->file_at(arg1);
+        check_error(fd_slot, p, -EBADF);
+
         p->send_file = fd_slot;
         if (dest & MSG_TX_CLOSEFD) {
             fd_slot = nullptr;
         }
-        check_error(p->send_file, p, -EBADF);
     }
 
     // TODO we should have a way to say that the transaction matched but the
@@ -299,6 +298,8 @@ void store_message(Process *p, u64 msg, u64 dest, u64 arg1, u64 arg2, u64 arg3, 
     }
 
     const auto other_side = sock->get_other();
+    check_error(other_side, p, -EPIPE);
+
     if (const auto recipient = other_side->get_recipient()) {
         recipient->blocked_socket = nullptr;
 
