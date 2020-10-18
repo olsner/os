@@ -132,7 +132,7 @@ static inline ipc_msg_t ipc2(ipc_msg_t msg, ipc_dest_t* src, ipc_arg_t* arg1, ip
 	return msg;
 }
 
-static inline uintptr_t ipc1(uintptr_t msg, ipc_dest_t* src, ipc_arg_t* arg1)
+static inline ipc_msg_t ipc1(ipc_msg_t msg, ipc_dest_t* src, ipc_arg_t* arg1)
 {
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
@@ -144,7 +144,7 @@ static inline uintptr_t ipc1(uintptr_t msg, ipc_dest_t* src, ipc_arg_t* arg1)
 	return msg;
 }
 
-static inline uintptr_t sendrcv3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
+static inline ipc_msg_t sendrcv3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
 {
 	return ipc3(msg_call(msg), &dst, arg1, arg2, arg3);
 }
@@ -156,9 +156,9 @@ static inline ipc_msg_t sendrcv2(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1,
 
 static inline ipc_msg_t recv4(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3, ipc_arg_t* arg4)
 {
-	register int64_t r8 __asm__("r8");
-	register int64_t r9 __asm__("r9");
-	uintptr_t msg;
+	register ipc_arg_t r8 __asm__("r8");
+	register ipc_arg_t r9 __asm__("r9");
+	ipc_msg_t msg;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -173,8 +173,8 @@ static inline ipc_msg_t recv4(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2,
 
 static inline ipc_msg_t recv3(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2, ipc_arg_t* arg3)
 {
-	register int64_t r8 __asm__("r8");
-	uintptr_t msg;
+	register ipc_arg_t r8 __asm__("r8");
+	ipc_msg_t msg;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -186,9 +186,9 @@ static inline ipc_msg_t recv3(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2,
 	return msg;
 }
 
-static inline uintptr_t recv2(uintptr_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2)
+static inline ipc_msg_t recv2(ipc_dest_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2)
 {
-	uintptr_t msg;
+	ipc_msg_t msg;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -199,9 +199,9 @@ static inline uintptr_t recv2(uintptr_t* src, ipc_arg_t* arg1, ipc_arg_t* arg2)
 	return msg;
 }
 
-static inline uintptr_t recv1(uintptr_t* src, ipc_arg_t* arg1)
+static inline ipc_msg_t recv1(ipc_dest_t* src, ipc_arg_t* arg1)
 {
-	uintptr_t msg;
+	ipc_msg_t msg;
 	__asm__ __volatile__ ("syscall"
 		:	/* return value(s) */
 			"=a" (msg),
@@ -212,40 +212,40 @@ static inline uintptr_t recv1(uintptr_t* src, ipc_arg_t* arg1)
 	return msg;
 }
 
-static inline uintptr_t recv0(uintptr_t src)
+static inline ipc_msg_t recv0(ipc_dest_t src)
 {
 	return syscall1(0, src);
 }
 
-static inline uintptr_t send4(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2, ipc_arg_t arg3, ipc_arg_t arg4)
+static inline uintptr_t send4(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2, ipc_arg_t arg3, ipc_arg_t arg4)
 {
 	return ipc4(msg_send(msg), &dst, &arg1, &arg2, &arg3, &arg4);
 }
 
-static inline uintptr_t send3(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2, ipc_arg_t arg3)
+static inline uintptr_t send3(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2, ipc_arg_t arg3)
 {
 	return ipc3(msg_send(msg), &dst, &arg1, &arg2, &arg3);
 }
 
-static inline uintptr_t send2(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2)
+static inline uintptr_t send2(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t arg1, ipc_arg_t arg2)
 {
 	return ipc2(msg_send(msg), &dst, &arg1, &arg2);
 }
 
-static inline uintptr_t send1(uintptr_t msg, ipc_dest_t dst, ipc_arg_t arg1)
+static inline uintptr_t send1(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t arg1)
 {
 	return syscall2(msg_send(msg), dst, arg1);
 }
-static inline uintptr_t send0(uintptr_t msg, ipc_dest_t dst)
+static inline uintptr_t send0(ipc_msg_t msg, ipc_dest_t dst)
 {
 	return syscall1(msg_send(msg), dst);
 }
 
-static inline uintptr_t sendrcv1(uintptr_t msg, ipc_dest_t dst, ipc_arg_t* arg1)
+static inline uintptr_t sendrcv1(ipc_msg_t msg, ipc_dest_t dst, ipc_arg_t* arg1)
 {
 	return ipc1(msg_call(msg), &dst, arg1);
 }
-static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
+static inline uintptr_t sendrcv0(ipc_msg_t msg, ipc_dest_t dst)
 {
 	return syscall1(msg_call(msg), dst);
 }
@@ -257,7 +257,7 @@ static inline uintptr_t sendrcv0(uintptr_t msg, ipc_dest_t dst)
 
 #include "msg_syscalls.h"
 
-static uintptr_t pulse(int fd, uint64_t mask) {
+static int pulse(int fd, uint64_t mask) {
 	return send1(SYS_PULSE, fd, mask);
 }
 
@@ -309,7 +309,7 @@ static void prefault(const volatile void* addr, int prot) {
 	syscall3(SYS_PFAULT, 0, (uintptr_t)addr, prot);
 }
 
-static int grant(uintptr_t rcpt, const volatile void* addr, int prot) {
+static int grant(ipc_dest_t rcpt, const volatile void* addr, int prot) {
 	return syscall3(SYS_GRANT, rcpt, (uintptr_t)addr, prot);
 }
 
