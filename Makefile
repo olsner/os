@@ -226,7 +226,7 @@ GRUB_MKRESCUE = $(GRUB_PREFIX)/bin/grub-mkrescue
 $(OUTDIR)/grub.iso: $(GRUB_CFG) $(KERNELS) $(MODFILES)
 	@echo Creating grub boot image $@ from $^
 	$(GRUB_MKRESCUE) $(GRUB_MODULES) -d $(GRUBLIBDIR) -o $@ $(GRUBDIR) >/dev/null
-	@echo '$@: \\' > $@.d
+	@echo -e '$@: \\' > $@.d
 	@find $(GRUBDIR) | sed 's/$$/ \\/' >> $@.d
 	@echo >> $@.d
 	@find $(GRUBDIR) | sed 's/$$/:/' >> $@.d
@@ -350,6 +350,7 @@ $(OUTDIR)/cuser/lwip.elf: cuser/linker.ld $(LWIP_DEP_OBJS)
 	@mkdir -p $(@D)
 	$(HUSH_LD) $(LD) $(USER_LDFLAGS) -o $@ -T $^
 
+yasm/yasm: CC=
 yasm/yasm: yasm/Makefile
 	$(MAKE) -C yasm
 
