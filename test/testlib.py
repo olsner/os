@@ -265,102 +265,144 @@ def strip_ansi(s):
             s = s[2:]
     return res
 
-def compile_and_run(procs, verbose = False, kernel = "out/kasm/kstart.b"):
-    header="""
+class CompiledTest():
+    def __init__(self, *args):
+        self.outdir = "out"
+        self.testout = os.path.join(self.outdir, "test")
+        if not os.path.isdir(self.testout): os.mkdir(self.testout)
+        self.verbose = False
+
+    def compile_to(self, mod, source, procname):
+        cross = "toolchain/cross-8.3.0/bin/x86_64-elf-"
+        elf = mod.replace(".mod", ".elf")
+        # Usually want to split up compile and link for ccache, but for these
+        # short programs the linking is what takes most of the time anyway.
+        cflags = "-g -Os -march=native -mno-avx -ffunction-sections -fdata-sections -W -Wall -Wextra -Werror -Wstrict-prototypes -Wmissing-prototypes -Wmissing-include-dirs -Wno-unused -Icuser/include -Itest"
+        ldflags = "-nostdlib -T cuser/linker.ld"
+        lib_os = ["stdio_raw", "stdlib", "string", "acpi_strtoul", "ctype"]
+        lib_os = " ".join([f"{self.outdir}/cuser/libc/{f}.o" for f in lib_os])
+        lib_os += f" {self.outdir}/cuser/acpica/printf.o"
+
+        if self.verbose: print(f"Compiling {elf}...")
+        subprocess.check_call(f"ccache {cross}gcc -o {elf} {cflags} {ldflags} {source} {lib_os} -Dproc_main={procname}_main '-DPROCNAME=\"{procname}\"'", shell=True)
+        subprocess.check_call(f"{cross}objcopy -Obinary {elf} {mod}", shell=True)
+
+    def run(self, verbose = False, kernel = "out/kasm/kstart.b"):
+        self.verbose = verbose
+        self.kernel = kernel
+
+        async def launch(mods):
+            # TODO Silence "terminating on signal" printouts. Ideally keeping
+            # stderr so unrecognized errors are still displayed.
+            cmd = [
+                "qemu-system-x86_64",
+                '-cpu', 'max',
+                '-kernel', kernel,
+                '-initrd', ",".join(mods),
+                '-debugcon', 'stdio',
+                '-display', 'none']
+            if verbose: print(' '.join(map(repr, cmd)))
+            output_lines = []
+            # TODO Add a timeout for the read (set an alarm that sends ourselves SIGINT?)
+            p = await asyncio.create_subprocess_exec(*cmd, stdout = subprocess.PIPE)
+
+            try:
+                with timeout(2):
+                    while True:
+                        line = await p.stdout.readuntil()
+                        line = line.decode('iso-8859-1').strip()
+                        output_lines.append(line)
+                        if verbose: print(line)
+                        # Asm kernel outputs either blue background or reset ANSI codes
+                        # between each character on the debug console, strip that
+                        # before matching the string.
+                        line = strip_ansi(line)
+                        if "FAIL" in line or "PANIC" in line:
+                            if not verbose:
+                                for l in output_lines: print(l)
+                            return 1
+                        elif line == "PASS":
+                            # Keep running a little bit and check that the VM doesn't
+                            # print more stuff, there could be a way to bug things such
+                            # that a program just prints PASS and a bunch of other
+                            # garbage..
+                            return 0
+            except asyncio.TimeoutError:
+                print("Timed out!")
+                return 1
+            finally:
+                p.send_signal(signal.SIGINT)
+                await p.wait()
+            print("No status printed. Error in I/O redirection?")
+            return 1
+
+        sourcefile = self.generate_source()
+        mod_files = self.compile_modules(sourcefile)
+
+        return asyncio.get_event_loop().run_until_complete(launch(mod_files))
+
+
+class FileTest(CompiledTest):
+    def __init__(self, path, processes):
+        super().__init__()
+        self.path = path
+        self.nprocs = processes
+
+    def generate_source(self):
+        return self.path
+
+    def compile_modules(self, sourcefile):
+        mod_files = []
+        for proc in range(self.nprocs):
+            procname = f"proc{proc + 1}"
+            mod_file = f"{self.testout}/temp_{procname}.mod"
+            self.compile_to(mod_file, sourcefile, procname)
+            mod_files.append(f"{mod_file} {procname}")
+        return mod_files
+
+class SequenceTest(CompiledTest):
+    def __init__(self, *procs):
+        super().__init__()
+        self.master = procs[0]
+        self.procs = procs
+
+    def generate_source(self):
+        header="""
 #include "test_common.h"
 """
-    footer="""
+        footer="""
 void start() {
     __default_section_init();
     proc_main();
 }
 """
+        tempsource = f"{self.testout}/temp.c"
 
-    OUTDIR = "out"
-    TESTOUT = os.path.join(OUTDIR, "test")
-    if not os.path.isdir(TESTOUT): os.mkdir(TESTOUT)
+        with open(tempsource, "w") as h:
+            print(header, file=h)
+            self.emit_functions(h)
+            print(footer, file=h)
+        return tempsource
 
-    def emit_function(proc):
+    def emit_functions(self, h):
+        for i,proc in enumerate(self.procs):
+            print(f"const uintptr_t {proc.name} = {i + 1};", file=h)
+        for proc in self.procs:
+            print("\n", file=h)
+            self.emit_function(proc, h)
+
+    def emit_function(self, proc, h):
         print(f"__attribute__((noreturn)) static void {proc.name}_main(void) {{", file=h)
         proc.emit(h)
         print("}", file=h)
 
-    def compile_to(mod, source, procname):
-        cross = "toolchain/cross-8.3.0/bin/x86_64-elf-"
-        elf = mod.replace(".mod", ".elf")
-        # Usually want to split up compile and link for ccache, but for these
-        # short programs the linking is what takes most of the time anyway.
-        cflags = "-g -Os -march=sandybridge -mno-avx -ffunction-sections -fdata-sections -W -Wall -Wextra -Werror -Wstrict-prototypes -Wmissing-prototypes -Wmissing-include-dirs -Wno-unused -Icuser/include -Itest"
-        ldflags = "-nostdlib -T cuser/linker.ld"
-        lib_os = ["stdio_raw", "stdlib", "string", "acpi_strtoul", "ctype"]
-        lib_os = " ".join([f"{OUTDIR}/cuser/libc/{f}.o" for f in lib_os])
-        lib_os += f" {OUTDIR}/cuser/acpica/printf.o"
-
-        if verbose: print(f"Compiling {elf}...")
-        subprocess.check_call(f"ccache {cross}gcc -o {elf} {cflags} {ldflags} {source} {lib_os} -Dproc_main={procname}_main '-DPROCNAME=\"{procname}\"'", shell=True)
-        subprocess.check_call(f"{cross}objcopy -Obinary {elf} {mod}", shell=True)
-
-    async def launch(mods):
-        # TODO Silence "terminating on signal" printouts. Ideally keeping
-        # stderr so unrecognized errors are still displayed.
-        cmd = [
-            "qemu-system-x86_64",
-            '-cpu', 'max',
-            '-kernel', kernel,
-            '-initrd', ",".join(mods),
-            '-debugcon', 'stdio',
-            '-display', 'none']
-        if verbose: print(' '.join(map(repr, cmd)))
-        output_lines = []
-        # TODO Add a timeout for the read (set an alarm that sends ourselves SIGINT?)
-        p = await asyncio.create_subprocess_exec(*cmd, stdout = subprocess.PIPE)
-
-        try:
-            with timeout(2):
-                while True:
-                    line = await p.stdout.readuntil()
-                    line = line.decode('iso-8859-1').strip()
-                    output_lines.append(line)
-                    if verbose: print(line)
-                    # Asm kernel outputs either blue background or reset ANSI codes
-                    # between each character on the debug console, strip that
-                    # before matching the string.
-                    line = strip_ansi(line)
-                    if "FAIL" in line or "PANIC" in line:
-                        if not verbose:
-                            for l in output_lines: print(l)
-                        return 1
-                    elif line == "PASS":
-                        # Keep running a little bit and check that the VM doesn't
-                        # print more stuff, there could be a way to bug things such
-                        # that a program just prints PASS and a bunch of other
-                        # garbage..
-                        return 0
-        except asyncio.TimeoutError:
-            print("Timed out!")
-            return 1
-        finally:
-            p.send_signal(signal.SIGINT)
-            await p.wait()
-        print("No status printed. Error in I/O redirection?")
-        return 1
-
-    with open(f"{TESTOUT}/temp.c", "w") as h:
-        print(header, file=h)
-        for i,proc in enumerate(procs):
-            print(f"const uintptr_t {proc.name} = {i + 1};", file=h)
-        for proc in procs:
-            print("\n", file=h)
-            emit_function(proc)
-        print(footer, file=h)
-
-    mod_files = []
-    for proc in procs:
-        mod_file = f"{TESTOUT}/temp_{proc.name}.mod"
-        compile_to(mod_file, f"{TESTOUT}/temp.c", proc.name)
-        mod_files.append(f"{mod_file} {proc.name}")
-
-    return asyncio.get_event_loop().run_until_complete(launch(mod_files))
+    def compile_modules(self, sourcefile):
+        mod_files = []
+        for proc in self.procs:
+            mod_file = f"{self.testout}/temp_{proc.name}.mod"
+            self.compile_to(mod_file, sourcefile, proc.name)
+            mod_files.append(f"{mod_file} {proc.name}")
+        return mod_files
 
 def processes(n):
     M = Sequence()
@@ -371,7 +413,16 @@ def with_procs(n):
         def wrapped():
             procs = processes(n)
             fun(*procs)
-            return procs
+            return SequenceTest(*procs)
+        return wrapped
+
+    return wrap
+
+def file_test(nproc = 1):
+    def wrap(fun):
+        def wrapped():
+            path = fun()
+            return FileTest(os.path.join("test", path), nproc)
         return wrapped
 
     return wrap
@@ -422,7 +473,7 @@ def main(globs = globals()):
             continue
 
         procs = test()
-        res = compile_and_run(procs, args.verbose, args.kernel)
+        res = procs.run(args.verbose, args.kernel)
         if res:
             fails += 1
         else:

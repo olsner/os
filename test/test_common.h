@@ -1,5 +1,6 @@
 #include "../cuser/common.h"
 #include <sb1.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,7 @@
 enum msg_test {
     MSG_STEP = MSG_USER,
     MSG_RESULT,
+    MSG_TESTCASE, // First free message for use by the test case itself.
 };
 
 __attribute__((noreturn)) static void pass(void) {
